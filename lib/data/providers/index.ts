@@ -26,6 +26,7 @@ import { GoogleSheetsDashboardDataProvider } from './sheets-provider';
 import { createLiveSheetsClient } from '@/lib/server/sheets/config';
 import { ReadCache, configuredTtlMs } from '@/lib/server/cache/read-cache';
 import { resolveEnvironment, EnvironmentConfigError } from '@/lib/server/environment/config';
+import { processSlot } from '@/lib/server/runtime/process-state';
 import { currentDataset, demoStatus } from '@/lib/server/demo/store';
 import type { DashboardDataProvider } from './types';
 
@@ -51,11 +52,22 @@ let injected: DashboardDataProvider | null = null;
 /**
  * One cache per process, shared by every provider instance, so concurrent operators on
  * different screens cost one workbook read between them rather than one each.
+ *
+ * "Per process" has to mean it literally, which is why this is not a module-level
+ * binding. The mutation router captures this cache once and calls `invalidate` on it
+ * after a verified write. `next dev` re-evaluating this module would hand pages a
+ * SECOND, empty cache while the router kept invalidating the first — so a write would
+ * clear a cache nobody reads, and screens would serve pre-write figures until the TTL
+ * expired. One instance, reachable from both sides, is what makes invalidation mean
+ * anything. See lib/server/runtime/process-state.ts.
  */
-let sharedCache: ReadCache | null = null;
+const cacheSlot = processSlot<ReadCache>('data.providers.readCache');
 export function getReadCache(): ReadCache {
-  if (!sharedCache) sharedCache = new ReadCache({ ttlMs: configuredTtlMs() });
-  return sharedCache;
+  const existing = cacheSlot.read();
+  if (existing) return existing;
+  const created = new ReadCache({ ttlMs: configuredTtlMs() });
+  cacheSlot.write(created);
+  return created;
 }
 
 /*
@@ -131,5 +143,5 @@ export function __setDataProviderForTests(provider: DashboardDataProvider | null
 
 /** Test seam: forget the shared cache between cases. */
 export function __resetReadCacheForTests(): void {
-  sharedCache = null;
+  cacheSlot.write(null);
 }
