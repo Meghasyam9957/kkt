@@ -120,6 +120,41 @@ describe('audit · PII exclusion', () => {
     expect(note).toContain('[REDACTED]');
   });
 
+  it('preserves externally-minted references a write must stay reconcilable by', () => {
+    // Invoice, payment and OTA references routinely carry ten or more digits, which is
+    // what the phone rule matches. A payment reference audited as `UPI[REDACTED]` cannot
+    // be matched against a bank statement, so the audit record fails at its one job.
+    const written = {
+      InvoiceRef: 'INV-2026-000012345',
+      PaymentRef: 'UPI123456789012',
+      AgreementRef: 'AGR20260001122',
+      PlatformResID: 'HMABC12345678901',
+      Amount: 4321,
+    };
+    const out = redactMetadata({ operationId: 'op', written }) as { written: typeof written };
+    expect(out.written.InvoiceRef).toBe(written.InvoiceRef);
+    expect(out.written.PaymentRef).toBe(written.PaymentRef);
+    expect(out.written.AgreementRef).toBe(written.AgreementRef);
+    expect(out.written.PlatformResID).toBe(written.PlatformResID);
+    expect(out.written.Amount).toBe(4321);
+  });
+
+  it('still redacts guest data written alongside those references', () => {
+    // The exemption is per key, so widening it must not open a door beside it.
+    const out = redactMetadata({
+      written: {
+        InvoiceRef: 'INV-2026-000012345',
+        GuestName: 'Real Person',
+        Notes: 'guest mobile 9876543210, email real@example.com',
+      },
+    });
+    const dump = JSON.stringify(out);
+    expect(dump).toContain('INV-2026-000012345');
+    expect(dump).not.toContain('Real Person');
+    expect(dump).not.toContain('9876543210');
+    expect(dump).not.toContain('real@example.com');
+  });
+
   it('exempts identifiers from the phone rule only — not from every protection', () => {
     // The exemption must be exactly as narrow as the defect. An identifier that somehow
     // carries an address or an oversized payload is still handled.

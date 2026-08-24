@@ -29,9 +29,17 @@ const PII_KEYS: readonly string[] = [
  * See `redactValue`.
  */
 const ALLOWLIST: readonly string[] = [
+  // Identifiers this application mints.
   'entityid', 'bookingid', 'investorid', 'propertyid', 'expenseid', 'revenueid',
   'requestid', 'userid', 'actorid', 'ticketid', 'taskid', 'capexid', 'txnid', 'itemid',
-  'operationid',
+  'operationid', 'recordid', 'assetid', 'complianceid', 'refid',
+  // References minted ELSEWHERE and recorded here — an invoice number, a UPI payment
+  // reference, an OTA booking code. These routinely carry ten or more consecutive
+  // digits, which is exactly what the phone rule matches: `UPI123456789012` was being
+  // audited as `UPI[REDACTED]`, and a payment reference nobody can read cannot be
+  // reconciled against a bank statement.
+  'invoiceref', 'paymentref', 'agreementref', 'documentref',
+  'platformresid', 'airbnblistingid', 'bookingcomlistingid',
 ];
 
 const REDACTED = '[REDACTED]';
