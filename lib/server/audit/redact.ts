@@ -33,6 +33,8 @@ const ALLOWLIST: readonly string[] = [
   'entityid', 'bookingid', 'investorid', 'propertyid', 'expenseid', 'revenueid',
   'requestid', 'userid', 'actorid', 'ticketid', 'taskid', 'capexid', 'txnid', 'itemid',
   'operationid', 'recordid', 'assetid', 'complianceid', 'refid',
+  // The atomic ID allocator audits the batch it minted under `ids`.
+  'ids',
   // References minted ELSEWHERE and recorded here — an invoice number, a UPI payment
   // reference, an OTA booking code. These routinely carry ten or more consecutive
   // digits, which is exactly what the phone rule matches: `UPI123456789012` was being
@@ -45,6 +47,8 @@ const ALLOWLIST: readonly string[] = [
 const REDACTED = '[REDACTED]';
 const MAX_DEPTH = 6;
 const MAX_STRING = 512;
+/** Entries kept from any array. The log records what happened, not a bulk export. */
+const MAX_ARRAY = 50;
 
 function normalize(key: string): string {
   return key.replace(/[\s_\-.]+/g, '').toLowerCase();
@@ -91,17 +95,26 @@ export function redactMetadata(input: Record<string, unknown>): Record<string, u
     if (value === null || value === undefined) return value ?? null;
     if (typeof value === 'string') return redactValue(value);
     if (typeof value === 'number' || typeof value === 'boolean') return value;
-    if (Array.isArray(value)) return value.slice(0, 50).map((v) => walk(v, depth + 1));
+    if (Array.isArray(value)) return value.slice(0, MAX_ARRAY).map((v) => walk(v, depth + 1));
     if (typeof value === 'object') {
       const out: Record<string, unknown> = {};
       for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
         if (isPiiKey(key)) { out[key] = REDACTED; continue; }
         // A minted identifier is swept as an identifier, not as prose — see redactValue.
-        // Nested objects and arrays still walk normally, so PII cannot hide one level
-        // down inside a field that merely happens to be named like an id.
-        out[key] = isIdentifierKey(key) && typeof child === 'string'
-          ? redactValue(child, true)
-          : walk(child, depth + 1);
+        // A LIST of them is treated the same: `ids: ['EXP-2026-0001', …]` is what the
+        // atomic allocator audits, and one identifier per key behaving differently from
+        // several under one key would be an accident of shape, not a decision.
+        //
+        // Only scalar strings take this path. Nested objects still walk normally, so PII
+        // cannot hide one level down inside a field merely named like an id.
+        if (isIdentifierKey(key)) {
+          if (typeof child === 'string') { out[key] = redactValue(child, true); continue; }
+          if (Array.isArray(child) && child.every((v) => typeof v === 'string')) {
+            out[key] = child.slice(0, MAX_ARRAY).map((v) => redactValue(v as string, true));
+            continue;
+          }
+        }
+        out[key] = walk(child, depth + 1);
       }
       return out;
     }

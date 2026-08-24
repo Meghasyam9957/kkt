@@ -155,6 +155,25 @@ describe('audit · PII exclusion', () => {
     expect(dump).not.toContain('real@example.com');
   });
 
+  it('treats a LIST of minted ids exactly as it treats one', () => {
+    // The atomic allocator audits its batch under `ids`. One id per key surviving while
+    // several under one key are mangled would be an accident of shape. The long form
+    // here is what a six-digit sequence would mint — the audit record for an allocation
+    // is precisely what a duplicate-id investigation would read.
+    const ids = ['EXP-2026-0001', 'EXP-2026-000001', 'EXP-2026-000002'];
+    const out = redactMetadata({
+      scope: '06_EXPENSES:EXP:2026', count: 3, firstValue: 1, reused: false, ids,
+    }) as { ids: string[]; count: number };
+    expect(out.ids).toEqual(ids);
+    expect(out.count).toBe(3);
+
+    // An array is still capped, and a non-identifier array is still swept as prose.
+    const capped = redactMetadata({ ids: Array.from({ length: 80 }, (_, i) => `EXP-2026-${i}`) }) as { ids: string[] };
+    expect(capped.ids.length).toBe(50);
+    const prose = redactMetadata({ notes: ['ring 9876543210'] }) as { notes: string[] };
+    expect(prose.notes[0]).toContain('[REDACTED]');
+  });
+
   it('exempts identifiers from the phone rule only — not from every protection', () => {
     // The exemption must be exactly as narrow as the defect. An identifier that somehow
     // carries an address or an oversized payload is still handled.
