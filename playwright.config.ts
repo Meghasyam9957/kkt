@@ -26,7 +26,21 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      // The reset wipes global demonstration state; every spec here counts rows before
+      // and after its own writes, so it must not run underneath them.
+      testIgnore: /demo-reset\.spec\.ts/,
+    },
+    {
+      // Runs only once the whole suite above has finished, so it is free to discard the
+      // demonstration data the other specs were relying on.
+      name: 'demo-reset',
+      use: { ...devices['Desktop Chrome'] },
+      testMatch: /demo-reset\.spec\.ts/,
+      dependencies: ['chromium'],
+    },
   ],
   webServer: {
     command: 'npm run dev -- --port 3213',
