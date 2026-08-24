@@ -101,6 +101,38 @@ describe('audit · PII exclusion', () => {
     expect(out.note).not.toContain('9876543210');
   });
 
+  it('never mangles an identifier, whatever digits it happens to contain', () => {
+    // The value sweep's phone rule matches any run of ten or more digits. Roughly one
+    // UUID in eleven contains such a run, so this used to corrupt the operation id in
+    // the audit record at random — the one field that makes a write traceable. These
+    // ids are chosen to trip the rule deterministically, not sampled.
+    const tripping = [
+      '59ef40ca-08df-4dba-a006-f55355546999',   // 11-digit tail, the reported failure
+      '12345678-1234-4321-8321-123456789012',   // digits and hyphens throughout
+    ];
+    for (const operationId of tripping) {
+      const out = redactMetadata({ operationId, requestId: operationId, rowNumber: 12 });
+      expect(out.operationId, operationId).toBe(operationId);
+      expect(out.requestId, operationId).toBe(operationId);
+    }
+    // …while the same string under a free-text key is still swept.
+    const note = redactMetadata({ note: `guest rang from ${tripping[0]}` }).note;
+    expect(note).toContain('[REDACTED]');
+  });
+
+  it('exempts identifiers from the phone rule only — not from every protection', () => {
+    // The exemption must be exactly as narrow as the defect. An identifier that somehow
+    // carries an address or an oversized payload is still handled.
+    const out = redactMetadata({
+      userId: 'someone@example.com',
+      entityId: 'x'.repeat(5000),
+      bookingId: { guestName: 'Real Person' },   // nested PII cannot hide under an id key
+    });
+    expect(out.userId).toBe('[REDACTED]');
+    expect(String(out.entityId).length).toBeLessThan(600);
+    expect(JSON.stringify(out.bookingId)).not.toContain('Real Person');
+  });
+
   it('redacts credentials and tokens', () => {
     const out = redactMetadata({ password: 'hunter2', accessToken: 'abc', apiKey: 'k', authorization: 'Bearer x' });
     for (const value of Object.values(out)) expect(value).toBe('[REDACTED]');
