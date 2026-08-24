@@ -4,6 +4,10 @@ node_modules/
 *.local
 dist/
 .next/
+# TypeScript's incremental build cache (tsconfig.json sets "incremental": true).
+# Derived output, rewritten by every typecheck and build — tracking it dirties the
+# working tree after each gate run, which is exactly when the tree must be readable.
+tsconfig.tsbuildinfo
 reports/*.json
 # Per-workbook demo state (seed snapshot). Fictional, but not source.
 .demo/
