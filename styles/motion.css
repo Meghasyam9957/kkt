@@ -1,0 +1,69 @@
+/**
+ * Srivillu motion system — the ONLY place animation timing lives.
+ *
+ * Components never invent durations or easings; they apply these classes (or read the
+ * tokens). Rules, from the approved design system §19:
+ *   - animate transform / opacity / clip-path only — never layout
+ *   - nothing loops, nothing is perpetual
+ *   - reduced motion zeroes every token (tokens.css) and these classes become static
+ *   - intensity by surface: public cinematic · admin subtle · operations minimal ·
+ *     investor refined · guest warm
+ */
+
+/* ---- Primitives ---- */
+
+.m-fade { animation: m-fade var(--motion-medium) var(--ease-enter) both; }
+@keyframes m-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.m-slide { animation: m-slide var(--motion-medium) var(--ease-enter) both; }
+@keyframes m-slide {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.m-scale { animation: m-scale var(--motion-medium) var(--ease-enter) both; }
+@keyframes m-scale {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.m-reveal { animation: m-reveal var(--motion-slow) var(--ease-editorial) both; }
+@keyframes m-reveal {
+  from { opacity: 0; clip-path: inset(0 0 100% 0); }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+
+/* Stagger: children arrive 40ms apart, capped at 8 — a list, a KPI row, property cards.
+   Applies to whichever primitive class the child carries. */
+.m-stagger > :nth-child(1) { animation-delay: 0ms; }
+.m-stagger > :nth-child(2) { animation-delay: 40ms; }
+.m-stagger > :nth-child(3) { animation-delay: 80ms; }
+.m-stagger > :nth-child(4) { animation-delay: 120ms; }
+.m-stagger > :nth-child(5) { animation-delay: 160ms; }
+.m-stagger > :nth-child(6) { animation-delay: 200ms; }
+.m-stagger > :nth-child(7) { animation-delay: 240ms; }
+.m-stagger > :nth-child(n + 8) { animation-delay: 280ms; }
+
+/* ---- Overlay enter/exit (Popover, Drawer, Dialog, Toast) ---- */
+
+.m-overlay-enter { animation: m-slide var(--motion-medium) var(--ease-enter) both; }
+.m-drawer-enter { animation: m-drawer var(--motion-medium) var(--ease-enter) both; }
+@keyframes m-drawer {
+  from { opacity: 0.4; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.m-scrim-enter { animation: m-fade var(--motion-fast) var(--ease-enter) both; }
+
+/* ---- Reduced motion: everything above resolves to its resting state.
+   The tokens are already 0ms under prefers-reduced-motion; this belt-and-braces rule
+   also kills delays and any animation a token missed. ---- */
+@media (prefers-reduced-motion: reduce) {
+  .m-fade, .m-slide, .m-scale, .m-reveal,
+  .m-overlay-enter, .m-drawer-enter, .m-scrim-enter,
+  .m-stagger > * {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    clip-path: none !important;
+  }
+}

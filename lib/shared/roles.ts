@@ -1,0 +1,136 @@
+/**
+ * ROLE AND CAPABILITY MODEL — the single definition of who may do what.
+ *
+ * Authorization is expressed as capabilities, not as role checks sprinkled through
+ * handlers. A handler declares the capability it needs; the role→capability table below
+ * is the only place that mapping exists. Adding a role never requires touching a handler.
+ *
+ * This module is data + pure functions only, and it lives in `lib/shared` on purpose: the
+ * app shell needs the capability table to decide which navigation entries to render, and
+ * pulling a server-guarded module into a client component would break the browser bundle.
+ *
+ * Nothing here grants anything. Hiding a menu item is a convenience; every request is
+ * still checked by the API guard, and the RBAC suite asserts that a hidden route is also
+ * refused when called directly.
+ */
+
+export const ROLES = ['SUPER_ADMIN', 'ADMIN', 'OPERATIONS', 'INVESTOR'] as const;
+export type Role = (typeof ROLES)[number];
+
+export const CAPABILITIES = [
+  // Financial surfaces
+  'dashboard.financial.view',
+  'revenue.read', 'expenses.read', 'capex.read', 'rent.read', 'cashflow.read', 'pnl.read',
+  'analytics.read', 'reports.read',
+  // Operational surfaces
+  'operations.view', 'reservations.read', 'guests.read',
+  'housekeeping.read', 'maintenance.read', 'inventory.read', 'compliance.read',
+  'properties.read',
+  // Investor surfaces
+  'investors.read.all',   // every investor — management only
+  'investor.self.read',   // the caller's OWN investor record, always server-scoped
+  /*
+   * Write capabilities (Phase B2). One per entity, named `<entity>.write`, so the
+   * write-governance tests can verify mechanically that every mutating route demands
+   * one and that INVESTOR holds none. There is deliberately NO `settings.write`-style
+   * business-rule writer here beyond the pre-existing SUPER_ADMIN-only entry:
+   * commercial rules remain management decisions made in the workbook.
+   */
+  'reservations.write', 'revenue.write', 'expenses.write', 'capex.write',
+  'rent.write', 'cashflow.write',
+  'housekeeping.write', 'maintenance.write', 'inventory.write',
+  'investors.write', 'distributions.write', 'properties.write',
+  // Administration
+  'settings.read', 'settings.write', 'users.manage', 'audit.read',
+  /**
+   * Demonstration controls: scenario switching and demo reset. Held by management roles
+   * only, and additionally gated by the environment — the capability alone is not enough,
+   * because production has no such controls to authorise.
+   */
+  'demo.control',
+  // AI (declared now, enforced from the start; features arrive in later phases)
+  'ai.copilot', 'ai.operations',
+] as const;
+export type Capability = (typeof CAPABILITIES)[number];
+
+/**
+ * Role → capability grants.
+ *
+ * OPERATIONS deliberately holds NO financial capability: an operations login that can read
+ * the P&L is an operations login that leaks the P&L. ADMIN deliberately cannot write
+ * settings — business rules stay editable in the workbook only, under one audited path.
+ */
+const GRANTS: Record<Role, readonly Capability[]> = {
+  SUPER_ADMIN: [...CAPABILITIES],
+
+  ADMIN: [
+    'dashboard.financial.view',
+    'revenue.read', 'expenses.read', 'capex.read', 'rent.read', 'cashflow.read', 'pnl.read',
+    'analytics.read', 'reports.read',
+    'operations.view', 'reservations.read', 'guests.read',
+    'housekeeping.read', 'maintenance.read', 'inventory.read', 'compliance.read',
+    'properties.read',
+    'investors.read.all',
+    // Full business administration (Phase B role decisions): every entity writer.
+    // Business RULES stay out of reach — no 'settings.write'.
+    'reservations.write', 'revenue.write', 'expenses.write', 'capex.write',
+    'rent.write', 'cashflow.write',
+    'housekeeping.write', 'maintenance.write', 'inventory.write',
+    'investors.write', 'distributions.write', 'properties.write',
+    'settings.read',            // read-only: no 'settings.write'
+    'audit.read',               // full internal READ access, per the Phase 5A role brief
+    'demo.control',             // demo-only in practice; the environment gate decides
+    'ai.copilot', 'ai.operations',
+  ],
+
+  OPERATIONS: [
+    'operations.view', 'reservations.read', 'guests.read',
+    'housekeeping.read', 'maintenance.read', 'inventory.read',
+    'properties.read',
+    // Operational writers only (Phase B role decisions): reservations incl.
+    // check-in/check-out, housekeeping, maintenance, inventory. NO financial writer,
+    // NO investor writer, NO property-master or settings writer.
+    'reservations.write', 'housekeeping.write', 'maintenance.write', 'inventory.write',
+    'ai.operations',
+  ],
+
+  INVESTOR: [
+    'investor.self.read',
+  ],
+};
+
+export function capabilitiesFor(role: Role): readonly Capability[] {
+  return GRANTS[role];
+}
+
+export function roleHasCapability(role: Role, capability: Capability): boolean {
+  return GRANTS[role].includes(capability);
+}
+
+export function isRole(value: unknown): value is Role {
+  return typeof value === 'string' && (ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * Capabilities that expose guest personal data. Investor-facing code paths must never
+ * require one of these — asserted by the security suite, not left to review.
+ */
+export const PII_CAPABILITIES: readonly Capability[] = ['guests.read', 'reservations.read'];
+
+/** Capabilities that expose internal financial detail — writers included, so the
+ * "OPERATIONS holds no financial capability" invariant covers mutation too. */
+export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
+  'dashboard.financial.view', 'revenue.read', 'expenses.read', 'capex.read',
+  'rent.read', 'cashflow.read', 'pnl.read', 'investors.read.all',
+  'revenue.write', 'expenses.write', 'capex.write', 'rent.write', 'cashflow.write',
+  'investors.write', 'distributions.write',
+];
+
+/** Every mutation capability. INVESTOR must hold none of these — asserted in tests. */
+export const WRITE_CAPABILITIES: readonly Capability[] = [
+  'reservations.write', 'revenue.write', 'expenses.write', 'capex.write',
+  'rent.write', 'cashflow.write',
+  'housekeeping.write', 'maintenance.write', 'inventory.write',
+  'investors.write', 'distributions.write', 'properties.write',
+  'settings.write',
+];

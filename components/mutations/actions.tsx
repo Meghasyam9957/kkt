@@ -1,0 +1,147 @@
+'use client';
+/**
+ * Write-flow entry points:
+ *
+ *   NewRecordButton  — "+ New Expense" → Drawer → MutationForm. Create flows.
+ *   RowActionButton  — "Check In", "Mark Clean", "Resolve" on a row. Zero-field actions
+ *                      submit directly with the truthful phase on the button itself;
+ *                      actions that need words (a cancellation reason, a resolution
+ *                      date) open a small dialog with exactly those fields.
+ *
+ * Both run the same useMutation contract: one operation id per opened intent, no
+ * optimistic state, failures stay visible with the operation id attached.
+ */
+import { useCallback, useState, type ReactNode } from 'react';
+import { Drawer, Modal } from '@/components/ui/overlay';
+import { Button } from '@/components/ui/primitives';
+import { Icon } from '@/components/ui/icons';
+import { useToast } from '@/components/ui/toast';
+import { MutationForm, type FieldSpec } from './MutationForm';
+import { useMutation } from './useMutation';
+
+/* ------------------------------------------------------------------ *
+ * Create flows
+ * ------------------------------------------------------------------ */
+
+export function NewRecordButton({
+  label, title, endpoint, fields, submitLabel, successTemplate, idField, constants, wide, children,
+}: {
+  /** Button text, e.g. "+ New Expense". */
+  label: string;
+  /** Drawer heading, e.g. "Record an expense". */
+  title: string;
+  endpoint: string;
+  fields: FieldSpec[];
+  submitLabel: string;
+  successTemplate: string;
+  idField?: string;
+  constants?: Record<string, unknown>;
+  wide?: boolean;
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  // Remount the form per opening: a reopened drawer is a NEW intent with a new
+  // operation id — reusing the old one would replay the previous submission.
+  const [intent, setIntent] = useState(0);
+
+  return (
+    <>
+      <Button variant="primary" onClick={() => { setIntent((n) => n + 1); setOpen(true); }}>
+        {label}
+      </Button>
+      <Drawer open={open} onClose={() => setOpen(false)} title={title} wide={wide}>
+        <MutationForm
+          key={intent}
+          endpoint={endpoint}
+          fields={fields}
+          submitLabel={submitLabel}
+          successTemplate={successTemplate}
+          idField={idField}
+          constants={constants}
+          onVerified={() => setOpen(false)}
+        >
+          {children}
+        </MutationForm>
+      </Drawer>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Row actions
+ * ------------------------------------------------------------------ */
+
+export function RowActionButton({
+  label, endpoint, method = 'POST', successTemplate, idField, fields, confirmTitle,
+  variant = 'secondary', size = 'sm',
+}: {
+  label: string;
+  endpoint: string;
+  method?: 'POST' | 'PATCH';
+  successTemplate: string;
+  idField?: string;
+  /**
+   * When present, the action opens a dialog carrying exactly these fields (a reason,
+   * a date) before anything is sent. Absent → one click, one submission.
+   */
+  fields?: FieldSpec[];
+  confirmTitle?: string;
+  variant?: 'secondary' | 'ghost' | 'danger' | 'primary';
+  size?: 'sm' | 'md';
+}) {
+  const { phase, failure, submit, reset } = useMutation(endpoint, method);
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [intent, setIntent] = useState(0);
+
+  const fire = useCallback(async () => {
+    const outcome = await submit({});
+    if (outcome.ok && outcome.record) {
+      const id = idField ? String(outcome.record[idField] ?? '') : '';
+      toast.push({ tone: 'success', title: successTemplate.replace('{id}', id) });
+    } else if (outcome.failure) {
+      toast.push({
+        tone: 'error',
+        title: outcome.failure.message,
+        detail: outcome.failure.details?.join(' '),
+        operationId: outcome.failure.operationId,
+      });
+      reset();      // a refused row action is over; the next click is a fresh intent
+    }
+  }, [submit, toast, successTemplate, idField, reset]);
+
+  if (!fields || fields.length === 0) {
+    const text = phase === 'applying' ? 'Applying…' : phase === 'verified' ? 'Done' : label;
+    return (
+      <Button
+        variant={variant} size={size} data-phase={phase}
+        disabled={phase === 'applying' || phase === 'verified'}
+        onClick={fire}
+      >
+        {phase === 'verified' ? <Icon name="check" size={14} /> : null}
+        {text}
+      </Button>
+    );
+  }
+
+  return (
+    <>
+      <Button variant={variant} size={size} onClick={() => { setIntent((n) => n + 1); setOpen(true); }}>
+        {label}
+      </Button>
+      <Modal open={open} onClose={() => setOpen(false)} title={confirmTitle ?? label}>
+        <MutationForm
+          key={intent}
+          endpoint={endpoint}
+          method={method}
+          fields={fields}
+          submitLabel={label}
+          successTemplate={successTemplate}
+          idField={idField}
+          onVerified={() => setOpen(false)}
+        />
+      </Modal>
+    </>
+  );
+  void failure;
+}

@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+*.local
+dist/
+.next/
+reports/*.json
+# Per-workbook demo state (seed snapshot). Fictional, but not source.
+.demo/

@@ -1,0 +1,105 @@
+'use client';
+/**
+ * Focus utilities — one implementation of overlay focus behaviour, used by Modal,
+ * Drawer, ConfirmationDialog and the mobile navigation. Nothing else re-implements
+ * focus handling; that is how the behaviour stays consistent and testable.
+ *
+ * What "trapped" means here:
+ *   - focus moves into the surface when it opens, to the first focusable element
+ *     (or the surface itself as a fallback);
+ *   - Tab and Shift+Tab cycle inside the surface and never leave it;
+ *   - Escape closes it;
+ *   - the page behind stops scrolling while it is open;
+ *   - focus returns to the element that opened it when it closes.
+ */
+import { useEffect, useRef, type RefObject } from 'react';
+
+const FOCUSABLE = [
+  'a[href]', 'button:not([disabled])', 'input:not([disabled])', 'select:not([disabled])',
+  'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
+export interface FocusTrapOptions {
+  /** Called on Escape and when the scrim is the click target. Required — a trap without an exit is a cage. */
+  onClose: () => void;
+  /** Lock body scroll while active (default true). */
+  lockScroll?: boolean;
+}
+
+export function useFocusTrap(
+  ref: RefObject<HTMLElement | null>,
+  active: boolean,
+  { onClose, lockScroll = true }: FocusTrapOptions,
+): void {
+  const restoreTo = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    const surface = ref.current;
+    if (!surface) return;
+
+    restoreTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
+    const focusables = (): HTMLElement[] =>
+      Array.from(surface.querySelectorAll<HTMLElement>(FOCUSABLE))
+        .filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+    // Into the surface. The surface itself is the fallback so focus never stays behind.
+    const first = focusables()[0];
+    if (first) first.focus();
+    else { surface.tabIndex = -1; surface.focus(); }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) { event.preventDefault(); return; }
+      const firstItem = items[0]!;
+      const lastItem = items[items.length - 1]!;
+      const current = document.activeElement;
+      if (event.shiftKey && (current === firstItem || !surface.contains(current))) {
+        event.preventDefault(); lastItem.focus();
+      } else if (!event.shiftKey && current === lastItem) {
+        event.preventDefault(); firstItem.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+
+    let previousOverflow = '';
+    if (lockScroll) {
+      previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      if (lockScroll) document.body.style.overflow = previousOverflow;
+      restoreTo.current?.focus?.();
+    };
+  }, [ref, active, onClose, lockScroll]);
+}
+
+/**
+ * Mark everything OUTSIDE an open overlay inert for assistive tech and the tab order.
+ * Used by the mobile navigation: the closed-over content must not be tabbable behind
+ * the scrim. Applies `inert` to the given elements while active.
+ */
+export function useInertOutside(
+  ref: RefObject<HTMLElement | null>,
+  active: boolean,
+): void {
+  useEffect(() => {
+    if (!active) return;
+    const keep = ref.current;
+    if (!keep || !keep.parentElement) return;
+    const siblings = Array.from(keep.parentElement.children)
+      .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== keep);
+    for (const el of siblings) el.setAttribute('inert', '');
+    return () => { for (const el of siblings) el.removeAttribute('inert'); };
+  }, [ref, active]);
+}

@@ -1,0 +1,143 @@
+/**
+ * Srivillu Home Stays — design tokens.
+ *
+ * FOUNDATION ONLY. No components, no layout: Phase 3 establishes the vocabulary so the
+ * Phase 4 UI has one place to read colour, type and spacing from. Values mirror
+ * lib/shared/brand.ts — that file is the source, this is its CSS projection.
+ *
+ * Light and dark are both defined here because retrofitting a dark palette after the UI
+ * exists means auditing every component again.
+ */
+
+:root {
+  /* ---- Brand palette (approved) ---- */
+  --brand-green: #4F5F2C;
+  --brand-green-dark: #3A4620;
+  --brand-green-light: #6E8140;
+  --brand-cream: #FAF6EC;
+  --brand-cream-deep: #F1EADA;
+  --brand-gold: #C9A227;
+  --brand-gold-light: #E0C46A;
+  --brand-terracotta: #B5651D;
+
+  /* ---- Surfaces & text ---- */
+  --surface-page: var(--brand-cream);
+  --surface-card: #FFFFFF;
+  --surface-sunken: var(--brand-cream-deep);
+  --surface-inverse: var(--brand-green-dark);
+  --border-subtle: #E2DCCB;
+  --border-strong: #C9C0A8;
+  --text-primary: #2B2B26;
+  --text-muted: #6B6B60;
+  --text-inverse: var(--brand-cream);
+  --text-brand: var(--brand-green);
+
+  /* ---- Status.
+     Deliberately not the brand green: on an operations board, colour must carry exactly
+     one meaning, and "available" must never be confused with "branded". ---- */
+  --status-available: var(--good-fg);
+  --status-occupied: var(--info-fg);
+  --status-cleaning: var(--warn-fg);
+  --status-maintenance: var(--bad-fg);
+  --status-blocked: #6B6B60;
+
+  /* ---- Semantic (mirrors the V1 workbook's conditional formats) ---- */
+  /* Warmer values tuned to sit with olive/cream (Phase B approval). Each hue keeps
+     exactly one meaning, none borrows the brand palette, and every fg is >= 4.5:1 on
+     cream, cream-deep and white. */
+  --good-fg: #2F6B3A;  --good-bg: #E9F1E4;
+  --warn-fg: #8F5700;  --warn-bg: #FBF0D9;
+  --bad-fg:  #A8322D;  --bad-bg:  #F8E3E0;
+  --info-fg: #2C5A8A;  --info-bg: #E6EDF5;
+  --neutral-fg: #6B6B60; --neutral-bg: #EFEBE0;
+
+  /* ---- Typography ---- */
+  --font-display: "Cormorant Garamond", "EB Garamond", Georgia, serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  /* Financial tables must align digit-for-digit; this is not decorative. */
+  --font-numeric-features: "tnum" 1, "lnum" 1;
+
+  --text-xs: 0.75rem;  --text-sm: 0.875rem; --text-base: 1rem;
+  --text-lg: 1.125rem; --text-xl: 1.375rem; --text-2xl: 1.75rem; --text-3xl: 2.25rem;
+  --leading-tight: 1.25; --leading-normal: 1.5;
+
+  /* ---- Spacing (4px base) ---- */
+  --space-1: 0.25rem; --space-2: 0.5rem;  --space-3: 0.75rem; --space-4: 1rem;
+  --space-5: 1.5rem;  --space-6: 2rem;    --space-8: 3rem;    --space-10: 4rem;
+
+  /* ---- Radius, elevation, motion ---- */
+  /* Squarer than before by intent (8→6, 12→10): rounded-everything is a SaaS tell. */
+  --radius-sm: 3px; --radius-md: 6px; --radius-lg: 10px; --radius-full: 999px;
+  --shadow-card: 0 1px 2px rgba(43, 43, 38, 0.06), 0 2px 8px rgba(43, 43, 38, 0.04);
+  --shadow-raised: 0 4px 16px rgba(43, 43, 38, 0.10);
+  /* Overlays only — resting surfaces carry no shadow. */
+  --shadow-float: 0 8px 24px rgba(43, 43, 38, 0.10), 0 1px 2px rgba(43, 43, 38, 0.06);
+  --shadow-drawer: -12px 0 40px rgba(43, 43, 38, 0.14);
+  --motion-fast: 120ms; --motion-base: 200ms;
+  --motion-medium: 220ms; --motion-slow: 420ms; --motion-cinematic: 900ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-editorial: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- Hairlines (the default separator; cards are the exception, not the rule) ---- */
+  --line: var(--border-subtle);
+  --line-strong: var(--border-strong);
+
+  /* ---- Deep accents: the only gold/terracotta permitted as TEXT.
+     Brand gold #C9A227 is 2.6:1 on cream — never text, only rules/ornament. ---- */
+  --gold-deep: #8C6D12;
+  --terracotta-deep: #8F4E14;
+
+  /* ---- Label tier: the smallest readable text in the product (11px floor). ---- */
+  --text-label: 0.6875rem;
+  --tracking-label: 0.08em;
+
+  /* ---- Layout ---- */
+  --nav-width: 248px;
+  --nav-width-collapsed: 64px;
+  --topbar-height: 56px;
+  --content-max: 1440px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-page: #17190F;
+    --surface-card: #1F2216;
+    --surface-sunken: #131509;
+    --border-subtle: #2E3323;
+    --border-strong: #414733;
+    --text-primary: #ECE7D8;
+    --text-muted: #A5A493;
+    --text-brand: #A8BC72;
+    --good-bg: #14301C; --warn-bg: #3A2A08; --bad-bg: #3A1512; --info-bg: #14243F;
+    --good-fg: #7BD69B; --warn-fg: #E9B75A; --bad-fg: #F09B94; --info-fg: #93BAF5;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-raised: 0 4px 16px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface-page: #17190F;
+  --surface-card: #1F2216;
+  --surface-sunken: #131509;
+  --border-subtle: #2E3323;
+  --border-strong: #414733;
+  --text-primary: #ECE7D8;
+  --text-muted: #A5A493;
+  --text-brand: #A8BC72;
+  --good-bg: #14301C; --warn-bg: #3A2A08; --bad-bg: #3A1512; --info-bg: #14243F;
+  --good-fg: #7BD69B; --warn-fg: #E9B75A; --bad-fg: #F09B94; --info-fg: #93BAF5;
+}
+
+/* Respect a user's reduced-motion preference from the very first component. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms; --motion-base: 0ms;
+    --motion-medium: 0ms; --motion-slow: 0ms; --motion-cinematic: 0ms;
+  }
+}
+
+/* Utility the financial tables will rely on. */
+.numeric { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: var(--font-numeric-features); }

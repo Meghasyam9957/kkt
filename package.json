@@ -1,0 +1,56 @@
+{
+  "name": "homestay-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Homestay Ops web platform — server layer (Phase 1-2: contract, Sheets adapter, KPI engine, parity gate)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "contract:generate": "node lib/contract/generate.mjs",
+    "contract:check": "node lib/contract/generate.mjs --check",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "parity": "node scripts/parity.mjs",
+    "gate": "npm run contract:check && npm run typecheck && npm run lint && npm run test && npm run build && node scripts/parity-report.mjs",
+    "parity:preflight": "node scripts/live-parity-preflight.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "demo:audit": "tsx scripts/demo-data-audit.ts",
+  "demo:preflight": "node scripts/demo-preflight.mjs",
+  "demo:spikes": "node scripts/sheets-write-spikes.mjs",
+  "demo:snapshot": "tsx scripts/demo-snapshot.ts",
+  "demo:users": "node scripts/demo-users.mjs",
+  "e2e:real": "playwright test e2e/real-demo.spec.ts",
+    "e2e": "playwright test",
+    "e2e:report": "playwright show-report reports/playwright"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
+    "googleapis": "^144.0.0",
+    "next": "^14.2.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/node": "^20.16.0",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35",
+    "happy-dom": "^20.11.6",
+    "jsdom": "^30.0.1",
+    "tsx": "^4.23.12",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

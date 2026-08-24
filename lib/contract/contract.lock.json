@@ -1,0 +1,16 @@
+{
+  "generatedFrom": "homestay-ops/src/00_constants.gs",
+  "v1SourceHash": "ddb108025afb909d",
+  "contractModelHash": "459a6a48fad6ea5f",
+  "counts": {
+    "sheets": 22,
+    "tabularSheets": 15,
+    "columns": 261,
+    "inputColumns": 227,
+    "calcColumns": 34,
+    "lists": 31,
+    "namedRanges": 60,
+    "monthlyMetrics": 35,
+    "businessRules": 11
+  }
+}

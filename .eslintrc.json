@@ -1,0 +1,7 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "rules": {
+    "@next/next/no-img-element": "off"
+  },
+  "ignorePatterns": ["lib/contract/contract.generated.ts", "node_modules", ".next", "reports"]
+}
