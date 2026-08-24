@@ -18,11 +18,17 @@ import '@/lib/server/only';
  * client takes over on both paths, and none of this is constructed.
  */
 import { InMemorySheetsClient } from '@/lib/server/sheets/client';
+import { processSlot } from '@/lib/server/runtime/process-state';
 import { demoStatus } from './store';
 import { buildDemoSeed } from './workbook-grids';
 
-let client: InMemorySheetsClient | null = null;
-let seedKey: string | null = null;
+/*
+ * Process-wide, not module-level. `next dev` re-evaluates this module when it compiles a
+ * route it has not served before; a module-level binding would drop the workbook — and
+ * with it every write a demonstration had just made. See lib/server/runtime/process-state.
+ */
+const clientSlot = processSlot<InMemorySheetsClient>('demo.live-store.client');
+const seedKeySlot = processSlot<string>('demo.live-store.seedKey');
 
 /** Scenario or reset — the states whose change discards web writes (by design: a demo
  *  reset is a return to the seeded fiction, web-entered rows included). */
@@ -33,8 +39,12 @@ function currentSeedKey(): string {
 
 export function getSharedDemoClient(): InMemorySheetsClient {
   const key = currentSeedKey();
-  if (!client) client = new InMemorySheetsClient();
-  if (seedKey !== key) {
+  let client = clientSlot.read();
+  if (!client) {
+    client = new InMemorySheetsClient();
+    clientSlot.write(client);
+  }
+  if (seedKeySlot.read() !== key) {
     const seed = buildDemoSeed();
     for (const [sheetName, rows] of Object.entries(seed.grids)) {
       client.setSheet(sheetName, rows);
@@ -42,7 +52,7 @@ export function getSharedDemoClient(): InMemorySheetsClient {
     for (const [name, values] of seed.named) {
       client.setNamedRange(name, values);
     }
-    seedKey = key;
+    seedKeySlot.write(key);
   }
   return client;
 }
@@ -54,11 +64,11 @@ export function getSharedDemoClient(): InMemorySheetsClient {
  */
 export function demoStoreVersion(): string {
   const c = getSharedDemoClient();
-  return `${seedKey}|w${c.writeLog.length}`;
+  return `${seedKeySlot.read()}|w${c.writeLog.length}`;
 }
 
 /** Tests only: drop the instance so a fresh test process state can be constructed. */
 export function __resetSharedDemoClient(): void {
-  client = null;
-  seedKey = null;
+  clientSlot.write(null);
+  seedKeySlot.write(null);
 }

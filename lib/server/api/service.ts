@@ -33,16 +33,24 @@ import { SupabaseAuthProvider } from '@/lib/server/auth/session';
 import { DemoAuthProvider } from '@/lib/server/auth/demo-identities';
 import { getReadCache } from '@/lib/data/providers';
 import { getSharedDemoClient } from '@/lib/server/demo/live-store';
+import { processSlot } from '@/lib/server/runtime/process-state';
 
-let router: ApiRouter | null = null;
-let serviceAudit: AuditLogger | null = null;
+/*
+ * Process-wide, not module-level. When Supabase is absent the router owns the ONLY copy
+ * of the operation ledger and the id sequences, both in memory. `next dev` re-evaluates
+ * this module when it compiles a new route, and a module-level binding would discard
+ * them mid-session: a verified operation would answer 404 on the very next poll.
+ * See lib/server/runtime/process-state.ts.
+ */
+const routerSlot = processSlot<ApiRouter>('api.service.router');
+const auditSlot = processSlot<AuditLogger>('api.service.audit');
 
 /**
  * Reset the service singletons. Tests use it between cases; the LIVE demo reset uses it
  * so in-memory operation/sequence state (when Supabase is absent) is genuinely discarded
  * rather than surviving a reset that claims the environment is back to seed.
  */
-export function __resetApiService(): void { router = null; serviceAudit = null; }
+export function __resetApiService(): void { routerSlot.write(null); auditSlot.write(null); }
 
 /**
  * The service's audit logger — same sinks the mutation pipeline writes through, so
@@ -50,11 +58,12 @@ export function __resetApiService(): void { router = null; serviceAudit = null; 
  */
 export function getServiceAudit(): AuditLogger {
   getApiRouter();
-  return serviceAudit!;
+  return auditSlot.read()!;
 }
 
 export function getApiRouter(): ApiRouter {
-  if (router) return router;
+  const existing = routerSlot.read();
+  if (existing) return existing;
   const resolved = resolveEnvironment();
 
   const supabaseClient = resolved.supabase ? makeSupabaseClient(resolved) : null;
@@ -76,7 +85,7 @@ export function getApiRouter(): ApiRouter {
       ? new CompositeAuditSink([new SupabaseAuditSink(supabaseClient), new InMemoryAuditSink()])
       : new InMemoryAuditSink(),
   );
-  serviceAudit = audit;
+  auditSlot.write(audit);
 
   const authProvider = resolved.supabase
     ? new SupabaseAuthProvider({ url: resolved.supabase.url, serviceRoleKey: resolved.supabase.serviceRoleKey })
@@ -91,9 +100,10 @@ export function getApiRouter(): ApiRouter {
     writesPermitted: resolved.writesPermitted,
   };
 
-  router = new ApiRouter({ authProvider, audit });
-  registerMutationHandlers(router, API_ROUTES, deps);
-  return router;
+  const built = new ApiRouter({ authProvider, audit });
+  registerMutationHandlers(built, API_ROUTES, deps);
+  routerSlot.write(built);
+  return built;
 }
 
 /**

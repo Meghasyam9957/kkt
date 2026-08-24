@@ -23,6 +23,7 @@ import {
 import {
   resolveEnvironment, assertDemoOnly, DemoOnlyOperationError, type ResolvedEnvironment,
 } from '@/lib/server/environment/config';
+import { processSlot } from '@/lib/server/runtime/process-state';
 
 /** A change a demonstration made to the working dataset, and can undo by resetting. */
 export interface DemoMutation {
@@ -58,7 +59,14 @@ interface DemoState {
   presentation: PresentationState;
 }
 
-let state: DemoState | null = null;
+/*
+ * Process-wide, not module-level: `next dev` re-evaluates this module when it compiles a
+ * route it has not served before, and a module-level binding would silently reset the
+ * demonstration mid-session. See lib/server/runtime/process-state.ts.
+ */
+const slot = processSlot<DemoState>('demo.store.state');
+const getState = (): DemoState | null => slot.read();
+const setState = (value: DemoState | null): void => slot.write(value);
 
 function freshState(
   scenario: DemoScenario,
@@ -77,8 +85,12 @@ function freshState(
 }
 
 function ensure(now: Date): DemoState {
-  if (!state) state = freshState(DEFAULT_DEMO_SCENARIO, now);
-  return state;
+  let current = getState();
+  if (!current) {
+    current = freshState(DEFAULT_DEMO_SCENARIO, now);
+    setState(current);
+  }
+  return current;
 }
 
 /* ------------------------------------------------------------------ *
@@ -182,8 +194,9 @@ export function setScenario(
   const now = options.now ?? new Date();
   const previous = ensure(now).scenario;
 
-  state = freshState(scenario, now, ensure(now).presentation);
-  state.mutations.push({
+  const next = freshState(scenario, now, ensure(now).presentation);
+  setState(next);
+  next.mutations.push({
     at: now.toISOString(),
     kind: 'scenario-change',
     detail: `${previous} → ${scenario}`,
@@ -224,11 +237,12 @@ export function resetDemoEnvironment(
   // Second stop: the control is hidden in presentation mode, and refused if posted anyway.
   if (!resetAvailable(now)) throw new PresentationModeError();
 
-  state = freshState(DEFAULT_DEMO_SCENARIO, now, current.presentation);
+  const fresh = freshState(DEFAULT_DEMO_SCENARIO, now, current.presentation);
+  setState(fresh);
 
   return {
-    scenario: state.scenario,
-    seededAt: state.seededAt,
+    scenario: fresh.scenario,
+    seededAt: fresh.seededAt,
     discardedMutations: discarded,
     marker: DEMO_MARKER,
   };
@@ -265,7 +279,7 @@ export function recordDemoGuestRequest(
 
 /** Test seam: forget all demo state. */
 export function __resetDemoStoreForTests(): void {
-  state = null;
+  setState(null);
 }
 
 export { DemoOnlyOperationError };
