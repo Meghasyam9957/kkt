@@ -84,10 +84,39 @@ first-blank-row write → read-after-write → cache invalidation → audit.
 | `contract:check` | OK — no drift (`459a6a48fad6ea5f`) |
 | `typecheck` | clean |
 | `lint` | clean |
-| `vitest` | **813 passed, 11 skipped, 0 failed** (25 files; includes 8 new D7 reset tests) |
+| `vitest` | **818 passed, 11 skipped, 0 failed** (25 files) |
 | `next build` | clean |
-| Playwright `smoke` + `writes` | **34 tests: 30 passed, 4 passed on retry (flaky under dev-server cold compiles), 0 failed** (4.0 min) |
-| Playwright `real-demo` | 20 tests, **all SKIP as PENDING** against fixtures — verified by running it; by design nothing can pass this suite on the in-memory provider |
+| Playwright (full suite) | **44 passed, 20 skipped, 0 failed, 0 flaky** (3.3 min, from a cold server) |
+| Playwright `real-demo` | the 20 skips above — **all PENDING** against fixtures; by design nothing can pass that suite on the in-memory provider |
+
+The four Playwright tests previously recorded here as "flaky under dev-server cold
+compiles" were not a timing artefact. They failed on a single worker with retries
+disabled, which timing cannot explain; the cause was §7a below, and they now pass first
+time.
+
+## 7a · Demonstration state survived only until the next screen
+
+Found and fixed after the first Phase D report. `next dev` re-evaluates the server module
+graph whenever it compiles a route it has not served before, which reinitialised every
+module-level singleton holding demonstration state — the in-memory workbook, the
+operation ledger, the id sequences and the read cache.
+
+Measured, before the fix: record an expense, open three not-yet-compiled screens, and
+`/api/operations-log/<id>` went **200 → 404** while the row vanished from the ledger.
+The documented walkthrough does exactly that — create a booking in step 5, open
+Housekeeping in step 7 — so a record could have disappeared in front of a client.
+
+Those singletons now live in a `globalThis`-keyed slot
+(`lib/server/runtime/process-state.ts`), the standard Next.js remedy. Production is
+unaffected: modules evaluate once there, so the first read initialises exactly as before.
+Derived caches were left module-level deliberately, with one exception — the read cache,
+whose *identity* is load-bearing because the mutation router calls `invalidate` on it;
+two instances would have meant a write clearing a cache nobody reads.
+
+Verified: same cold navigations now give **200 → 200** with the row intact;
+`e2e/demo-state.spec.ts` pins it by navigating to screens no other spec visits.
+`e2e/demo-reset.spec.ts` additionally covers the reset end to end for the first time —
+it runs in its own Playwright project so it cannot wipe state underneath the other specs.
 
 ## 8 · Demo reset (D7)
 
