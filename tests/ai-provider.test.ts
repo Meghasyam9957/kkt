@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   dispatchCompletion, resolveAiProvider, AI_PROVIDER_IDS,
-  type AiDispatchContext,
+  type AiDispatchContext, type AiRefusalReason,
 } from '@/lib/server/ai/dispatch';
 import { MockAiProvider, MOCK_REPLY } from '@/lib/server/ai/mock-provider';
 import {
@@ -204,45 +204,46 @@ describe('AI provider · token and cost accounting (§8.4)', () => {
  * ================================================================== */
 
 describe('AI dispatch · refusals are answers, and every one is logged', () => {
-  const refusals: Array<[string, Partial<AiDispatchContext>, RegExp]> = [
+  const refusals: Array<[string, Partial<AiDispatchContext>, RegExp, AiRefusalReason]> = [
     ['the integration is off', {
       feature: {
         integrationEnabled: false,
         switches: { ...ALL_FEATURES_OFF, copilot: true },
         budget: { cap: 25, spent: 0 },
       },
-    }, /no key is read/i],
+    }, /no key is read/i, 'INTEGRATION_DISABLED'],
     ['no budget cap is configured', {
       feature: {
         integrationEnabled: true,
         switches: { ...ALL_FEATURES_OFF, copilot: true },
         budget: { cap: null, spent: 0 },
       },
-    }, /until a cap is set/i],
+    }, /until a cap is set/i, 'BUDGET_UNCONFIGURED'],
     ['the budget is spent', {
       feature: {
         integrationEnabled: true,
         switches: { ...ALL_FEATURES_OFF, copilot: true },
         budget: { cap: 25, spent: 25 },
       },
-    }, /rather than continuing to spend/i],
+    }, /rather than continuing to spend/i, 'BUDGET_EXCEEDED'],
     ['the feature is switched off', {
       feature: {
         integrationEnabled: true,
         switches: ALL_FEATURES_OFF,
         budget: { cap: 25, spent: 0 },
       },
-    }, /switched off/i],
-    ['no pricing is configured', { pricing: null }, /cannot be costed/i],
+    }, /switched off/i, 'FEATURE_SWITCHED_OFF'],
+    ['no pricing is configured', { pricing: null }, /cannot be costed/i, 'NO_PRICING'],
   ];
 
-  for (const [label, overrides, message] of refusals) {
+  for (const [label, overrides, message, reason] of refusals) {
     it(`refuses when ${label}, and never calls the provider`, async () => {
       const provider = new MockAiProvider();
       const context = contextFor(overrides);
       const result = await dispatchCompletion(provider, requestFor(), context);
 
       expect(result.outcome).toBe('REFUSED');
+      expect(result.reason).toBe(reason);
       expect(result.text).toBeNull();
       expect(result.message).toMatch(message);
       expect(provider.calls).toEqual([]);
@@ -260,6 +261,7 @@ describe('AI dispatch · refusals are answers, and every one is logged', () => {
     const context = contextFor();
     const result = await dispatchCompletion(null, requestFor(), context);
     expect(result.outcome).toBe('REFUSED');
+    expect(result.reason).toBe('NO_PROVIDER');
     expect(result.message).toMatch(/no ai provider is configured/i);
     expect(sinkOf(context).records.length).toBe(1);
   });
@@ -291,6 +293,7 @@ describe('AI dispatch · a call that goes through', () => {
     const result = await dispatchCompletion(provider, requestFor(), context);
 
     expect(result.outcome).toBe('OK');
+    expect(result.reason).toBeNull();
     expect(result.text).toBe(MOCK_REPLY);
     expect(result.ungrounded).toEqual([]);
     expect(result.message).toBeNull();
@@ -384,6 +387,7 @@ describe('AI dispatch · provider failure is classified, not thrown at the calle
         new MockAiProvider({ fail: failure }), requestFor(), context,
       );
       expect(result.outcome).toBe(failure);
+      expect(result.reason).toBeNull();
       expect(result.text).toBeNull();
       expect(result.message).toMatch(/did not return an answer/i);
       expect(sinkOf(context).records.length).toBe(1);

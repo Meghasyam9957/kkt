@@ -28,7 +28,7 @@ import '@/lib/server/only';
 import { assertAiPayloadEnvironment } from '@/lib/server/ai/guard';
 import {
   aiFeatureStatus, findUngroundedFigures,
-  type AiFeatureContext, type AiUsageRecord,
+  type AiFeatureBlockedReason, type AiFeatureContext, type AiUsageRecord,
 } from '@/lib/server/ai/guardrails';
 import {
   AiProviderError, computeCost,
@@ -89,8 +89,25 @@ export type AiDispatchOutcome =
   | 'UNAVAILABLE'
   | 'INVALID_RESPONSE';
 
+/**
+ * Why a call was refused, as a code rather than a sentence.
+ *
+ * The first four are §8.4's own blocking reasons, surfaced rather than invented; the last
+ * two are this dispatcher's, and existed already as the messages on its two configuration
+ * refusals. `outcome` collapses all six to REFUSED because §8.4's logged field list has no
+ * slot for a reason — which is itself worth knowing, and is recorded in
+ * docs/PHASE9_READINESS.md rather than fixed by adding a ninth column here.
+ *
+ * These are technical codes. **§8 specifies no mapping from them to anything a person
+ * reads**, so none is written here; `message` carries §8.4's "clear message" for an
+ * operator, and a user-facing mapping is left to whoever specifies one.
+ */
+export type AiRefusalReason = AiFeatureBlockedReason | 'NO_PROVIDER' | 'NO_PRICING';
+
 export interface AiDispatchResult {
   outcome: AiDispatchOutcome;
+  /** Set only when the outcome is REFUSED. Distinguishes the six ways that happens. */
+  reason: AiRefusalReason | null;
   /** Null unless the provider answered. Never a fabricated stand-in. */
   text: string | null;
   /**
@@ -142,6 +159,7 @@ export async function dispatchCompletion(
 
   const finish = async (
     outcome: AiDispatchOutcome,
+    reason: AiRefusalReason | null,
     text: string | null,
     ungrounded: readonly string[],
     message: string | null,
@@ -161,25 +179,28 @@ export async function dispatchCompletion(
       outcome,
     };
     await context.sink.record(record);
-    return { outcome, text, ungrounded, message, usage: record };
+    return { outcome, reason, text, ungrounded, message, usage: record };
   };
 
-  const refuse = (message: string) =>
+  const refuse = (reason: AiRefusalReason, message: string) =>
     // A refusal has no model cost and no currency to state it in. Reporting the
     // configured currency, or none, is the only honest pair of options; the configured
     // one keeps every row in a usage table comparable.
-    finish('REFUSED', null, [], message, NO_TOKENS, 0, context.pricing?.currency ?? '');
+    finish('REFUSED', reason, null, [], message, NO_TOKENS, 0, context.pricing?.currency ?? '');
 
   // 2 · May this feature run at all (§8.4)?
   const status = aiFeatureStatus(request.feature, context.feature);
-  if (!status.enabled) return refuse(status.message ?? 'This AI feature is not available.');
+  if (!status.enabled) {
+    return refuse(status.reason!, status.message ?? 'This AI feature is not available.');
+  }
 
   // 3 · Is there something to call, and can the call be costed?
   if (!provider) {
-    return refuse('No AI provider is configured for this deployment.');
+    return refuse('NO_PROVIDER', 'No AI provider is configured for this deployment.');
   }
   if (!context.pricing) {
     return refuse(
+      'NO_PRICING',
       'No token pricing is configured, so this call cannot be costed and the monthly cap '
       + 'cannot be enforced. Running anyway is the silent overspend the cap exists to prevent.',
     );
@@ -192,7 +213,7 @@ export async function dispatchCompletion(
   } catch (error) {
     if (!(error instanceof AiProviderError)) throw error;
     return finish(
-      error.failure, null, [], `${FAILURE_MESSAGE} ${error.message}`,
+      error.failure, null, null, [], `${FAILURE_MESSAGE} ${error.message}`,
       NO_TOKENS, 0, context.pricing.currency,
     );
   }
@@ -202,6 +223,7 @@ export async function dispatchCompletion(
   const cost = computeCost(answer.usage, context.pricing);
   return finish(
     ungrounded.length === 0 ? 'OK' : 'FLAGGED',
+    null,
     answer.text,
     ungrounded,
     ungrounded.length === 0
