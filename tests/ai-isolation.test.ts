@@ -77,7 +77,7 @@ function aiSources(): Array<{ file: string; text: string }> {
  * scans below now cover it with. Cheap, and it is the only assertion here that notices a
  * file nobody thought to tell the suite about.
  */
-const AI_MODULES = ['copilot-context.ts', 'guard.ts'];
+const AI_MODULES = ['copilot-context.ts', 'guard.ts', 'guardrails.ts'];
 
 /** Every key name appearing anywhere in a payload, at any depth. */
 function allKeys(value: unknown, out: Set<string> = new Set()): Set<string> {
