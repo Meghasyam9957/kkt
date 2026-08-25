@@ -236,7 +236,11 @@ export class WorkbookViews {
       const earlier = new Set(settled.slice(0, i).map((m) => m.monthKey));
       const backtest = {
         series: settled.slice(0, i),
-        reservations: [],
+        // The real books, filtered to what existed before the month being re-estimated.
+        // Where the source records no booking date the engine counts none and says so,
+        // rather than either fabricating dates or silently using today's bookings.
+        reservations: this.workbook.reservations,
+        onHandAsOf: month.monthStart,
         monthKey: month.monthKey,
         asOf: month.monthStart,
         activeUnits: month.activeUnits,

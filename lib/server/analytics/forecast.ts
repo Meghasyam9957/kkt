@@ -30,6 +30,7 @@ import '@/lib/server/only';
  * class of probabilistic defects this codebase has already paid for once.
  */
 import { monthPeriod, occupiedNights, type Period } from './kpi';
+import { OCCUPANCY_STATUSES } from '@/lib/shared/domain';
 import type { MonthlyMetrics, ReservationRecord } from '@/lib/shared/domain';
 import type { Serial } from '@/lib/shared/dates';
 
@@ -61,6 +62,18 @@ export interface ConfidenceAssessment {
 }
 
 export type ForecastHorizon = 'occupancy' | 'revenue' | 'cashflow';
+
+/**
+ * Which set of bookings an estimate counted as its booking-on-hand.
+ *
+ *   current        the books as they stand — correct for a forecast of a future month
+ *   reconstructed  the books as they stood at a past date, rebuilt from `BookingDate`
+ *   unavailable    a past date whose books cannot be rebuilt, so NONE were counted
+ *
+ * The distinction is the whole difference between measuring §9's method and measuring a
+ * degenerate version of it, so it travels with the estimate rather than being assumed.
+ */
+export type OnHandBasis = 'current' | 'reconstructed' | 'unavailable';
 
 /**
  * Minimum complete, usable months before a horizon may be estimated. §9 states 2 for
@@ -136,6 +149,8 @@ export interface ForecastInputs {
   propertyRates: PropertyRateContribution[];
   /** The cash-flow horizon's four §9 terms. Null on every other horizon. */
   cash: CashFlowInputs | null;
+  /** Which books `bookingOnHandNights` was counted from. See `OnHandBasis`. */
+  onHandBasis: OnHandBasis;
 }
 
 /**
@@ -187,6 +202,12 @@ export interface ForecastAccuracy {
   variance: number;
   /** variance ÷ forecast, or null when the forecast was zero. */
   variancePct: number | null;
+  /**
+   * Which books the re-estimate had. `unavailable` means it ran with no booking-on-hand
+   * at all, so it measures the pickup basis alone and understates the real method — the
+   * screen must say so rather than presenting the gap as the method's accuracy.
+   */
+  basis: OnHandBasis;
 }
 
 const safeDiv = (numerator: number, denominator: number): number =>
@@ -243,6 +264,41 @@ function estimateNights(
  * The demonstration year deliberately contains months that fail this (August dormant,
  * March not yet traded), and they are excluded rather than averaged in as zeros.
  */
+/**
+ * The books as they stood at a given date — or an honest refusal to guess.
+ *
+ * A forecast of a future month counts today's bookings, because those ARE its books. A
+ * re-estimate of a month that has already happened must not: counting bookings taken
+ * after the fact hands it the answer, and every past month then looks perfectly predicted.
+ *
+ * Reconstruction needs `BookingDate` on every booking that could matter. If even one is
+ * missing, the set cannot be rebuilt — the missing one might be exactly the booking that
+ * was on the books — so nothing is counted and the caller is told. A partial
+ * reconstruction presented as a complete one is worse than none.
+ *
+ * One limit is worth stating plainly: this rebuilds which bookings EXISTED, not what
+ * status each held at the time. `BookingStatus` records only today's state, so a booking
+ * later cancelled is absent from a reconstruction that should have counted it. The
+ * workbook does not version status, so this is a floor on the accuracy of any
+ * reconstruction rather than something to be fixed here.
+ */
+export function booksAsAt(
+  reservations: readonly ReservationRecord[],
+  asAt: Serial | undefined,
+): { bookings: readonly ReservationRecord[]; basis: OnHandBasis } {
+  if (asAt === undefined) return { bookings: reservations, basis: 'current' };
+
+  const couldCount = reservations.filter((b) =>
+    (OCCUPANCY_STATUSES as readonly string[]).includes(b.BookingStatus));
+  if (couldCount.some((b) => b.BookingDate === null || b.BookingDate === undefined)) {
+    return { bookings: [], basis: 'unavailable' };
+  }
+  return {
+    bookings: couldCount.filter((b) => (b.BookingDate as Serial) <= asAt),
+    basis: 'reconstructed',
+  };
+}
+
 export function usableHistory(series: readonly MonthlyMetrics[], asOf: Serial): MonthlyMetrics[] {
   return series.filter((m) =>
     m.monthEnd <= asOf && (m.grossRevenue > 0 || m.operatingExpenses > 0));
@@ -337,6 +393,8 @@ function insufficient(
       adrBasis: null,
       propertyRates: [],
       cash: null,
+      // Nothing was consulted: below the minimum, no books are counted at all.
+      onHandBasis: 'unavailable',
     },
     reason:
       `${usableMonths} complete month${usableMonths === 1 ? '' : 's'} of trading history; ` +
@@ -355,6 +413,12 @@ export interface OccupancyForecastRequest {
   asOf: Serial;
   /** Units on sale, from `activeUnitCount`. */
   activeUnits: number;
+  /**
+   * Count only bookings made on or before this date — set when re-estimating a month
+   * that has already happened, so the estimate cannot see bookings taken afterwards.
+   * Omitted for a real forecast, where today's books ARE the books.
+   */
+  onHandAsOf?: Serial;
   /**
    * Per-unit monthly history, oldest first, for §9's property-level ADR. Optional: when
    * it is absent the revenue horizon falls back to the portfolio rate and says so in
@@ -391,7 +455,8 @@ export function forecastOccupancy(request: OccupancyForecastRequest): ForecastEs
   // Nights already confirmed for the target month. `occupiedNights` counts exactly the
   // occupancy statuses the rest of the engine counts, so on-hand and actuals are the
   // same measurement taken at different times.
-  const bookingOnHandNights = occupiedNights([...reservations], period);
+  const books = booksAsAt(reservations, request.onHandAsOf);
+  const bookingOnHandNights = occupiedNights([...books.bookings], period);
 
   const window = history.slice(-PICKUP_WINDOW_MONTHS);
   const nights = estimateNights(
@@ -421,6 +486,7 @@ export function forecastOccupancy(request: OccupancyForecastRequest): ForecastEs
       adrBasis: null,
       propertyRates: [],
       cash: null,
+      onHandBasis: books.basis,
     },
     reason: null,
   };
@@ -540,6 +606,8 @@ export function forecastRevenue(
       adrBasis: propertyLevel ? 'property' : 'portfolio',
       propertyRates,
       cash: null,
+      // Inherited from `...occupancy.inputs` above: the revenue horizon takes its nights
+      // from the occupancy estimate, so it was built on exactly the same books.
     },
     reason: null,
   };
@@ -649,6 +717,8 @@ export function forecastCashFlow(request: CashFlowForecastRequest): ForecastEsti
         variableMonthsUsed: variable.length,
         netMovement,
       },
+      // The cash horizon counts payouts, not nights; no books are read for it here.
+      onHandBasis: 'unavailable',
     },
     reason: null,
   };
@@ -700,5 +770,6 @@ export function forecastVsActual(
     actual,
     variance,
     variancePct: estimate.value === 0 ? null : variance / estimate.value,
+    basis: estimate.inputs.onHandBasis,
   };
 }

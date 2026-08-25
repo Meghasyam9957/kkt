@@ -227,6 +227,10 @@ export function buildDemoWorkbook(
           Platform: platform.name,
           PlatformResID: platform.name === 'Direct' ? '' : `${platform.name.slice(0, 2).toUpperCase()}${100000 + bookingSeq}`,
           PropertyID: property.PropertyID,
+          // Not modelled — see ReservationRecord.BookingDate. The seeded year
+          // therefore cannot support a faithful historical re-estimate, and the
+          // forecast screen says so rather than implying one.
+          BookingDate: null,
           BookingStatus: status,
           GuestName: `${GUEST_FIRST[Math.floor(rand() * GUEST_FIRST.length)]} ${GUEST_LAST[Math.floor(rand() * GUEST_LAST.length)]}`,
           Adults: 1 + Math.floor(rand() * Math.min(4, property.MaxGuests)),

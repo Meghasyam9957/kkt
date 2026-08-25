@@ -61,6 +61,7 @@ function booking(o: Partial<ReservationRecord> & {
     Platform: o.Platform,
     PlatformResID: o.PlatformResID ?? '',
     PropertyID: o.PropertyID,
+    BookingDate: o.BookingDate ?? null,
     BookingStatus: o.BookingStatus,
     GuestName: o.GuestName ?? 'Test Guest',
     Adults: o.Adults ?? 2,

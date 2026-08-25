@@ -320,7 +320,7 @@ export class ReservationRepository extends SheetRepository<ReservationRecord> {
     const r = reader('RESERVATIONS', row);
     return {
       BookingID: r.text('BookingID'), Platform: r.text('Platform'), PlatformResID: r.text('PlatformResID'),
-      PropertyID: r.text('PropertyID'), BookingStatus: r.text('BookingStatus') as BookingStatus,
+      PropertyID: r.text('PropertyID'), BookingDate: r.date('BookingDate'), BookingStatus: r.text('BookingStatus') as BookingStatus,
       GuestName: r.text('GuestName'), Adults: r.num('Adults'), Children: r.num('Children'),
       CheckInDate: r.date('CheckInDate'), CheckOutDate: r.date('CheckOutDate'),
       BaseRate: r.num('BaseRate'), RoomRevenue: r.num('RoomRevenue'), CleaningFee: r.num('CleaningFee'),

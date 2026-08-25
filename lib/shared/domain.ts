@@ -30,6 +30,15 @@ export interface ReservationRecord {
   Platform: string;
   PlatformResID: string;
   PropertyID: string;
+  /**
+   * 04_RESERVATIONS BookingDate — when the booking was MADE, not when the stay is.
+   *
+   * Null when the source does not supply it. The generated demonstration dataset
+   * does not: inventing lead times would fabricate the very evidence a historical
+   * re-estimate is supposed to test. Anything reasoning about what was on the books
+   * at a past date must therefore handle null rather than assume a date exists.
+   */
+  BookingDate: Serial | null;
   BookingStatus: BookingStatus | string;
   GuestName: string;
   Adults: number;

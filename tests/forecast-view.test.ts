@@ -41,6 +41,7 @@ function expense(over: Partial<ExpenseRecord> & { Date: number; Amount: number }
 function booking(over: Partial<ReservationRecord>): ReservationRecord {
   return {
     BookingID: 'BK-TEST', Platform: 'Direct', PlatformResID: '', PropertyID: 'HYD-501',
+    BookingDate: null,
     BookingStatus: 'Confirmed', GuestName: 'Test Guest', Adults: 2, Children: 0,
     CheckInDate: null, CheckOutDate: null,
     BaseRate: 0, RoomRevenue: 0, CleaningFee: 0, ExtraGuestFee: 0, OtherCharges: 0,
@@ -292,5 +293,68 @@ describe('forecast inputs · blocked units', () => {
     if (view.occupancy.value !== null) {
       expect(view.occupancy.value).toBeLessThanOrEqual(view.occupancy.inputs.availableNights);
     }
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Historical booking-on-hand
+ * ------------------------------------------------------------------ */
+
+describe('forecast inputs · the books behind a re-estimate', () => {
+  it('reports that the books cannot be rebuilt when a booking records no date', () => {
+    // The generated demonstration data does not model when a booking was made, and no
+    // lead times are invented to cover that. The re-estimate therefore runs on the pickup
+    // half alone and says so, which is what lets the screen describe itself honestly.
+    const reservations = WINDOW.flatMap((month) => PROPERTIES.map((p) => booking({
+      BookingID: `BK-${month}-${p.PropertyID}`, PropertyID: p.PropertyID,
+      BookingStatus: 'Checked Out', BookingDate: null,
+      CheckInDate: D(`${month}-10`), CheckOutDate: D(`${month}-15`), RoomRevenue: 30_000,
+    })));
+    const view = forecastOf(workbookWith({ reservations }));
+
+    expect(view.accuracy.length).toBeGreaterThan(0);
+    for (const row of view.accuracy) expect(row.basis).toBe('unavailable');
+  });
+
+  it('treats an empty register as a rebuilt empty book, not as an unknown one', () => {
+    // No bookings at all is knowledge, not absence of it: the books genuinely were empty.
+    const view = forecastOf(workbookWith());
+    for (const row of view.accuracy) expect(row.basis).toBe('reconstructed');
+  });
+
+  it('rebuilds them when the source does record booking dates', () => {
+    const reservations = WINDOW.flatMap((month) => PROPERTIES.map((p) => booking({
+      BookingID: `BK-${month}-${p.PropertyID}`, PropertyID: p.PropertyID,
+      BookingStatus: 'Checked Out',
+      // Booked the month before the stay, so it was genuinely on the books at the time.
+      BookingDate: D(`${month}-01`) - 20,
+      CheckInDate: D(`${month}-10`), CheckOutDate: D(`${month}-15`),
+      RoomRevenue: 30_000,
+    })));
+    const view = forecastOf(workbookWith({ reservations }));
+
+    expect(view.accuracy.length).toBeGreaterThan(0);
+    for (const row of view.accuracy) expect(row.basis).toBe('reconstructed');
+  });
+
+  it('counts a booking made after the month began as absent from that month’s books', () => {
+    const reservations = WINDOW.flatMap((month) => PROPERTIES.map((p) => booking({
+      BookingID: `BK-${month}-${p.PropertyID}`, PropertyID: p.PropertyID,
+      BookingStatus: 'Checked Out',
+      // Booked mid-stay-month: not on the books when that month opened.
+      BookingDate: D(`${month}-09`),
+      CheckInDate: D(`${month}-10`), CheckOutDate: D(`${month}-15`),
+      RoomRevenue: 30_000,
+    })));
+    const view = forecastOf(workbookWith({ reservations }));
+
+    // Still a genuine reconstruction — it simply found nothing on the books that early.
+    for (const row of view.accuracy) expect(row.basis).toBe('reconstructed');
+    expect(view.accuracy.length).toBeGreaterThan(0);
+  });
+
+  it('uses today’s books for the forward estimate, which is what a forecast should do', () => {
+    const view = forecastOf(workbookWith());
+    expect(view.occupancy.inputs.onHandBasis).toBe('current');
   });
 });

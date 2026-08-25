@@ -255,6 +255,10 @@ function applyScenarioSeeds(
     Platform: 'Direct',
     PlatformResID: '',
     PropertyID: 'HYD-501',
+    // The demonstration dataset does not model when a booking was made. Inventing
+    // lead times would fabricate exactly the evidence a historical re-estimate is
+    // meant to test, so the gap is declared rather than filled.
+    BookingDate: null,
     BookingStatus: 'Confirmed',
     GuestName: 'Demo Guest',
     Adults: 2,

@@ -225,6 +225,33 @@ function Forecast({ view }: { view: ForecastView }) {
   );
 }
 
+const RE_ESTIMATED =
+  "Each completed month re-estimated from the months before it, so the method's accuracy is "
+  + 'visible rather than asserted. Later rates are excluded, because pricing a past month at '
+  + 'a rate the estimate could not have known would flatter it.';
+
+/**
+ * What the re-estimate had to work with, said plainly.
+ *
+ * §9's method is booking-on-hand PLUS pickup. When the books of the time can be rebuilt,
+ * these figures measure that method. When they cannot, they measure the pickup half alone
+ * and therefore understate it — which the reader is told, because an accuracy table that
+ * quietly measures something else is worse than none.
+ */
+function accuracySubtitle(rows: ForecastAccuracy[]): string {
+  if (rows.some((r) => r.basis === 'unavailable')) {
+    return `${RE_ESTIMATED} Confirmed bookings are excluded too: this data records no booking `
+      + 'date, so which bookings existed at the time cannot be reconstructed, and counting '
+      + "today's would make every past month look perfectly predicted. What is measured is "
+      + 'therefore the pickup basis on its own — the full method, with the month’s '
+      + 'confirmed bookings behind it, is more accurate than these figures suggest.';
+  }
+  return `${RE_ESTIMATED} Booking-on-hand is rebuilt from the bookings that had actually been `
+    + 'made when each month opened, so this measures the whole method rather than half of it. '
+    + 'One limit remains: a booking cancelled later is absent from the rebuild, because the '
+    + 'workbook records only its status today.';
+}
+
 /**
  * One horizon's forecast-vs-actual. Nights and rupees get separate tables rather than
  * separate rows: a single column of numbers where some are nights and some are money is
@@ -235,10 +262,7 @@ function Accuracy({
 }: { title: string; unit: 'nights' | 'currency'; rows: ForecastAccuracy[] }) {
   return (
     <Card>
-      <CardHeader
-        title={title}
-        subtitle="Each completed month re-estimated from the months before it, so the method's accuracy is visible rather than asserted. Confirmed bookings and later rates are both excluded from the re-estimate: this view cannot reconstruct which bookings existed at the time, and counting today's would make every past month look perfectly predicted. What is measured is therefore the pickup basis on its own — the full method, with the month's confirmed bookings behind it, is more accurate than these figures suggest."
-      />
+      <CardHeader title={title} subtitle={accuracySubtitle(rows)} />
       <CardBody className="sv-card__body--flush">
         {rows.length === 0 ? (
           <EmptyState

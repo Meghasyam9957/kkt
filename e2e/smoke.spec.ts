@@ -193,6 +193,11 @@ test('the Forecast screen estimates the month ahead and shows its working', asyn
   await expect(main).toContainText('Occupancy against actual');
   await expect(main).toContainText('Revenue against actual');
 
+  // The demonstration data records no booking dates, so the re-estimate cannot rebuild
+  // the books of the time. The screen must say which of the two it measured.
+  await expect(main, 'an accuracy table must state what it actually measured')
+    .toContainText(/records no booking date/);
+
   // §9's third horizon. The four terms are on screen, and so is the reason the figure is
   // deliberately conservative.
   await expect(main).toContainText('Cash flow');

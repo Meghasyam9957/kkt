@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, assessConfidence,
+  booksAsAt,
   MINIMUM_USABLE_MONTHS, FULL_HISTORY_MONTHS, PICKUP_WINDOW_MONTHS,
   propertyRateMix, forecastCashFlow,
   type OccupancyForecastRequest, type PropertyMonthMetrics, type CashFlowForecastRequest,
@@ -734,5 +735,111 @@ describe('forecast · seasonality gating', () => {
     }));
     expect(out.inputs.usableMonths).toBe(FULL_HISTORY_MONTHS);
     expect(out.method).not.toMatch(/season/i);
+  });
+});
+
+/* ================================================================== *
+ * 10 · The books as they stood — historical booking-on-hand
+ *
+ * §9's occupancy method is booking-on-hand PLUS residual pickup. A re-estimate of a past
+ * month that counts no books at all is measuring the pickup half on its own, and will
+ * understate the method it claims to be measuring. `booksAsAt` rebuilds the on-hand set
+ * from `BookingDate` where the source records one — and refuses, visibly, where it does
+ * not, rather than guessing or quietly using today's bookings.
+ * ================================================================== */
+
+describe('forecast · the books as they stood', () => {
+  const dated = (
+    checkIn: string, checkOut: string, bookedOn: string | null, status = 'Confirmed',
+  ): ReservationRecord => ({
+    BookingStatus: status,
+    BookingDate: bookedOn === null ? null : isoToSerial(bookedOn),
+    CheckInDate: isoToSerial(checkIn),
+    CheckOutDate: isoToSerial(checkOut),
+  }) as unknown as ReservationRecord;
+
+  const march = () => [
+    // Booked well before March: on the books at the start of the month.
+    dated('2027-03-05', '2027-03-09', '2027-01-10'),
+    // Booked during March: NOT on the books when the month began.
+    dated('2027-03-20', '2027-03-25', '2027-03-18'),
+  ];
+
+  it('uses today’s books when no as-at date is given — a forecast’s books are today’s', () => {
+    const out = booksAsAt(march(), undefined);
+    expect(out.basis).toBe('current');
+    expect(out.bookings).toHaveLength(2);
+  });
+
+  it('rebuilds the set that existed at a past date', () => {
+    const out = booksAsAt(march(), monthPeriod('2027-03').start);
+    expect(out.basis).toBe('reconstructed');
+    expect(out.bookings).toHaveLength(1);
+    expect(out.bookings[0]!.CheckInDate).toBe(isoToSerial('2027-03-05'));
+  });
+
+  it('refuses to rebuild when any booking that could count has no date', () => {
+    // The missing one might be exactly the booking that was on the books, so a partial
+    // reconstruction would be a confident guess. None are counted, and the caller is told.
+    const out = booksAsAt([...march(), dated('2027-03-11', '2027-03-14', null)],
+      monthPeriod('2027-03').start);
+    expect(out.basis).toBe('unavailable');
+    expect(out.bookings).toEqual([]);
+  });
+
+  it('is not blocked by an undated booking that could never have counted', () => {
+    // Cancelled bookings are not occupancy, so their dates are irrelevant to the rebuild.
+    const out = booksAsAt([...march(), dated('2027-03-11', '2027-03-14', null, 'Cancelled')],
+      monthPeriod('2027-03').start);
+    expect(out.basis).toBe('reconstructed');
+    expect(out.bookings).toHaveLength(1);
+  });
+
+  it('re-estimates a past month from its own books, not from today’s', () => {
+    const series = [
+      traded('2026-12', 30, 4000), traded('2027-01', 30, 4000), traded('2027-02', 30, 4000),
+    ];
+    const req = {
+      series, monthKey: '2027-03', asOf: asOfStartOf('2027-03'), activeUnits: UNITS,
+      reservations: march(),
+    };
+
+    const asItStood = forecastOccupancy({ ...req, onHandAsOf: asOfStartOf('2027-03') });
+    const withHindsight = forecastOccupancy(req);
+
+    // 4 nights were on the books when March began; 9 are on them now. Counting today's
+    // would hand the re-estimate 5 nights it could not have known about.
+    expect(asItStood.inputs.onHandBasis).toBe('reconstructed');
+    expect(asItStood.inputs.bookingOnHandNights).toBe(4);
+    expect(withHindsight.inputs.onHandBasis).toBe('current');
+    expect(withHindsight.inputs.bookingOnHandNights).toBe(9);
+  });
+
+  it('counts no books at all when the source records no booking dates', () => {
+    const series = [traded('2026-12', 30, 4000), traded('2027-01', 30, 4000)];
+    const out = forecastOccupancy({
+      series, monthKey: '2027-03', asOf: asOfStartOf('2027-03'), activeUnits: UNITS,
+      reservations: [dated('2027-03-05', '2027-03-09', null)],
+      onHandAsOf: asOfStartOf('2027-03'),
+    });
+
+    expect(out.inputs.onHandBasis).toBe('unavailable');
+    expect(out.inputs.bookingOnHandNights).toBe(0);
+    // The estimate still stands — it is the pickup half alone, and it says so.
+    expect(out.status).toBe('SUFFICIENT');
+  });
+
+  it('carries the basis onto the accuracy row, so a comparison states what it measured', () => {
+    const series = [
+      traded('2026-12', 30, 4000), traded('2027-01', 30, 4000), traded('2027-02', 30, 4000),
+    ];
+    const settled = [...series, traded('2027-03', 36, 4000)];
+    const estimate = forecastOccupancy({
+      series, monthKey: '2027-03', asOf: asOfStartOf('2027-03'), activeUnits: UNITS,
+      reservations: march(), onHandAsOf: asOfStartOf('2027-03'),
+    });
+
+    const accuracy = forecastVsActual(estimate, settled, asOfStartOf('2027-04'));
+    expect(accuracy!.basis).toBe('reconstructed');
   });
 });
