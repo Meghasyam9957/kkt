@@ -39,6 +39,27 @@ export type ForecastStatus = 'SUFFICIENT' | 'INSUFFICIENT_DATA';
 /** §9: "Confidence: HIGH / MEDIUM / LOW … a stated rule, not a vibe." */
 export type ForecastConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
 
+/**
+ * §9's confidence, and what could be evaluated of it.
+ *
+ * `level` is null while §9's rule cannot be applied in full — see `assessConfidence`. The
+ * shape mirrors the `unavailable` idiom the KPI layer already uses for a business rule
+ * management has not configured, so a screen renders this the same way it renders any
+ * other figure it is not entitled to state.
+ */
+export interface ConfidenceAssessment {
+  /** HIGH / MEDIUM / LOW, or null when the rule cannot be applied in full. */
+  level: ForecastConfidence | null;
+  /** Why no level is stated. Null only when one is. */
+  unavailable: { reason: 'CONFIGURATION_REQUIRED' | 'INSUFFICIENT_DATA'; message: string } | null;
+  /** §9 input 1 — complete usable months behind the estimate. */
+  historyMonths: number;
+  /** §9 input 2 — share of the estimate already confirmed, 0..1. */
+  bookingOnHandCoverage: number;
+  /** §9 input 3 — null while no boundary is configured, so it is never evaluated. */
+  variance: number | null;
+}
+
 export type ForecastHorizon = 'occupancy' | 'revenue' | 'cashflow';
 
 /**
@@ -49,8 +70,11 @@ export type ForecastHorizon = 'occupancy' | 'revenue' | 'cashflow';
  */
 export const MINIMUM_USABLE_MONTHS = 2;
 
-/** §9 applies a month-of-year index only at 12+ months. Used by the confidence rule as
- *  the boundary between "limited history" and "a full year behind the estimate". */
+/**
+ * §9 applies a month-of-year index only at 12+ months, and this is that boundary. It is
+ * also the anchor §9's confidence rule would use for "a full year behind the estimate" —
+ * see `assessConfidence`, which cannot state a level until the variance boundary exists.
+ */
 export const FULL_HISTORY_MONTHS = 12;
 
 /** §9: the rolling window for residual pickup. */
@@ -147,7 +171,7 @@ export interface ForecastEstimate {
   unit: 'nights' | 'ratio' | 'currency';
   /** Occupancy also reports the implied ratio; null when insufficient. */
   occupancyPct: number | null;
-  confidence: ForecastConfidence | null;
+  confidence: ConfidenceAssessment;
   inputs: ForecastInputs;
   /** Human-readable, present only when INSUFFICIENT_DATA. */
   reason: string | null;
@@ -225,28 +249,63 @@ export function usableHistory(series: readonly MonthlyMetrics[], asOf: Serial): 
 }
 
 /**
- * §9's confidence rule, expressed only in numbers §9 itself states.
+ * §9's confidence rule — and why no level is stated.
  *
- *   history length         2 (the minimum) and 12 (the point §9 trusts a full year)
+ * §9: "Confidence: HIGH / MEDIUM / LOW derived from history length, VARIANCE and
+ * booking-on-hand coverage — a stated rule, not a vibe."
+ *
+ * Three inputs are named. Two can be evaluated here:
+ *
+ *   history length         §9 gives 2 (the minimum) and 12 (a full year)
  *   booking-on-hand cover  the share of the estimate already confirmed, 0..1
  *
- * §9 names a third input, variance, but states no boundary for it. Rather than invent a
- * coefficient nobody approved, variance is deliberately not consulted, and that omission
- * is reported rather than hidden. Adding it is a business decision, not a code change.
+ * The third cannot. Nothing in this repository states a variance boundary: §9 names the
+ * input and stops, no `CFG_*` business rule carries one, and the only "variance" the
+ * workbook does define — `PayoutVariance` against `CFG_PAYOUT_TOLERANCE` — is payout
+ * reconciliation on a single booking, a different quantity in a different domain.
+ * Borrowing it would be inventing a rule under cover of reusing one.
  *
- *   HIGH    a full year of history AND the month already fully on the books
- *   LOW     limited history AND the month not yet on the books
- *   MEDIUM  everything between
+ * So no level is stated. Publishing HIGH/MEDIUM/LOW from two of three inputs would put
+ * §9's own words on a figure §9's own rule did not produce, and confidence is read by
+ * management as a reason to act or wait — the last place false precision belongs. The
+ * evaluable inputs still travel with the estimate, so nothing is hidden; what is withheld
+ * is the label.
+ *
+ * This resolves the moment management states the boundary. That is a §13-class decision
+ * ("questions only management can answer"), not a code change: the rule it lands in is
+ * this function, and its two existing anchors — §9's 2 and 12 — are already here.
  */
-export function classifyConfidence(
+export const VARIANCE_RULE_UNCONFIGURED = {
+  reason: 'CONFIGURATION_REQUIRED' as const,
+  message:
+    'Confidence needs a variance boundary, which no business rule states. History length '
+    + 'and booking-on-hand coverage are shown instead.',
+};
+
+export function assessConfidence(
   usableMonths: number,
   bookingOnHandCoverage: number,
-): ForecastConfidence {
-  const fullHistory = usableMonths >= FULL_HISTORY_MONTHS;
-  const fullyOnHand = bookingOnHandCoverage >= 1;
-  if (fullHistory && fullyOnHand) return 'HIGH';
-  if (!fullHistory && !fullyOnHand) return 'LOW';
-  return 'MEDIUM';
+): ConfidenceAssessment {
+  if (usableMonths < MINIMUM_USABLE_MONTHS) {
+    return {
+      level: null,
+      unavailable: {
+        reason: 'INSUFFICIENT_DATA',
+        message: `${usableMonths} complete month${usableMonths === 1 ? '' : 's'} of trading `
+          + `history; ${MINIMUM_USABLE_MONTHS} are required.`,
+      },
+      historyMonths: usableMonths,
+      bookingOnHandCoverage,
+      variance: null,
+    };
+  }
+  return {
+    level: null,
+    unavailable: VARIANCE_RULE_UNCONFIGURED,
+    historyMonths: usableMonths,
+    bookingOnHandCoverage,
+    variance: null,
+  };
 }
 
 function insufficient(
@@ -266,7 +325,7 @@ function insufficient(
     value: null,
     unit,
     occupancyPct: null,
-    confidence: null,
+    confidence: assessConfidence(usableMonths, 0),
     inputs: {
       usableMonths,
       trailingMonthsUsed: 0,
@@ -350,7 +409,7 @@ export function forecastOccupancy(request: OccupancyForecastRequest): ForecastEs
     value: nights.forecastNights,
     unit: 'nights',
     occupancyPct: safeDiv(nights.forecastNights, availableNights),
-    confidence: classifyConfidence(history.length, nights.bookingOnHandCoverage),
+    confidence: assessConfidence(history.length, nights.bookingOnHandCoverage),
     inputs: {
       usableMonths: history.length,
       trailingMonthsUsed: nights.trailingMonthsUsed,
@@ -571,7 +630,7 @@ export function forecastCashFlow(request: CashFlowForecastRequest): ForecastEsti
     value: openingBalance + netMovement,
     unit: 'currency',
     occupancyPct: null,
-    confidence: classifyConfidence(history.length, coverage),
+    confidence: assessConfidence(history.length, coverage),
     inputs: {
       usableMonths: history.length,
       trailingMonthsUsed: variable.length,

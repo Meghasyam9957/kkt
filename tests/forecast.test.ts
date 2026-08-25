@@ -3,8 +3,9 @@
  *
  * The rules under test are the ones §9 states: a 2-complete-usable-month minimum,
  * booking-on-hand plus rolling 3-month residual pickup for occupancy, nights × trailing
- * ADR for revenue, an ESTIMATE label on everything, a stated confidence, and — the rule
- * that matters most — no number at all when the history cannot support one.
+ * ADR for revenue, an ESTIMATE label on everything, a confidence level withheld while
+ * §9's variance input has no rule, and — the one that matters most — no number at all
+ * when the history cannot support one.
  *
  * Synthetic months are used where a case needs an exact usable-month count; the seeded
  * demonstration year is used where the point is that the real fixtures behave (its
@@ -12,7 +13,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, classifyConfidence,
+  forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, assessConfidence,
   MINIMUM_USABLE_MONTHS, FULL_HISTORY_MONTHS, PICKUP_WINDOW_MONTHS,
   propertyRateMix, forecastCashFlow,
   type OccupancyForecastRequest, type PropertyMonthMetrics, type CashFlowForecastRequest,
@@ -86,7 +87,8 @@ describe('forecast · sufficiency gating', () => {
     expect(out.status).toBe('INSUFFICIENT_DATA');
     expect(out.value).toBeNull();
     expect(out.occupancyPct).toBeNull();
-    expect(out.confidence).toBeNull();
+    expect(out.confidence.level).toBeNull();
+    expect(out.confidence.unavailable?.reason).toBe('INSUFFICIENT_DATA');
     expect(out.label).toBe('ESTIMATE');
     expect(out.reason).toMatch(/0 complete months of trading history/);
   });
@@ -319,29 +321,67 @@ describe('forecast · revenue', () => {
 });
 
 /* ================================================================== *
- * 5 · Confidence — a stated rule, pinned at its boundaries
+ * 5 · Confidence — withheld, and why
+ *
+ * §9 derives confidence from three inputs: history length, VARIANCE and booking-on-hand
+ * coverage. Nothing in this repository states a variance boundary, so §9's rule cannot be
+ * applied in full and no HIGH/MEDIUM/LOW is published. These cases exist to stop that
+ * silently changing: a level may only appear once a variance rule exists, and the two
+ * evaluable inputs must keep travelling with the estimate in the meantime.
  * ================================================================== */
 
 describe('forecast · confidence', () => {
-  it('is HIGH only with a full year behind it AND the month already on the books', () => {
-    expect(classifyConfidence(FULL_HISTORY_MONTHS, 1)).toBe('HIGH');
-    expect(classifyConfidence(FULL_HISTORY_MONTHS + 5, 1)).toBe('HIGH');
+  const twoMonths = () => request({
+    series: [traded('2026-12', 30, 4000), traded('2027-01', 30, 4000)],
   });
 
-  it('is LOW with limited history and nothing yet on the books', () => {
-    expect(classifyConfidence(MINIMUM_USABLE_MONTHS, 0)).toBe('LOW');
-    expect(classifyConfidence(FULL_HISTORY_MONTHS - 1, 0.99)).toBe('LOW');
+  it('states no level while the variance rule is unconfigured', () => {
+    const out = forecastOccupancy(twoMonths());
+    expect(out.status).toBe('SUFFICIENT');
+    expect(out.confidence.level).toBeNull();
+    expect(out.confidence.unavailable?.reason).toBe('CONFIGURATION_REQUIRED');
+    expect(out.confidence.unavailable?.message).toMatch(/variance/i);
   });
 
-  it('is MEDIUM when exactly one of the two holds', () => {
-    expect(classifyConfidence(FULL_HISTORY_MONTHS, 0)).toBe('MEDIUM');
-    expect(classifyConfidence(MINIMUM_USABLE_MONTHS, 1)).toBe('MEDIUM');
+  it('never evaluates variance, because no boundary exists to evaluate it against', () => {
+    expect(assessConfidence(FULL_HISTORY_MONTHS, 1).variance).toBeNull();
+    expect(assessConfidence(MINIMUM_USABLE_MONTHS, 0).variance).toBeNull();
+  });
+
+  it('withholds the level even with a full year and the month fully on the books', () => {
+    // This is the case that would have read HIGH. Two of §9's three inputs are at their
+    // strongest and it is still not §9's answer, because the third was never consulted.
+    const assessment = assessConfidence(FULL_HISTORY_MONTHS, 1);
+    expect(assessment.level).toBeNull();
+    expect(assessment.unavailable?.reason).toBe('CONFIGURATION_REQUIRED');
+  });
+
+  it('still reports the two inputs it can evaluate, so nothing is lost by withholding', () => {
+    const out = forecastOccupancy(twoMonths());
+    expect(out.confidence.historyMonths).toBe(2);
+    expect(out.confidence.bookingOnHandCoverage).toBe(out.inputs.bookingOnHandCoverage);
+  });
+
+  it('distinguishes an unconfigured rule from an absence of history', () => {
+    // Below the minimum the reason is the history, not the missing boundary — the two
+    // must never be conflated, because only one of them is fixed by a management decision.
+    const refused = forecastOccupancy(request({ series: [] }));
+    expect(refused.confidence.level).toBeNull();
+    expect(refused.confidence.unavailable?.reason).toBe('INSUFFICIENT_DATA');
+    expect(refused.confidence.historyMonths).toBe(0);
   });
 
   it('is carried onto the revenue estimate it was derived from', () => {
-    const req = request({ series: [traded('2026-12', 30, 4000), traded('2027-01', 30, 4000)] });
+    const req = twoMonths();
     const occupancy = forecastOccupancy(req);
-    expect(forecastRevenue(req, occupancy).confidence).toBe(occupancy.confidence);
+    expect(forecastRevenue(req, occupancy).confidence).toEqual(occupancy.confidence);
+  });
+
+  it('keeps §9 anchors available for the rule that will replace this one', () => {
+    // The two history anchors §9 does state stay in the module, so configuring variance is
+    // a change to one function rather than a rediscovery of §9.
+    expect(MINIMUM_USABLE_MONTHS).toBe(2);
+    expect(FULL_HISTORY_MONTHS).toBe(12);
   });
 });
 
@@ -605,7 +645,7 @@ describe('forecast · cash flow', () => {
     const out = forecastCashFlow(cash({ series: [traded('2027-02', 30, 5000)] }));
     expect(out.status).toBe('INSUFFICIENT_DATA');
     expect(out.value).toBeNull();
-    expect(out.confidence).toBeNull();
+    expect(out.confidence.level).toBeNull();
     expect(out.inputs.cash).toBeNull();
     expect(out.reason).toMatch(/1 complete month of trading history/);
   });
@@ -616,17 +656,21 @@ describe('forecast · cash flow', () => {
     expect(out.value).toBeNull();
   });
 
-  it('states confidence from how much of the month is known rather than averaged', () => {
-    // Everything contracted, nothing averaged: coverage 1. Three months is short of the
-    // full year, so MEDIUM rather than HIGH.
+  it('measures how much of the month is known rather than averaged', () => {
+    // Everything contracted, nothing averaged: coverage 1.
     const known = forecastCashFlow(cash({ variableCostsByMonth: {} }));
     expect(known.inputs.bookingOnHandCoverage).toBe(1);
-    expect(known.confidence).toBe('MEDIUM');
+    expect(known.confidence.bookingOnHandCoverage).toBe(1);
 
-    // Nothing contracted and everything averaged: coverage 0, limited history → LOW.
+    // Nothing contracted and everything averaged: coverage 0.
     const guessed = forecastCashFlow(cash({ expectedPayouts: 0, scheduledFixedCosts: 0 }));
     expect(guessed.inputs.bookingOnHandCoverage).toBe(0);
-    expect(guessed.confidence).toBe('LOW');
+    expect(guessed.confidence.bookingOnHandCoverage).toBe(0);
+
+    // Neither becomes a level: coverage is only one of §9's three inputs, and the
+    // variance boundary that would complete the rule does not exist.
+    expect(known.confidence.level).toBeNull();
+    expect(guessed.confidence.level).toBeNull();
   });
 
   it('is deterministic across repeated execution', () => {

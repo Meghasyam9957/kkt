@@ -127,7 +127,7 @@ describe('Forecast API · response', () => {
     expect(revenue.body.data.estimate).toEqual(view.data.revenue);
   });
 
-  it('carries the §9 inputs and a stated confidence with the number', async () => {
+  it('carries the §9 inputs and the month count with the number', async () => {
     const { body } = await s.request(USERS.admin!, '/api/forecast/occupancy');
     const { estimate } = body.data;
 
@@ -135,7 +135,22 @@ describe('Forecast API · response', () => {
     expect(estimate.method).toMatch(/booking-on-hand/i);
     expect(estimate.inputs.usableMonths).toBeGreaterThanOrEqual(MINIMUM_USABLE_MONTHS);
     expect(estimate.inputs.availableNights).toBeGreaterThan(0);
-    expect(['HIGH', 'MEDIUM', 'LOW']).toContain(estimate.confidence);
+  });
+
+  it('publishes no confidence level over the wire while §9 cannot be applied in full', async () => {
+    // An API consumer must not receive a HIGH/MEDIUM/LOW it could quote as §9's, when
+    // §9's rule needs a variance boundary no business rule states. What it does receive
+    // is the two inputs that were evaluable, so it can reason for itself.
+    for (const horizon of ['occupancy', 'revenue', 'cashflow']) {
+      const { body } = await s.request(USERS.admin!, `/api/forecast/${horizon}`);
+      const { confidence } = body.data.estimate;
+
+      expect(confidence.level, horizon).toBeNull();
+      expect(confidence.unavailable.reason, horizon).toBe('CONFIGURATION_REQUIRED');
+      expect(confidence.variance, horizon).toBeNull();
+      expect(typeof confidence.historyMonths, horizon).toBe('number');
+      expect(typeof confidence.bookingOnHandCoverage, horizon).toBe('number');
+    }
   });
 
   it('returns only this horizon of forecast-vs-actual history', async () => {
@@ -276,7 +291,9 @@ describe('Forecast API · insufficient history', () => {
     expect(res.body.data.estimate.status).toBe('INSUFFICIENT_DATA');
     expect(res.body.data.estimate.value).toBeNull();
     expect(res.body.data.estimate.occupancyPct).toBeNull();
-    expect(res.body.data.estimate.confidence).toBeNull();
+    expect(res.body.data.estimate.confidence.level).toBeNull();
+    // Below the minimum the reason is the history, not the unconfigured variance rule.
+    expect(res.body.data.estimate.confidence.unavailable.reason).toBe('INSUFFICIENT_DATA');
     expect(res.body.data.estimate.reason).toMatch(/complete month/i);
   });
 

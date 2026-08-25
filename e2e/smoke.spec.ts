@@ -175,7 +175,12 @@ test('the Forecast screen estimates the month ahead and shows its working', asyn
   const main = page.locator('main');
   await expect(main).toContainText('booking-on-hand');
   await expect(main).toContainText('complete months of trading history');
-  await expect(main).toContainText(/(HIGH|MEDIUM|LOW) confidence/);
+  // §9 needs a variance boundary no business rule states, so no HIGH/MEDIUM/LOW is
+  // published — the screen says so and shows the inputs it could evaluate instead.
+  await expect(main).toContainText(/Confidence: configuration required/);
+  await expect(main, 'a withheld level must not become a silent gap')
+    .toContainText(/Confidence not stated/);
+  await expect(main).not.toContainText(/(HIGH|MEDIUM|LOW) confidence/);
   await expect(main, 'a forecast must never be presented as an unexplained number')
     .toContainText('Booking-on-hand');
 

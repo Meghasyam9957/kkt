@@ -3,7 +3,9 @@ import { Card, CardHeader, CardBody, EmptyState, Badge } from '@/components/ui/p
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { formatCurrency, formatPercent, formatMonthShort, formatMonthLong } from '@/lib/shared/format';
 import type { ForecastView } from '@/lib/data/providers/types';
-import type { ForecastEstimate, ForecastAccuracy } from '@/lib/server/analytics/forecast';
+import type {
+  ForecastEstimate, ForecastAccuracy, ConfidenceAssessment,
+} from '@/lib/server/analytics/forecast';
 
 export const metadata = { title: 'Forecast — Srivillu Home Stays' };
 
@@ -26,6 +28,33 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
 
 /** HIGH / MEDIUM / LOW → the tone the design system already uses for standing. */
 const CONFIDENCE_TONE = { HIGH: 'good', MEDIUM: 'warn', LOW: 'bad' } as const;
+
+/**
+ * §9's confidence, or an honest refusal to state one.
+ *
+ * §9 derives confidence from three inputs and no business rule states a boundary for the
+ * third, variance. Printing HIGH/MEDIUM/LOW from two of the three would put §9's own
+ * words on a figure §9's rule did not produce — and this is the label a manager reads as
+ * a reason to act or wait. So the two evaluable inputs are shown and the level is not.
+ */
+function ConfidenceBadge({ confidence }: { confidence: ConfidenceAssessment }) {
+  if (confidence.level !== null) {
+    return <Badge tone={CONFIDENCE_TONE[confidence.level]}>{confidence.level} confidence</Badge>;
+  }
+  return <Badge tone="neutral">Confidence: configuration required</Badge>;
+}
+
+/** The two §9 inputs that can be evaluated, so withholding the level costs no information. */
+function ConfidenceInputs({ confidence }: { confidence: ConfidenceAssessment }) {
+  return (
+    <li>
+      Confidence not stated: {confidence.unavailable?.message}{' '}
+      Behind it — {confidence.historyMonths} complete month
+      {confidence.historyMonths === 1 ? '' : 's'} of history and{' '}
+      {formatPercent(confidence.bookingOnHandCoverage, 0)} of the estimate already confirmed.
+    </li>
+  );
+}
 
 const HORIZON_TITLES = {
   occupancy: 'Occupancy',
@@ -76,9 +105,7 @@ function Forecast({ view }: { view: ForecastView }) {
             <p className="sv-kpi__value">{formatPercent(occupancy.occupancyPct ?? 0, 1)}</p>
             <p className="sv-demo__meta">
               {period} · {Math.round(occupancy.value ?? 0)} of {occupancy.inputs.availableNights} nights ·{' '}
-              <Badge tone={CONFIDENCE_TONE[occupancy.confidence ?? 'LOW']}>
-                {occupancy.confidence} confidence
-              </Badge>
+              <ConfidenceBadge confidence={occupancy.confidence} />
             </p>
             <ul className="sv-demo__highlights">
               <li>{occupancy.inputs.bookingOnHandNights} nights already confirmed (booking-on-hand)</li>
@@ -87,6 +114,7 @@ function Forecast({ view }: { view: ForecastView }) {
                 {occupancy.inputs.usableMonths} complete months of trading history ·{' '}
                 rolling {occupancy.inputs.trailingMonthsUsed}-month pickup average
               </li>
+              <ConfidenceInputs confidence={occupancy.confidence} />
             </ul>
           </Estimate>
         )}
@@ -99,9 +127,7 @@ function Forecast({ view }: { view: ForecastView }) {
             <p className="sv-demo__meta">
               {period} · room revenue at a trailing ADR of{' '}
               {formatCurrency(revenue.inputs.trailingAdr ?? 0)} ·{' '}
-              <Badge tone={CONFIDENCE_TONE[revenue.confidence ?? 'LOW']}>
-                {revenue.confidence} confidence
-              </Badge>
+              <ConfidenceBadge confidence={revenue.confidence} />
             </p>
             <ul className="sv-demo__highlights">
               <li>Forecast nights come from the occupancy estimate, never recalculated here</li>
@@ -123,6 +149,7 @@ function Forecast({ view }: { view: ForecastView }) {
               ) : (
                 <li>Portfolio rate — no per-unit history was available to blend</li>
               )}
+              <ConfidenceInputs confidence={revenue.confidence} />
             </ul>
           </Estimate>
         )}
@@ -141,9 +168,7 @@ function Forecast({ view }: { view: ForecastView }) {
           </p>
           <p className="sv-demo__meta">
             Projected balance at the end of {period} ·{' '}
-            <Badge tone={CONFIDENCE_TONE[cashflow.confidence ?? 'LOW']}>
-              {cashflow.confidence} confidence
-            </Badge>
+            <ConfidenceBadge confidence={cashflow.confidence} />
           </p>
           {/*
             The four §9 terms, each shown as its own line. A cash forecast that shows only
@@ -177,6 +202,7 @@ function Forecast({ view }: { view: ForecastView }) {
               date, and a balance inflated by bookings nobody has made is how a real
               payment gets missed.
             </li>
+            <ConfidenceInputs confidence={cashflow.confidence} />
           </ul>
         </Estimate>
       )}
