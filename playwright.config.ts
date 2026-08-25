@@ -29,9 +29,13 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      // The reset wipes global demonstration state; every spec here counts rows before
-      // and after its own writes, so it must not run underneath them.
-      testIgnore: /demo-reset\.spec\.ts/,
+      // Neither of these belongs in an ordinary run. The reset wipes global
+      // demonstration state, and every spec here counts rows before and after its own
+      // writes. The visual capture WRITES the tracked Phase-C evidence in
+      // reports/visual/phase-c/ as a side effect, so running it by accident rewrites a
+      // signed-off record with whatever demo rows happened to exist. It lives in
+      // playwright.visual.config.ts and is invoked deliberately: npm run e2e:visual.
+      testIgnore: [/demo-reset\.spec\.ts/, /visual\.spec\.ts/],
     },
     {
       // Runs only once the whole suite above has finished, so it is free to discard the
