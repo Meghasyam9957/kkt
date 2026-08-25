@@ -23,7 +23,7 @@ file anywhere reads an `OPENAI` environment variable, no AI SDK is installed, an
 | 4 | **Isolation boundary** | 🟢 **Built** | §8.1 | Copilot half complete: [`copilot-context.ts`](../lib/server/ai/copilot-context.ts) + 45 tests. Guest half not built — see row 8. |
 | 5 | **Supabase AI logging** | 🟠 **Partial — decision** | §1.3, §8.4 | Field list typed (`AiUsageRecord`), and the `AiUsageSink` seam now exists with an in-memory implementation the dispatcher writes to on every call, refusals included. The **table** does not exist: retention is specified nowhere. See §2. |
 | 6 | **Kill switches** | 🟡 **Contract built** | §8.4 | The four features and the precedence rule are implemented in [`guardrails.ts`](../lib/server/ai/guardrails.ts). Where the switch positions are *stored* is undecided — §8.4 says "admin settings", and this app has no writable settings store (§13 Q5 was answered workbook-only). |
-| 7 | **Allowed copilot tools** | 🟢 **Built** | §8.1, §8.3 | Seven tools, each inheriting its route's capability from the registry. §8.1 names five; the two forecast reads are §8.2 rule 4's precondition. |
+| 7 | **Allowed copilot tools** | 🟢 **Built** | §8.1, §8.3 | Seven tools, each inheriting its route's capability from the registry. §8.1 names five; the two forecast reads are §8.2 rule 4's precondition. The whole path is assembled in [`copilot.ts`](../lib/server/ai/copilot.ts) — see §5. |
 | 8 | **Guest assistant** | 🔴 **Unspecified** | §8.1, §8.3, §11 phase 10 | Not startable. See §3 below. |
 | 9 | **Model / provider** | 🟡 **Seam built — ids undecided** | §8.4, §10.2 | The `AiProvider` interface, the registry and a local mock exist; see §5. Model **ids** are still undecided: §8.4 says only "cheapest capable model … mid-tier for the copilot's analytical questions" and "Model IDs live in config", naming neither the ids nor the config location. No module names a model — it arrives as data on the request. |
 | 10 | **Token / cost accounting** | 🟡 **Built — rates undecided** | §8.4, §10.2 | `AiUsageRecord` pins §8.4's eight fields; `AiTokenPricing` + `computeCost` complete the arithmetic, and a call with no pricing configured is **refused** — an uncostable call cannot be capped. Rates and currency remain undecided (§10.2 lists them as "assumptions to confirm at build time"), and a test asserts no rate literal exists anywhere in the AI layer. |
@@ -33,6 +33,7 @@ file anywhere reads an `OPENAI` environment variable, no AI SDK is installed, an
 | 14 | **PII sanitization** | 🟢 **Built** | §8.3 | Guest names stripped at the copilot boundary; the alerts API is unchanged for its own consumers. Contact details are structurally absent — no operations view carries them. |
 | 15 | **Forecast restriction** | 🟢 **Built** | §8.2 rule 4, §9 | Estimates arrive computed, labelled `ESTIMATE`, with method and status; the `inputs` block is withheld. No AI module may import a calculation engine. |
 | 16 | **Tests before enabling** | 🟡 **Partly built** | §8.1, §8.2 | See §4 below. |
+| 17 | **`POST /api/ai/copilot`** | 🔴 **Conflict** | §7, write governance | Declared by §7, **not declarable** in this registry. See §6. |
 
 🟢 built · 🟡 contract built, feature work remains · 🟠 partial or credential-blocked · 🔴 blocked on a decision
 
@@ -137,6 +138,7 @@ Built, and passing today:
 | `tests/ai-isolation.test.ts` | §8.1 whitelist, §8.3 minimisation, §8.2 rule 4, RBAC, no network, no credential, no route |
 | `tests/ai-guardrails.test.ts` | §8.4 kill switches and budget precedence, §8.2 rule 1 numeric grounding |
 | `tests/ai-provider.test.ts` | The provider seam end to end against the mock: refusals, cost, usage logging, failure classification, gate ordering, environment isolation |
+| `tests/ai-copilot.test.ts` | The copilot path end to end: RBAC, ops-scoping, guest-name stripping, forecast restriction, anti-fabrication, one usage record per attempt, determinism, no network |
 | `tests/environment.test.ts` | Invariants 5 & 6 — a payload cannot cross environments |
 | `tests/security.test.ts` | No credential reachable from client code; `OPENAI_API_KEY` included |
 | `tests/rbac.test.ts` | Every route × every role, so a new `/api/ai/*` route is covered the moment it is declared |
@@ -166,6 +168,7 @@ meant to be configuration rather than surgery.
 | [`provider.ts`](../lib/server/ai/provider.ts) | `AiProvider`, the request/result shapes, the failure taxonomy, token estimation, `AiTokenPricing` + `computeCost`, and the `AiUsageSink` seam |
 | [`mock-provider.ts`](../lib/server/ai/mock-provider.ts) | A local, deterministic backend that answers without a model. Its default reply contains no digits, so it cannot satisfy §8.2 rule 1 by coincidence |
 | [`dispatch.ts`](../lib/server/ai/dispatch.ts) | The provider registry, and the one path a question travels |
+| [`copilot.ts`](../lib/server/ai/copilot.ts) | The copilot turn: authorise, build context, dispatch, shape §8.1's "answer + source period + provenance". Holds §8.2's five rules as the system prompt, transcribed |
 
 Every gate sits in the dispatcher rather than in a caller, in a fixed order:
 
@@ -200,7 +203,69 @@ Nothing above it changes — not the context boundary, not the guardrails, not t
 
 ---
 
-## 6 · The short list for management
+## 6 · `POST /api/ai/copilot` — specified by §7, not declarable here
+
+§7 lists the route: **`POST /api/ai/copilot` — ADMIN (OPS: ops-scoped)**. It is not
+declared, and this is the reason rather than an oversight.
+
+**The registry refuses it.** Every non-GET route in `API_ROUTES` must declare
+`mutates: true` and carry a capability ending in `.write`. That rule is asserted
+independently in three suites — `tests/security.test.ts`, `tests/rbac.test.ts` and
+`tests/environment.test.ts` — and `tests/mutations.test.ts` additionally treats every
+mutating route as an entity write, with idempotency through the `operations` table, an
+allocated id and an audit entity type.
+
+A copilot question mutates nothing. It allocates no id, writes no sheet and has no entity.
+There is no write capability that honestly describes it, and `WRITE_CAPABILITIES` is
+defined as the set INVESTOR must hold none of — putting an AI capability in it would
+misstate what that list means.
+
+Three ways out, all of them decisions:
+
+| Option | Cost |
+|---|---|
+| Exempt non-mutating POSTs in the registry | Changes a governance rule three suites enforce, and every future POST inherits the exemption |
+| Declare it `GET` | Contradicts §7, and puts a free-text question into a URL — which the privacy rule on query strings argues against |
+| Mint a `.write` capability for it | Misstates the capability model to satisfy a lint-shaped rule |
+
+**When it becomes declarable**, one thing is already determined and need not be decided
+again: the capability matching §7's role set is `ai.operations`, which is exactly
+SUPER_ADMIN + ADMIN + OPERATIONS. "OPS: ops-scoped" then falls out of the context boundary
+with nothing invented — OPERATIONS holds no financial capability, so its context is
+`getAlerts` alone. This is the same resolution used for `GET /api/analytics/alerts`.
+
+**Also missing regardless of that choice:**
+
+- **Rate limits.** §8.4 requires them "per user and per role". No rate-limiting
+  infrastructure exists anywhere in this repository, and no values are specified.
+- **The request shape.** §7 specifies a body for no route, and for reads the shape was
+  determinable from the repository. Here it is not: whether §7's `?month=` / `?propertyId=`
+  / `?platform=` filter conventions arrive as query or body on a POST is unstated.
+
+The response shape *is* determinable — §8.1's `A1` is "Answer + source period +
+provenance", which is `CopilotAnswer`. So the handler is a thin wrapper the day the route
+question is answered; `answerCopilotQuestion` is complete and tested without it.
+
+### The copilot page
+
+`docs/SRIVILLU_UI_REDESIGN_PLAN.md` §8 documents the composer as deliberately inert —
+clicking a suggested prompt "inserts it into the composer (no request is sent; the composer
+stays disabled)". That is the documented contract, so the page is unchanged. No contract is
+documented for a *connected* copilot: no loading state, no error rendering, no mapping from
+a refusal reason to anything a person reads. That last one is the gap worth naming.
+
+### Refusal reasons have no user-facing wording
+
+`AiRefusalReason` distinguishes six refusals — `INTEGRATION_DISABLED`,
+`BUDGET_UNCONFIGURED`, `BUDGET_EXCEEDED`, `FEATURE_SWITCHED_OFF`, `NO_PROVIDER`,
+`NO_PRICING`. §8.4 requires "a clear message" and the code carries one for an operator, but
+**§8 specifies no mapping from these codes to text a user sees**, and the wording differs by
+audience: "no budget cap is configured" is an operator's sentence, not a manager's. The
+mapping is left unwritten rather than guessed.
+
+---
+
+## 7 · The short list for management
 
 1. **Monthly OpenAI budget cap** (§13 Q6) — the one item §13 itself marks as blocking.
 2. **Retention period for AI usage and conversation logs**, and whether conversation text
@@ -209,6 +274,10 @@ Nothing above it changes — not the context boundary, not the guardrails, not t
 4. **Cost currency**, and confirmation of the per-token pricing assumed (§10.2).
 5. **Rate limits and per-feature token caps** (§8.4 names both without values).
 6. **Where per-feature kill switches are stored**, given settings are workbook-owned.
+7. **How `POST /api/ai/copilot` should be declared**, given this repository's write
+   governance treats every non-GET route as a mutation (§6).
+8. **What a refused copilot turn says to the person who asked** — the codes exist, the
+   user-facing wording is unspecified.
 
 Until 1 and 2 are answered, no AI feature can run: the guardrail refuses an unconfigured
 cap by design, and there is nowhere to log a call that is made.
