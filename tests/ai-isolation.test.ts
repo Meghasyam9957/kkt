@@ -78,7 +78,7 @@ function aiSources(): Array<{ file: string; text: string }> {
  * file nobody thought to tell the suite about.
  */
 const AI_MODULES = [
-  'copilot-context.ts', 'dispatch.ts', 'guard.ts', 'guardrails.ts',
+  'copilot-context.ts', 'copilot.ts', 'dispatch.ts', 'guard.ts', 'guardrails.ts',
   'mock-provider.ts', 'provider.ts',
 ];
 
