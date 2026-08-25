@@ -21,14 +21,14 @@ file anywhere reads an `OPENAI` environment variable, no AI SDK is installed, an
 | 2 | **OpenAI credentials** | 🔴 **External** | §1.1 #2, §10.1 | A paid account and a server-side key, per environment (`DEMO_*` / `PRODUCTION_*` namespacing already exists). Not a code task. |
 | 3 | **LIVE parity** | 🟠 **Credential** | §11 phase 9, §2 gate | Offline parity passes 212/212. LIVE parity is `PENDING` for want of `PARITY_SHEET_ID` and `PARITY_SERVICE_ACCOUNT_FILE`. §11 makes proven data a precondition for AI, so this must go green first. |
 | 4 | **Isolation boundary** | 🟢 **Built** | §8.1 | Copilot half complete: [`copilot-context.ts`](../lib/server/ai/copilot-context.ts) + 45 tests. Guest half not built — see row 8. |
-| 5 | **Supabase AI logging** | 🟠 **Partial — decision** | §1.3, §8.4 | Field list for the *usage* log is specified and typed (`AiUsageRecord`). No table exists. Retention is specified nowhere. See §2 below. |
+| 5 | **Supabase AI logging** | 🟠 **Partial — decision** | §1.3, §8.4 | Field list typed (`AiUsageRecord`), and the `AiUsageSink` seam now exists with an in-memory implementation the dispatcher writes to on every call, refusals included. The **table** does not exist: retention is specified nowhere. See §2. |
 | 6 | **Kill switches** | 🟡 **Contract built** | §8.4 | The four features and the precedence rule are implemented in [`guardrails.ts`](../lib/server/ai/guardrails.ts). Where the switch positions are *stored* is undecided — §8.4 says "admin settings", and this app has no writable settings store (§13 Q5 was answered workbook-only). |
 | 7 | **Allowed copilot tools** | 🟢 **Built** | §8.1, §8.3 | Seven tools, each inheriting its route's capability from the registry. §8.1 names five; the two forecast reads are §8.2 rule 4's precondition. |
 | 8 | **Guest assistant** | 🔴 **Unspecified** | §8.1, §8.3, §11 phase 10 | Not startable. See §3 below. |
-| 9 | **Model / provider** | 🔴 **Decision** | §8.4, §10.2 | Provider is decided (OpenAI, §1.2/§10.1). Model **IDs** are not: §8.4 says only "cheapest capable model … mid-tier for the copilot's analytical questions" and "Model IDs live in config". Neither the ids nor the config location is stated. |
-| 10 | **Token / cost accounting** | 🟡 **Contract built** | §8.4, §10.2 | `AiUsageRecord` pins §8.4's eight fields. Per-token pricing is listed in §10.2 as "assumptions to confirm at build time", so no pricing table exists and none should be invented. Currency is unstated (§10.2 quotes USD; the business runs in INR). |
+| 9 | **Model / provider** | 🟡 **Seam built — ids undecided** | §8.4, §10.2 | The `AiProvider` interface, the registry and a local mock exist; see §5. Model **ids** are still undecided: §8.4 says only "cheapest capable model … mid-tier for the copilot's analytical questions" and "Model IDs live in config", naming neither the ids nor the config location. No module names a model — it arrives as data on the request. |
+| 10 | **Token / cost accounting** | 🟡 **Built — rates undecided** | §8.4, §10.2 | `AiUsageRecord` pins §8.4's eight fields; `AiTokenPricing` + `computeCost` complete the arithmetic, and a call with no pricing configured is **refused** — an uncostable call cannot be capped. Rates and currency remain undecided (§10.2 lists them as "assumptions to confirm at build time"), and a test asserts no rate literal exists anywhere in the AI layer. |
 | 11 | **Retention** | 🔴 **Decision** | §1.3, R11, §13 Q7 | No retention period is specified for **any** Supabase table, AI logs included. §13 Q7 covers *guest* data (Phase 10) and R11 names retention a management/legal decision. This blocks the migration in §2. |
-| 12 | **Error / fallback** | 🟠 **Partial** | §8.2 rule 3, §8.4 | "No data → say so" is carried into context (`unavailable`, `omitted`). Budget-breach degradation is implemented. Behaviour on a **model** failure — timeout, provider error, rate limit — is specified nowhere, and §10.3's ~10 s Netlify function limit makes it a real case. |
+| 12 | **Error / fallback** | 🟡 **Handled — policy undecided** | §8.2 rule 3, §8.4, §10.3 | "No data → say so" is carried into context; budget-breach degradation is implemented; provider failure is now caught and classified into four kinds (`TIMEOUT`, `RATE_LIMITED`, `UNAVAILABLE`, `INVALID_RESPONSE`), each returned as an outcome with a message and a usage row rather than thrown. **§8 enumerates none of this** — it is a technical taxonomy, not a product one. What the *person* sees, and whether a retryable failure is retried, is still undecided. |
 | 13 | **Authorization / RBAC** | 🟢 **Built** | §4, §7, §8.1 | Every tool inherits its route capability; a role with neither `ai.copilot` nor `ai.operations` is refused before any read. §7's "OPS: ops-scoped" falls out of the existing model — OPERATIONS reaches exactly `getAlerts`. |
 | 14 | **PII sanitization** | 🟢 **Built** | §8.3 | Guest names stripped at the copilot boundary; the alerts API is unchanged for its own consumers. Contact details are structurally absent — no operations view carries them. |
 | 15 | **Forecast restriction** | 🟢 **Built** | §8.2 rule 4, §9 | Estimates arrive computed, labelled `ESTIMATE`, with method and status; the `inputs` block is withheld. No AI module may import a calculation engine. |
@@ -71,7 +71,10 @@ create table if not exists ai_usage (
   currency          char(3)     not null,   -- UNDECIDED: §10.2 quotes USD, business is INR
   latency_ms        integer     not null,
   user_id           uuid        references app_users(id),
-  outcome           text        not null,   -- UNDECIDED: §8.4 names it, enumerates nothing
+  outcome           text        not null,   -- code emits OK | FLAGGED | REFUSED | TIMEOUT |
+                                            -- RATE_LIMITED | UNAVAILABLE | INVALID_RESPONSE.
+                                            -- §8.4 names the field and enumerates nothing, so
+                                            -- the dashboard's vocabulary needs confirming.
   constraint ai_usage_tokens_non_negative
     check (prompt_tokens >= 0 and completion_tokens >= 0 and latency_ms >= 0)
 );
@@ -133,6 +136,7 @@ Built, and passing today:
 |---|---|
 | `tests/ai-isolation.test.ts` | §8.1 whitelist, §8.3 minimisation, §8.2 rule 4, RBAC, no network, no credential, no route |
 | `tests/ai-guardrails.test.ts` | §8.4 kill switches and budget precedence, §8.2 rule 1 numeric grounding |
+| `tests/ai-provider.test.ts` | The provider seam end to end against the mock: refusals, cost, usage logging, failure classification, gate ordering, environment isolation |
 | `tests/environment.test.ts` | Invariants 5 & 6 — a payload cannot cross environments |
 | `tests/security.test.ts` | No credential reachable from client code; `OPENAI_API_KEY` included |
 | `tests/rbac.test.ts` | Every route × every role, so a new `/api/ai/*` route is covered the moment it is declared |
@@ -141,18 +145,62 @@ Still required, and only writable once the corresponding decision is made:
 
 | Test | Blocked on |
 |---|---|
-| Budget breach disables the live feature end to end | the cap (Q6) and the spend source |
+| Budget breach against a **real** spend figure | the cap (Q6) and where accumulated spend is read from |
 | Per-feature switch honoured by the running handler | where switches are stored (row 6) |
 | §8.2 rule 2 — every financial answer cites period and sheet | what "sheet" means for a server-computed figure |
 | §8.2 rule 5 — untrusted text fenced, tools restricted for that turn | the fencing format; not specified |
-| Usage row written for every call | the schema in §2 |
+| Usage row **persisted** for every call | the schema in §2 (in-memory recording is tested today) |
 | Rate limits per user and per role | the limits; §8.4 names neither |
 | Context caps enforced before the call | the per-feature token caps; §8.4 names none |
 | Guest tool whitelist (§8.1's own words) | the whitelist itself — see §3 |
 
 ---
 
-## 5 · The short list for management
+## 5 · The provider seam
+
+A model backend is reached through one interface, and adding the authorised OpenAI one is
+meant to be configuration rather than surgery.
+
+| Module | What it is |
+|---|---|
+| [`provider.ts`](../lib/server/ai/provider.ts) | `AiProvider`, the request/result shapes, the failure taxonomy, token estimation, `AiTokenPricing` + `computeCost`, and the `AiUsageSink` seam |
+| [`mock-provider.ts`](../lib/server/ai/mock-provider.ts) | A local, deterministic backend that answers without a model. Its default reply contains no digits, so it cannot satisfy §8.2 rule 1 by coincidence |
+| [`dispatch.ts`](../lib/server/ai/dispatch.ts) | The provider registry, and the one path a question travels |
+
+Every gate sits in the dispatcher rather than in a caller, in a fixed order:
+
+1. **environment** — a demonstration payload can never reach a production model; this
+   *throws*, following `dispatchToAi`'s stated reasoning, and logs nothing;
+2. **may this feature run** (§8.4) — integration, then budget, then kill switch;
+3. **is there a provider, and can the call be costed** — no pricing means no cost, and no
+   cost means the hard cap cannot be enforced, so it is refused;
+4. **the call**, with provider failures classified rather than thrown;
+5. **§8.2 rule 1** — the answer is read back against the facts that produced it.
+
+Every one of those records exactly one usage row, refusals included: a month of refusals
+should not look like a month of silence.
+
+### What adding the real provider takes
+
+1. A module implementing `AiProvider.complete` against the OpenAI API, reporting **its**
+   token counts rather than the estimate.
+2. One line in the registry in `dispatch.ts`.
+3. Configuration: the provider id, the model ids, the pricing, the cap, the switches.
+
+Nothing above it changes — not the context boundary, not the guardrails, not their tests.
+
+### Two things that will fail deliberately when it lands
+
+- **`tests/ai-isolation.test.ts` → "no AI module can reach the network"**. A real adapter
+  must open a socket, so that scan will fail. It should be **narrowed to exempt exactly
+  that one adapter file**, not deleted: the point is that no *other* AI module gains
+  network reach.
+- **`tests/ai-provider.test.ts` → "nothing external is registered"**. Registering a backend
+  that costs money is a deliberate act, and this makes someone read this document first.
+
+---
+
+## 6 · The short list for management
 
 1. **Monthly OpenAI budget cap** (§13 Q6) — the one item §13 itself marks as blocking.
 2. **Retention period for AI usage and conversation logs**, and whether conversation text
