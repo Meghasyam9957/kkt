@@ -9,5 +9,13 @@ dist/
 # working tree after each gate run, which is exactly when the tree must be readable.
 tsconfig.tsbuildinfo
 reports/*.json
+# Generated test reports. PARITY_REPORT.md is rewritten by the last step of `npm run
+# gate`; the Playwright report by any `npx playwright test`. Neither carries reviewable
+# evidence — the parity verdict regenerates identically and only its timestamps move,
+# and the HTML report is one opaque blob describing whichever run happened last.
+# Named file by file on purpose: `reports/*.md` would also swallow the hand-written
+# phase reports, and reports/visual/ stays tracked as phase sign-off evidence.
+reports/PARITY_REPORT.md
+reports/playwright/
 # Per-workbook demo state (seed snapshot). Fictional, but not source.
 .demo/
