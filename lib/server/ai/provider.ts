@@ -136,9 +136,12 @@ export function estimateTokens(text: string): number {
  * What a model costs, supplied by whoever configured it.
  *
  * Per **token**, not per thousand or per million, so there is no unit convention to guess
- * at — the caller converts published rates once, in the place that read them. The currency
- * is stated rather than assumed: §10.2 quotes the estimate in dollars while the business
- * runs in rupees, and nothing in the architecture says which the cap is denominated in.
+ * at — the caller converts published rates once, in the place that read them.
+ *
+ * The currency is stated rather than assumed. §10.2 does denominate its figures: both the
+ * estimate and the recommended cap are in dollars. The business, however, runs in rupees,
+ * and nothing reconciles the two — so what is unresolved is the denomination of an
+ * *approved* cap and of the costs recorded against it, not whether §10.2 names a currency.
  */
 export interface AiTokenPricing {
   model: string;

@@ -52,11 +52,12 @@ export const BUDGET_WARNING_RATIO = 0.7;
 /**
  * Spend against the cap, in whatever unit the two are expressed in.
  *
- * `cap` is null until §13's sixth question is answered. The unit is deliberately not
- * named: §10.2 quotes the estimate in dollars while the business runs in rupees, and
- * nothing in the architecture says which the cap is denominated in. Comparing like with
- * like needs no answer to that; recording a cost does, which is why `AiUsageRecord` below
- * carries the currency instead of assuming one.
+ * `cap` is null until §13's sixth question is answered. The unit is deliberately not named
+ * here: §10.2 states its own figures in dollars — the estimate and the recommended cap
+ * alike — while the business runs in rupees, and nothing reconciles the two. What an
+ * *approved* cap is denominated in, and how costs are accounted against it, is therefore
+ * still open. Comparing like with like needs no answer to that; recording a cost does,
+ * which is why `AiUsageRecord` below carries the currency instead of assuming one.
  */
 export interface BudgetPosition {
   cap: number | null;
