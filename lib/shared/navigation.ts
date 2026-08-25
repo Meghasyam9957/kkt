@@ -81,9 +81,9 @@ export const NAVIGATION: NavSection[] = [
     title: 'Analytics',
     items: [
       { label: 'Performance', href: '/admin/analytics/performance', capability: 'analytics.read' },
-      // Roadmap language ("Phase 8") does not belong in a client-facing menu; the
-      // Forecast screen itself says honestly that forecasting is not yet available.
-      { label: 'Forecast', href: '/admin/analytics', capability: 'analytics.read' },
+      // Points at the real screen since Phase 8. `/admin/analytics` remains a redirect to
+      // Performance, so an old link still lands somewhere sensible.
+      { label: 'Forecast', href: '/admin/analytics/forecast', capability: 'analytics.read' },
     ],
   },
   {

@@ -13,6 +13,8 @@ import type {
   MonthlyMetrics, PropertyPerformance, PlatformPerformance, InvestorWaterfall,
   InvestorAllocation,
 } from '@/lib/shared/domain';
+// Type-only: erased at compile time, so this file stays free of any server runtime.
+import type { ForecastEstimate, ForecastAccuracy } from '@/lib/server/analytics/forecast';
 
 export type DataSourceKind = 'FIXTURE' | 'GOOGLE_SHEETS';
 export type FreshnessState = 'GOOD' | 'STALE' | 'ERROR';
@@ -342,6 +344,8 @@ export interface DashboardDataProvider {
   getCashFlow(filters: ReportFilters): Promise<Envelope<CashFlowRow[]>>;
   getPnl(filters: ReportFilters): Promise<Envelope<PnlView>>;
   getMonthlySeries(filters: ReportFilters): Promise<Envelope<MonthlyMetrics[]>>;
+  /** ARCHITECTURE §9 — occupancy and revenue estimates for the month ahead. */
+  getForecast(filters: ReportFilters): Promise<Envelope<ForecastView>>;
   getInvestorPreview(filters: ReportFilters): Promise<Envelope<InvestorPreviewView>>;
   getSettings(): Promise<Envelope<SettingsView>>;
   getAvailableMonths(): Promise<string[]>;
@@ -359,4 +363,21 @@ export interface DashboardDataProvider {
    * nothing to refresh.
    */
   refresh?(): Promise<void>;
+}
+
+/**
+ * FORECAST (ARCHITECTURE §9) — the two horizons implemented so far.
+ *
+ * `accuracy` is a backtest of the residual-pickup basis, not a replay of forecasts that
+ * were made at the time: the workbook retains no historical booking-on-hand snapshots,
+ * so each past month is re-estimated from the months before it with the books excluded.
+ * That measures the part of the method that is genuinely predicted. Retaining real
+ * forecasts month by month needs storage and is not part of this milestone.
+ */
+export interface ForecastView {
+  /** The month being estimated — the one after the month containing "today". */
+  monthKey: string;
+  occupancy: ForecastEstimate;
+  revenue: ForecastEstimate;
+  accuracy: ForecastAccuracy[];
 }

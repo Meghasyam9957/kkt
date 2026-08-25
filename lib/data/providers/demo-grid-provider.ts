@@ -66,6 +66,7 @@ export class DemoGridProvider implements DashboardDataProvider {
   async getCashFlow(f: ReportFilters) { return (await this.ensure()).getCashFlow(f); }
   async getPnl(f: ReportFilters) { return (await this.ensure()).getPnl(f); }
   async getMonthlySeries(f: ReportFilters) { return (await this.ensure()).getMonthlySeries(f); }
+  async getForecast(f: ReportFilters) { return (await this.ensure()).getForecast(f); }
   async getInvestorPreview(f: ReportFilters) { return (await this.ensure()).getInvestorPreview(f); }
   async getSettings() { return (await this.ensure()).getSettings(); }
   async getAvailableMonths() { return (await this.ensure()).getAvailableMonths(); }

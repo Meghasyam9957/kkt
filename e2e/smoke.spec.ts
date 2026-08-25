@@ -158,3 +158,37 @@ test('the skip link is the first tab stop', async ({ page }) => {
   const text = await page.evaluate(() => document.activeElement?.textContent ?? '');
   expect(text).toContain('Skip to main content');
 });
+
+/* ------------------------------------------------------------------ *
+ * Forecast (ARCHITECTURE §9) — Phase 8 occupancy and revenue horizons
+ * ------------------------------------------------------------------ */
+test('the Forecast screen estimates the month ahead and shows its working', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+  await page.goto('/admin/analytics/forecast');
+
+  // Both horizons render, each labelled ESTIMATE as §9 requires.
+  await expect(page.getByRole('heading', { name: 'Forecast', level: 1 })).toBeVisible();
+  await expect(page.locator('.sv-badge', { hasText: 'ESTIMATE' })).toHaveCount(2);
+
+  // The seeded year has a full history, so both horizons produce a figure rather than
+  // the insufficient-data state — and the inputs behind them are on screen.
+  const main = page.locator('main');
+  await expect(main).toContainText('booking-on-hand');
+  await expect(main).toContainText('complete months of trading history');
+  await expect(main).toContainText(/(HIGH|MEDIUM|LOW) confidence/);
+  await expect(main, 'a forecast must never be presented as an unexplained number')
+    .toContainText('Booking-on-hand');
+});
+
+test('Forecast is reachable from the navigation, and no longer lands on Performance', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+  await page.getByRole('link', { name: 'Forecast', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/analytics\/forecast/);
+});
+
+test('operations cannot open the forecast', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await expect(page.locator('.sv-sidebar')).not.toContainText('Forecast');
+  await page.goto('/admin/analytics/forecast');
+  await expect(page.locator('main')).toContainText(/[Nn]ot available/);
+});

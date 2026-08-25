@@ -17,6 +17,7 @@ import { edate } from '@/lib/shared/dates';
 import type {
   DashboardDataProvider, DashboardView, Envelope, ReportFilters, DataMeta,
   ReservationRow, LedgerRow, CapexRow, CashFlowRow, PnlView, SettingsView, InvestorPreviewView,
+  ForecastView,
 } from './types';
 
 export interface FixtureProviderOptions {
@@ -117,6 +118,11 @@ export class FixtureDashboardDataProvider implements DashboardDataProvider {
   async getMonthlySeries(filters: ReportFilters): Promise<Envelope<MonthlyMetrics[]>> {
     await this.delay();
     return this.wrap(this.views.series(), this.views.resolveMonth(filters.month));
+  }
+
+  async getForecast(filters: ReportFilters): Promise<Envelope<ForecastView>> {
+    await this.delay();
+    return this.wrap(this.views.forecast(), this.views.resolveMonth(filters.month));
   }
 
   async getInvestorPreview(filters: ReportFilters): Promise<Envelope<InvestorPreviewView>> {

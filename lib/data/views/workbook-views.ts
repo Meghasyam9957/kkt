@@ -17,8 +17,13 @@ import {
   computeMonthlySeries, computeByProperty, computeByPlatform, computeInvestorWaterfall,
   computeInvestorAllocations, monthPeriod, expectedPayout, bookingNights, grossBookingValue,
   revenueNet, expenseTotal, capexLineTotal, pendingReceivables, pendingPayables, fyMonthKeysFor,
+  activeUnitCount,
 } from '@/lib/server/analytics/kpi';
-import { serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial } from '@/lib/shared/dates';
+import { serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial, edate } from '@/lib/shared/dates';
+import {
+  forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, MINIMUM_USABLE_MONTHS,
+  type ForecastAccuracy,
+} from '@/lib/server/analytics/forecast';
 import { BUSINESS_RULES, PNL as PNL_CONTRACT } from '@/lib/contract/contract.generated';
 import {
   OPEN_MAINTENANCE_STATUSES, OPEN_HOUSEKEEPING_STATUSES,
@@ -29,7 +34,7 @@ import type {
   DashboardView, ReportFilters, KpiValue, ReservationRow, LedgerRow, CapexRow, CashFlowRow,
   PnlView, PnlLine, SettingsView, InvestorPreviewView, OperationsToday, TrendPoint,
   PropertyBoardRow, UnitStatus, OperationsBoardView, UrgentItem, UrgentSeverity,
-  ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow, InvestorRegisterRow,
+  ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow, InvestorRegisterRow, ForecastView,
 } from '@/lib/data/providers/types';
 
 /** Most pressing first. Orders the maintenance queue. */
@@ -78,6 +83,49 @@ export class WorkbookViews {
       this.seriesCache = computeMonthlySeries(this.workbook, fyMonthKeysFor(this.workbook));
     }
     return this.seriesCache;
+  }
+
+  /**
+   * ARCHITECTURE §9 — the month ahead, estimated.
+   *
+   * "Today" comes from the operations data, never the clock, so the same workbook always
+   * yields the same forecast. The horizon is the month after the one being traded.
+   *
+   * `accuracy` backtests the residual-pickup basis: each past month is re-estimated from
+   * the months before it with the books deliberately excluded, because the workbook keeps
+   * no record of what was on-hand at the time. Including today's reservations would make
+   * a settled month look perfectly predicted, which would be flattery rather than
+   * measurement.
+   */
+  forecast(): ForecastView {
+    const asOf = isoToSerial(this.ops.today);
+    const series = this.series();
+    const monthKey = monthKeyOf(edate(monthKeyToSerial(this.ops.today.slice(0, 7)), 1));
+    const request = {
+      series,
+      reservations: this.workbook.reservations,
+      monthKey,
+      asOf,
+      activeUnits: activeUnitCount(this.workbook),
+    };
+    const occupancy = forecastOccupancy(request);
+
+    const settled = usableHistory(series, asOf);
+    const accuracy: ForecastAccuracy[] = [];
+    for (let i = MINIMUM_USABLE_MONTHS; i < settled.length; i++) {
+      const month = settled[i]!;
+      const backtest = forecastOccupancy({
+        series: settled.slice(0, i),
+        reservations: [],
+        monthKey: month.monthKey,
+        asOf: month.monthStart,
+        activeUnits: month.activeUnits,
+      });
+      const compared = forecastVsActual(backtest, series, asOf);
+      if (compared) accuracy.push(compared);
+    }
+
+    return { monthKey, occupancy, revenue: forecastRevenue(request, occupancy), accuracy };
   }
 
   monthsWithData(): string[] {

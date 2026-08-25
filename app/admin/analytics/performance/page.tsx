@@ -1,5 +1,5 @@
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
-import { Card, CardHeader, CardBody, EmptyState, Badge } from '@/components/ui/primitives';
+import { Card, CardHeader, CardBody, EmptyState } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { RevenueTrendChart, OccupancyTrendChart } from '@/components/charts/Charts';
 import { formatCurrency, formatPercent, formatMonthShort } from '@/lib/shared/format';
@@ -80,7 +80,6 @@ function Performance({ series }: { series: MonthlyMetrics[] }) {
         <CardHeader
           title="Monthly KPIs"
           subtitle={`${active.length} months with trading data out of ${series.length} in the financial year.`}
-          action={<Badge tone="warn">Forecasting: Phase 8</Badge>}
         />
         <CardBody className="sv-card__body--flush">
           <DataTable columns={columns} rows={active} caption="Monthly KPI table" getRowKey={(m) => m.monthKey} />

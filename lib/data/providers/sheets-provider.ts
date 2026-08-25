@@ -27,6 +27,7 @@ import type { MonthlyMetrics } from '@/lib/shared/domain';
 import type {
   DashboardDataProvider, DashboardView, Envelope, ReportFilters, DataMeta, FreshnessState,
   ReservationRow, LedgerRow, CapexRow, CashFlowRow, PnlView, SettingsView, InvestorPreviewView,
+  ForecastView,
 } from './types';
 
 /** The workbook is one cache entry; the views slice it. One read serves every screen. */
@@ -199,6 +200,11 @@ export class GoogleSheetsDashboardDataProvider implements DashboardDataProvider 
   async getMonthlySeries(filters: ReportFilters): Promise<Envelope<MonthlyMetrics[]>> {
     const { views, result } = await this.views();
     return this.wrap(views.series(), result, views.resolveMonth(filters.month));
+  }
+
+  async getForecast(filters: ReportFilters): Promise<Envelope<ForecastView>> {
+    const { views, result } = await this.views();
+    return this.wrap(views.forecast(), result, views.resolveMonth(filters.month));
   }
 
   async getInvestorPreview(filters: ReportFilters): Promise<Envelope<InvestorPreviewView>> {
