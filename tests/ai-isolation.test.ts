@@ -54,13 +54,30 @@ function aiSources(): Array<{ file: string; text: string }> {
   const withoutComments = (text: string): string => text
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
-  return fs.readdirSync(AI_DIR)
-    .filter((name) => name.endsWith('.ts'))
-    .map((name) => ({
-      file: name,
-      text: withoutComments(fs.readFileSync(path.join(AI_DIR, name), 'utf8')),
-    }));
+  // Recursive on purpose. A flat read of the directory would stop scanning the moment
+  // someone organised the AI layer into `tools/` or `prompts/` — which is exactly when
+  // the scans below start mattering, and exactly the kind of silent coverage loss that
+  // makes a security suite worse than none.
+  const walk = (dir: string, prefix = ''): Array<{ file: string; text: string }> =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      const label = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) return walk(full, label);
+      if (!entry.name.endsWith('.ts')) return [];
+      return [{ file: label, text: withoutComments(fs.readFileSync(full, 'utf8')) }];
+    });
+  return walk(AI_DIR);
 }
+
+/**
+ * The AI layer, by name.
+ *
+ * An inventory rather than a count: a module added anywhere under `lib/server/ai` fails
+ * this list until somebody writes it down, and writing it down means reading what the
+ * scans below now cover it with. Cheap, and it is the only assertion here that notices a
+ * file nobody thought to tell the suite about.
+ */
+const AI_MODULES = ['copilot-context.ts', 'guard.ts'];
 
 /** Every key name appearing anywhere in a payload, at any depth. */
 function allKeys(value: unknown, out: Set<string> = new Set()): Set<string> {
@@ -113,6 +130,12 @@ async function contextFor(
 describe('AI isolation · the seam is inert', () => {
   it('AI is not enabled', () => {
     expect(aiEnabled()).toBe(false);
+  });
+
+  it('the AI layer is exactly the modules this suite knows about', () => {
+    // Every scan below runs over this set. A module the suite has never seen is a module
+    // whose imports, credentials and network reach nobody checked, so it fails here first.
+    expect(aiSources().map((s) => s.file).sort()).toEqual([...AI_MODULES].sort());
   });
 
   it('a real assembled context still cannot be dispatched', async () => {
@@ -206,12 +229,12 @@ describe('AI isolation · the copilot tool whitelist', () => {
     expect(calls.filter((c) => forbidden.includes(c))).toEqual([]);
   });
 
-  it('no AI module names a repository, the Sheets client or a raw read', () => {
+  it('no AI module names a repository, the Sheets client, a guest source or a raw read', () => {
     // The read path is forbidden AnalyticsRepository by Decision D1 (see
     // tests/live-provider.test.ts); the copilot inherits that, and every other
     // repository with it. §8.1 draws its tools onto repositories — this is the line
     // where that half of the diagram is answered by the rest of the architecture.
-    const banned = /Repository\b|@\/lib\/server\/sheets|readAlerts|getReservations|getRevenue\b|getExpenses\b|getCapex\b|getCashFlow\b|getInvestorRegister/;
+    const banned = /Repository\b|@\/lib\/server\/sheets|@\/lib\/server\/demo|guest-journey|GuestSession|readAlerts|getReservations|getRevenue\b|getExpenses\b|getCapex\b|getCashFlow\b|getInvestorRegister/;
     expect(aiSources().filter((s) => banned.test(s.text)).map((s) => s.file)).toEqual([]);
   });
 
