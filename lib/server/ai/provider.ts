@@ -237,4 +237,20 @@ export class InMemoryAiUsageSink implements AiUsageSink {
   async record(usage: AiUsageRecord): Promise<void> {
     this.records.push(usage);
   }
+
+  /**
+   * What has been spent since this process started.
+   *
+   * This is what makes a cap enforceable at all: §8.4 wants a hard monthly cap, and a cap
+   * needs a running total to compare against. The total is **process-local** — it starts
+   * at zero on every restart and knows nothing about other instances — so it is honest
+   * for a single demonstration process and wrong for anything that scales.
+   * `availableSpendSource` in the AI configuration is where that limit is enforced rather
+   * than merely described: production is refused because this is all there is.
+   *
+   * It is never a claim about the month.
+   */
+  spent(): number {
+    return this.records.reduce((total, record) => total + record.cost, 0);
+  }
 }

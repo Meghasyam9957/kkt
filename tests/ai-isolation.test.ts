@@ -91,7 +91,9 @@ const AI_MODULES = [
  * every other module may not.
  */
 const MAY_REACH_NETWORK = ['openai-provider.ts'];
-const MAY_READ_ENVIRONMENT = ['config.ts'];
+const MAY_READ_ENVIRONMENT = ['config.ts', 'guard.ts'];
+/** And only one of those may name the credential variable at all. */
+const MAY_NAME_THE_CREDENTIAL = ['config.ts'];
 
 /** Every key name appearing anywhere in a payload, at any depth. */
 function allKeys(value: unknown, out: Set<string> = new Set()): Set<string> {
@@ -171,6 +173,15 @@ describe('AI isolation · the seam is inert', () => {
       .map((s) => s.file)
       .sort();
     expect(readers).toEqual([...MAY_READ_ENVIRONMENT].sort());
+
+    // The sharper half: reading the environment to decide whether AI is on is not the
+    // same as touching a secret. Exactly one module names the credential variable at
+    // all, so there is one place to audit rather than a layer to trust.
+    const namers = aiSources()
+      .filter((s) => s.text.includes('OPENAI_API_KEY'))
+      .map((s) => s.file)
+      .sort();
+    expect(namers).toEqual([...MAY_NAME_THE_CREDENTIAL].sort());
   });
 
   it('the resolved configuration cannot carry the key, however it is serialised', async () => {

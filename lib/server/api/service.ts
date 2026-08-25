@@ -36,8 +36,13 @@ import { SupabaseAuthProvider } from '@/lib/server/auth/session';
 import { DemoAuthProvider } from '@/lib/server/auth/demo-identities';
 import { getDataProvider, getReadCache } from '@/lib/data/providers';
 import { ALL_FEATURES_OFF } from '@/lib/server/ai/guardrails';
-import { DiscardingAiUsageSink } from '@/lib/server/ai/provider';
+import { DiscardingAiUsageSink, InMemoryAiUsageSink, type AiUsageSink } from '@/lib/server/ai/provider';
 import { resolveAiProvider } from '@/lib/server/ai/dispatch';
+import { OpenAiProvider } from '@/lib/server/ai/openai-provider';
+import {
+  resolveAiConfig, readAiApiKey, aiProviderPermitted, aiProductionApproved,
+} from '@/lib/server/ai/config';
+import type { AiProvider } from '@/lib/server/ai/provider';
 import type { CopilotRuntime } from '@/lib/server/ai/copilot';
 import { getSharedDemoClient } from '@/lib/server/demo/live-store';
 import { processSlot } from '@/lib/server/runtime/process-state';
@@ -57,7 +62,11 @@ const auditSlot = processSlot<AuditLogger>('api.service.audit');
  * so in-memory operation/sequence state (when Supabase is absent) is genuinely discarded
  * rather than surviving a reset that claims the environment is back to seed.
  */
-export function __resetApiService(): void { routerSlot.write(null); auditSlot.write(null); }
+export function __resetApiService(): void {
+  routerSlot.write(null);
+  auditSlot.write(null);
+  aiSinkSlot.write(null);
+}
 
 /**
  * The service's audit logger — same sinks the mutation pipeline writes through, so
@@ -120,28 +129,85 @@ export function getApiRouter(): ApiRouter {
 }
 
 
+/*
+ * The AI usage sink lives for the life of the process, not the request.
+ *
+ * It is what accumulates spend, and a total that reset on every request would make the
+ * cap meaningless. Process-wide for the same reason the operation ledger is — see
+ * lib/server/runtime/process-state.ts.
+ */
+const aiSinkSlot = processSlot<AiUsageSink>('api.service.aiSink');
+
+function aiUsageSink(permitted: boolean): AiUsageSink {
+  const existing = aiSinkSlot.read();
+  if (existing) return existing;
+  /*
+   * When AI is permitted the sink must retain, because the cap is enforced against what
+   * it accumulated. When AI is off, nothing real is recorded and the discarding sink is
+   * honest — and it throws if AI is ever switched on behind its back, so a deployment
+   * cannot end up spending money with nowhere to count it.
+   *
+   * Neither is §8.4's durable log. That table is blocked on the retention decision, and
+   * an in-process array is not a data-retention system: it holds no question text, writes
+   * nothing to disk and is gone on restart.
+   */
+  const sink: AiUsageSink = permitted ? new InMemoryAiUsageSink() : new DiscardingAiUsageSink();
+  aiSinkSlot.write(sink);
+  return sink;
+}
+
 /**
- * What the copilot runs with in this deployment: nothing configured, deliberately.
+ * What the copilot runs with in this deployment.
  *
- * Every value below is a decision nobody has made — §13's sixth question for the cap,
- * §8.4 for the model ids and the switch storage, §10.2 for the pricing, §1.3 plus a
- * retention answer for the log. Each is therefore left unset rather than defaulted, and
- * the guardrails turn each absence into a named refusal instead of a silent assumption.
+ * Every value is read from configuration and none is defaulted. When nothing is
+ * configured — the state of every environment today — `aiProviderPermitted` refuses with
+ * a named reason, the provider is never constructed, no key is read, and the route
+ * answers REFUSED while still recording that it did.
  *
- * The practical effect today: `aiEnabled()` is false, so the route answers REFUSED with
- * INTEGRATION_DISABLED and records that it did. The path is real; only the configuration
- * is missing.
+ * The API key is read exactly here, at the moment the provider is built, and is handed
+ * straight to it. It is never stored on the runtime, never on the config object, and
+ * never returned to a caller.
  */
 function copilotRuntime(): CopilotRuntime {
+  const resolved = resolveEnvironment();
+  const config = resolveAiConfig(process.env, resolved.prefix);
+  const { permitted } = aiProviderPermitted(
+    config, resolved.env, aiProductionApproved(process.env, resolved.prefix),
+  );
+
+  const sink = aiUsageSink(permitted);
+  const spent = sink instanceof InMemoryAiUsageSink ? sink.spent() : 0;
+
   return {
-    // No provider id is configured, so nothing resolves — not even the mock, which is
-    // reachable only by a caller that names it.
-    provider: resolveAiProvider(null),
-    feature: { switches: ALL_FEATURES_OFF, budget: { cap: null, spent: 0 } },
-    pricing: null,
-    sink: new DiscardingAiUsageSink(),
-    model: '',
+    provider: permitted ? buildAiProvider(config.providerId, resolved.prefix) : null,
+    feature: {
+      // §8.4's per-feature switches have no configured home yet, so nothing is on beyond
+      // the integration gate itself. `aiEnabled()` decides that gate from the same
+      // configuration this function just read.
+      switches: permitted ? { ...ALL_FEATURES_OFF, copilot: true } : ALL_FEATURES_OFF,
+      budget: { cap: config.budgetCap, spent },
+    },
+    pricing: config.pricing,
+    sink,
+    model: config.model ?? '',
   };
+}
+
+/**
+ * Construct the configured provider, or nothing.
+ *
+ * An unknown id resolves to null rather than to the mock: a deployment that names a
+ * provider this application does not have is misconfigured, and answering its questions
+ * with a stub would hide that.
+ */
+function buildAiProvider(providerId: string | null, prefix: string): AiProvider | null {
+  if (providerId === 'openai') {
+    const apiKey = readAiApiKey(process.env, prefix);
+    // Unreachable when permitted — `aiProviderPermitted` already required the key — but
+    // the provider refuses without one rather than trusting that.
+    return apiKey ? new OpenAiProvider({ apiKey }) : null;
+  }
+  return resolveAiProvider(providerId);
 }
 
 /**

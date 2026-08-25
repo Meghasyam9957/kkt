@@ -15,13 +15,13 @@ import {
   OpenAiProvider, OpenAiKeyMissingError, classifyStatus, OPENAI_RESPONSES_URL,
 } from '@/lib/server/ai/openai-provider';
 import {
-  AiProviderError, computeCost,
+  AiProviderError, computeCost, InMemoryAiUsageSink, DiscardingAiUsageSink,
   type AiCompletionRequest, type AiProviderFailure, type AiTokenPricing,
 } from '@/lib/server/ai/provider';
 import {
   resolveAiConfig, aiProviderPermitted, readAiApiKey, AI_ENV_VARS, TOKENS_PER_MTOK,
 } from '@/lib/server/ai/config';
-import { buildAiPayload } from '@/lib/server/ai/guard';
+import { buildAiPayload, aiEnabled } from '@/lib/server/ai/guard';
 import { resolveEnvironment } from '@/lib/server/environment/config';
 import type { EnvLike } from '@/lib/shared/env';
 
@@ -209,12 +209,32 @@ describe('AI config · when a paid provider may run', () => {
     expect(reasonFor({ DEMO_AI_ENABLED: 'TRUE ' })).toBeNull();
   });
 
-  it('refuses production until it is explicitly approved, however complete the config', () => {
+  it('refuses production until it is explicitly approved', () => {
     // Mirrors writesPermitted: production begins disabled and only a deliberate act
     // changes that. A developer pointing a local run at production cannot spend money.
     expect(reasonFor({}, true)).toBe('PRODUCTION_NOT_APPROVED');
+  });
+
+  it('still refuses production once approved, because spend cannot be measured there', () => {
+    /*
+     * The gate that cannot be configured away today. §8.4's cap is HARD, and enforcing a
+     * hard cap needs a running total; production has nowhere durable to keep one, and a
+     * per-instance count would under-report across instances — the silent overspend the
+     * cap exists to prevent. So approval alone is not enough, and the missing retention
+     * decision is what actually blocks production AI.
+     */
     const config = resolveAiConfig(full(), 'DEMO_');
-    expect(aiProviderPermitted(config, 'production', true).permitted).toBe(true);
+    expect(aiProviderPermitted(config, 'production', true).reason).toBe('NO_SPEND_SOURCE');
+    // With a durable store it would run — the gate is the absence, not the environment.
+    expect(aiProviderPermitted(config, 'production', true, 'durable').permitted).toBe(true);
+    // A process-local total is never enough for production, however complete the rest.
+    expect(aiProviderPermitted(config, 'production', true, 'process').reason).toBe('NO_SPEND_SOURCE');
+  });
+
+  it('demo runs on the process-local total, and refuses when there is none', () => {
+    const config = resolveAiConfig(full(), 'DEMO_');
+    expect(aiProviderPermitted(config, 'demo', false, 'process').permitted).toBe(true);
+    expect(aiProviderPermitted(config, 'demo', false, 'none').reason).toBe('NO_SPEND_SOURCE');
   });
 
   const absences: Array<[string, Record<string, string>, string]> = [
@@ -237,6 +257,98 @@ describe('AI config · when a paid provider may run', () => {
     expect(reasonFor({ DEMO_OPENAI_API_KEY: '' })).toBe('NO_API_KEY');
     expect(() => new OpenAiProvider({ apiKey: '' })).toThrow(OpenAiKeyMissingError);
     expect(() => new OpenAiProvider({ apiKey: '   ' })).toThrow(OpenAiKeyMissingError);
+  });
+});
+
+/* ================================================================== *
+ * The integration gate, read from configuration
+ * ================================================================== */
+
+describe('aiEnabled · decided by configuration, closed by default', () => {
+  const complete = (prefix: string, appEnv: string, extra: Record<string, string> = {}) => ({
+    APP_ENV: appEnv,
+    [`${prefix}GOOGLE_SHEET_ID`]: 'workbook-id',
+    [`${prefix}GOOGLE_SERVICE_ACCOUNT_JSON_BASE64`]: serviceAccount(appEnv),
+    [`${prefix}SUPABASE_URL`]: `${appEnv}.supabase.invalid`,
+    [`${prefix}SUPABASE_SERVICE_ROLE_KEY`]: 'service-role',
+    [`${prefix}AI_ENABLED`]: 'true',
+    [`${prefix}AI_PROVIDER`]: 'openai',
+    [`${prefix}OPENAI_API_KEY`]: FAKE_KEY,
+    [`${prefix}AI_MODEL_COPILOT`]: 'configured-model-id',
+    [`${prefix}AI_PRICE_INPUT_PER_MTOK`]: '0.20',
+    [`${prefix}AI_PRICE_OUTPUT_PER_MTOK`]: '1.20',
+    [`${prefix}AI_PRICE_CURRENCY`]: 'USD',
+    [`${prefix}AI_BUDGET_CURRENCY`]: 'USD',
+    [`${prefix}AI_BUDGET_CAP`]: '25',
+    ...extra,
+  }) as unknown as NodeJS.ProcessEnv;
+
+  it('is false in this repository, because nothing is configured here', () => {
+    // The state of every environment today, and the reason no test in this suite can
+    // reach OpenAI even by accident.
+    expect(aiEnabled()).toBe(false);
+    expect(aiEnabled({} as unknown as NodeJS.ProcessEnv)).toBe(false);
+  });
+
+  it('is true for a demo that has deliberately configured everything', () => {
+    expect(aiEnabled(complete('DEMO_', 'demo'))).toBe(true);
+  });
+
+  it('is false for production even fully configured and approved', () => {
+    // Production has nowhere durable to accumulate spend, so a hard cap cannot be
+    // enforced there. Approval does not manufacture a spend source.
+    expect(aiEnabled(complete('PRODUCTION_', 'production'))).toBe(false);
+    expect(aiEnabled(complete('PRODUCTION_', 'production', {
+      PRODUCTION_AI_PRODUCTION_APPROVED: 'true',
+    }))).toBe(false);
+  });
+
+  it('closes on any single absence', () => {
+    for (const missing of [
+      'AI_ENABLED', 'AI_PROVIDER', 'OPENAI_API_KEY', 'AI_MODEL_COPILOT',
+      'AI_PRICE_INPUT_PER_MTOK', 'AI_PRICE_OUTPUT_PER_MTOK', 'AI_BUDGET_CAP',
+    ]) {
+      const env = complete('DEMO_', 'demo', { [`DEMO_${missing}`]: '' });
+      expect(aiEnabled(env), missing).toBe(false);
+    }
+  });
+
+  it('never throws on a broken environment — a gate fails closed, not loudly', () => {
+    expect(aiEnabled({ APP_ENV: 'nonsense-environment' } as unknown as NodeJS.ProcessEnv)).toBe(false);
+  });
+
+  it('a demo key cannot enable production, and the reverse', () => {
+    const demoKeyOnly = complete('PRODUCTION_', 'production', {
+      PRODUCTION_OPENAI_API_KEY: '',
+      DEMO_OPENAI_API_KEY: FAKE_KEY,
+    });
+    expect(aiEnabled(demoKeyOnly)).toBe(false);
+  });
+});
+
+describe('AI usage sink · what makes the cap enforceable', () => {
+  it('accumulates what it records, and starts from nothing', () => {
+    const sink = new InMemoryAiUsageSink();
+    expect(sink.spent()).toBe(0);
+    const row = {
+      feature: 'copilot' as const, model: 'm', promptTokens: 0, completionTokens: 0,
+      currency: 'USD', latencyMs: 1, userId: 'u', outcome: 'OK',
+    };
+    void sink.record({ ...row, cost: 0.4 });
+    void sink.record({ ...row, cost: 0.1 });
+    expect(sink.spent()).toBeCloseTo(0.5, 10);
+  });
+
+  it('the discarding sink still refuses to be used once AI is on', async () => {
+    // Step 13's safety behaviour, unchanged: enabling AI without somewhere to log it
+    // must fail rather than spend money silently.
+    const sink = new DiscardingAiUsageSink();
+    const row = {
+      feature: 'copilot' as const, model: 'm', promptTokens: 1, completionTokens: 1,
+      cost: 0, currency: 'USD', latencyMs: 1, userId: 'u', outcome: 'OK',
+    };
+    // AI is off here, so it discards quietly.
+    await expect(sink.record(row)).resolves.toBeUndefined();
   });
 });
 

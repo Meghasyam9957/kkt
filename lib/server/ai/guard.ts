@@ -21,6 +21,7 @@ import '@/lib/server/only';
 import {
   resolveEnvironment, type ResolvedEnvironment,
 } from '@/lib/server/environment/config';
+import { resolveAiConfig, aiProviderPermitted, aiProductionApproved } from '@/lib/server/ai/config';
 import type { AppEnv } from '@/lib/shared/environment';
 
 /** Anything destined for a model carries where it came from. */
@@ -91,13 +92,28 @@ export function assertAiPayloadEnvironment(
 }
 
 /**
- * Whether an AI integration is configured for this environment.
+ * Whether a real AI integration is configured AND permitted in this environment.
  *
- * Always false in this phase: nothing reads an API key, so nothing can be configured. It
- * is a function rather than a constant so the Phase 9 integration changes one place.
+ * It used to be a hard-coded `false`, on the grounds that nothing read a key so nothing
+ * could be configured. A provider exists now, so this asks the configuration instead —
+ * and the answer is still `false` everywhere nothing is set up, which is every deployment
+ * that has not deliberately turned it on.
+ *
+ * Every clause behind it is an absence rather than a default: no enable flag, no provider,
+ * no key, no model, no pricing, no cap, mismatched currencies, or nowhere to keep a
+ * running total of spend. `aiProviderPermitted` names which one refused.
+ *
+ * It never throws. A misconfigured environment must read as "AI is off", not as an
+ * exception thrown from inside a usage sink — the safe direction for a gate is closed.
  */
-export function aiEnabled(): boolean {
-  return false;
+export function aiEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  try {
+    const resolved = resolveEnvironment(env);
+    const config = resolveAiConfig(env, resolved.prefix);
+    return aiProviderPermitted(config, resolved.env, aiProductionApproved(env, resolved.prefix)).permitted;
+  } catch {
+    return false;
+  }
 }
 
 /** The dispatch point. It refuses, on purpose, and will keep refusing until Phase 9. */

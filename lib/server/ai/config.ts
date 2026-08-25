@@ -151,6 +151,42 @@ export function resolveAiConfig(env: EnvLike = process.env, prefix = ''): AiRunt
   };
 }
 
+/**
+ * Where a running total of this month's spend could be read from.
+ *
+ *   none      nothing accumulates it — a cap cannot be enforced, so nothing may run
+ *   process   an in-process accumulator: correct for one instance, wrong for several
+ *   durable   a shared store that survives a restart and is seen by every instance
+ *
+ * This is a statement about what exists, not a policy. Today `durable` is unreachable:
+ * §1.3 permits Supabase to hold AI usage logs but no retention period is specified for
+ * them, so the table is proposed rather than created — see docs/DECISIONS_REQUIRED.md.
+ */
+export type AiSpendSource = 'none' | 'process' | 'durable';
+
+/**
+ * What this deployment actually has.
+ *
+ * Demo has the in-process accumulator on its usage sink, which is honest for a single
+ * demonstration instance. Production has nothing, and a cap that cannot be measured
+ * against is not a cap — so production cannot run a paid provider today whatever else is
+ * configured. That is a consequence of the missing retention decision, not a policy
+ * invented here.
+ */
+export function availableSpendSource(appEnv: AppEnv): AiSpendSource {
+  return appEnv === 'demo' ? 'process' : 'none';
+}
+
+/**
+ * `<PREFIX>AI_PRODUCTION_APPROVED`. Production begins disabled and only the explicit
+ * string 'true' changes that, mirroring how `writesPermitted` treats production writes:
+ * the environment that spends real money against a real account does not acquire that
+ * ability by inheriting a demo default.
+ */
+export function aiProductionApproved(env: EnvLike = process.env, prefix = ''): boolean {
+  return (env[`${prefix}AI_PRODUCTION_APPROVED`] ?? '').trim().toLowerCase() === 'true';
+}
+
 /** Why a configured AI integration is nonetheless not permitted to run. */
 export type AiNotPermittedReason =
   | 'NOT_ENABLED'
@@ -160,7 +196,8 @@ export type AiNotPermittedReason =
   | 'NO_PRICING'
   | 'NO_BUDGET_CAP'
   | 'CURRENCY_MISMATCH'
-  | 'PRODUCTION_NOT_APPROVED';
+  | 'PRODUCTION_NOT_APPROVED'
+  | 'NO_SPEND_SOURCE';
 
 /**
  * Whether a real, paid provider may run in this environment — and if not, precisely why.
@@ -174,6 +211,7 @@ export function aiProviderPermitted(
   config: AiRuntimeConfig,
   appEnv: AppEnv,
   productionApproved: boolean,
+  spendSource: AiSpendSource = availableSpendSource(appEnv),
 ): { permitted: boolean; reason: AiNotPermittedReason | null } {
   const no = (reason: AiNotPermittedReason) => ({ permitted: false, reason });
   if (!config.enabled) return no('NOT_ENABLED');
@@ -184,5 +222,13 @@ export function aiProviderPermitted(
   if (!config.pricing) return no('NO_PRICING');
   if (config.currencyMismatch) return no('CURRENCY_MISMATCH');
   if (config.budgetCap === null) return no('NO_BUDGET_CAP');
+  /*
+   * Last, and the one that cannot be configured away today. §8.4's cap is a *hard* cap;
+   * enforcing it needs a running total, and production has nowhere to keep one. A
+   * per-instance count would under-report across instances, which is the silent overspend
+   * the cap exists to prevent — so it is refused rather than approximated.
+   */
+  if (spendSource === 'none') return no('NO_SPEND_SOURCE');
+  if (appEnv === 'production' && spendSource !== 'durable') return no('NO_SPEND_SOURCE');
   return { permitted: true, reason: null };
 }
