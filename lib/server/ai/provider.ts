@@ -20,6 +20,7 @@ import '@/lib/server/only';
  * Nothing in this file opens a socket or reads a credential. The only provider shipped
  * today is the local mock, which does neither by construction.
  */
+import { aiEnabled } from '@/lib/server/ai/guard';
 import type { AiPayload } from '@/lib/server/ai/guard';
 import type { AiFeature, AiUsageRecord } from '@/lib/server/ai/guardrails';
 
@@ -169,7 +170,32 @@ export interface AiUsageSink {
   record(usage: AiUsageRecord): Promise<void>;
 }
 
-/** The sink used by tests, and the only one that exists. */
+/**
+ * The sink for a deployment that has nowhere to write.
+ *
+ * §8.4 requires every call logged and §1.3 permits Supabase to hold that log, but no
+ * retention period is specified for it anywhere in the architecture, so the table is
+ * proposed rather than created. Until it exists this discards — which is honest while AI
+ * is off, because the only records are refusals of calls that never happened.
+ *
+ * It refuses to be honest about anything more than that: the moment AI is genuinely
+ * enabled, discarding a real call's cost and tokens would break the one control §8.4
+ * relies on, so this throws instead. Enabling AI therefore requires providing a real
+ * sink, rather than remembering to.
+ */
+export class DiscardingAiUsageSink implements AiUsageSink {
+  async record(usage: AiUsageRecord): Promise<void> {
+    if (aiEnabled()) {
+      throw new Error(
+        'AI is enabled but no usage sink is configured. §8.4 requires every call logged '
+        + `(feature ${usage.feature}, model ${usage.model}); discarding it would leave the `
+        + 'monthly budget cap with nothing to count. Configure a sink before enabling AI.',
+      );
+    }
+  }
+}
+
+/** The sink used by tests, and the only one that retains anything. */
 export class InMemoryAiUsageSink implements AiUsageSink {
   readonly records: Array<AiUsageRecord> = [];
   async record(usage: AiUsageRecord): Promise<void> {

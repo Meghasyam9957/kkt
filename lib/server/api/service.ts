@@ -19,6 +19,7 @@ import { ApiRouter } from './router';
 import { registerMutationHandlers } from './mutation-services';
 import { registerForecastHandlers } from './forecast-service';
 import { registerAnalyticsHandlers } from './analytics-service';
+import { registerCopilotHandlers } from './copilot-service';
 import type { MutationDependencies } from './mutations';
 import { resolveEnvironment, type ResolvedEnvironment } from '@/lib/server/environment/config';
 import { createRepositories } from '@/lib/server/sheets/repositories';
@@ -34,6 +35,10 @@ import { AuditLogger, InMemoryAuditSink, SupabaseAuditSink, CompositeAuditSink }
 import { SupabaseAuthProvider } from '@/lib/server/auth/session';
 import { DemoAuthProvider } from '@/lib/server/auth/demo-identities';
 import { getDataProvider, getReadCache } from '@/lib/data/providers';
+import { ALL_FEATURES_OFF } from '@/lib/server/ai/guardrails';
+import { DiscardingAiUsageSink } from '@/lib/server/ai/provider';
+import { resolveAiProvider } from '@/lib/server/ai/dispatch';
+import type { CopilotRuntime } from '@/lib/server/ai/copilot';
 import { getSharedDemoClient } from '@/lib/server/demo/live-store';
 import { processSlot } from '@/lib/server/runtime/process-state';
 
@@ -109,8 +114,34 @@ export function getApiRouter(): ApiRouter {
   // and production's environment check happens on the request rather than at boot.
   registerForecastHandlers(built, getDataProvider);
   registerAnalyticsHandlers(built, getDataProvider);
+  registerCopilotHandlers(built, getDataProvider, copilotRuntime);
   routerSlot.write(built);
   return built;
+}
+
+
+/**
+ * What the copilot runs with in this deployment: nothing configured, deliberately.
+ *
+ * Every value below is a decision nobody has made — §13's sixth question for the cap,
+ * §8.4 for the model ids and the switch storage, §10.2 for the pricing, §1.3 plus a
+ * retention answer for the log. Each is therefore left unset rather than defaulted, and
+ * the guardrails turn each absence into a named refusal instead of a silent assumption.
+ *
+ * The practical effect today: `aiEnabled()` is false, so the route answers REFUSED with
+ * INTEGRATION_DISABLED and records that it did. The path is real; only the configuration
+ * is missing.
+ */
+function copilotRuntime(): CopilotRuntime {
+  return {
+    // No provider id is configured, so nothing resolves — not even the mock, which is
+    // reachable only by a caller that names it.
+    provider: resolveAiProvider(null),
+    feature: { switches: ALL_FEATURES_OFF, budget: { cap: null, spent: 0 } },
+    pricing: null,
+    sink: new DiscardingAiUsageSink(),
+    model: '',
+  };
 }
 
 /**

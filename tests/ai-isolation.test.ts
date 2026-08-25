@@ -173,10 +173,23 @@ describe('AI isolation · the seam is inert', () => {
     expect(names.filter((n) => /openai|anthropic|langchain|llamaindex/i.test(n))).toEqual([]);
   });
 
-  it('the copilot is not reachable over HTTP in this phase', () => {
-    // §7 declares POST /api/ai/copilot for Phase 9. Until the guardrails, logging and
-    // budget cap exist, the context builder must have no route in front of it.
-    expect(API_ROUTES.filter((r) => r.path.startsWith('/api/ai'))).toEqual([]);
+  it('the declared AI surface is exactly the copilot ask, and it writes nothing', () => {
+    /*
+     * This test used to assert that NO /api/ai route existed, on the grounds that the
+     * context builder should have nothing in front of it until the guardrails, the
+     * budget gate and the usage seam were built. They are, so the route is declared —
+     * and the tripwire narrows rather than disappears: a second AI route fails here
+     * until someone writes it down, which is the part worth keeping.
+     *
+     * It is also where the non-mutating classification is checked from the AI side. The
+     * governance suites check it from the registry side; this checks that the route the
+     * AI layer is reached through has not quietly become a write.
+     */
+    const ai = API_ROUTES.filter((r) => r.path.startsWith('/api/ai'));
+    expect(ai.map((r) => `${r.method} ${r.path}`)).toEqual(['POST /api/ai/copilot']);
+    expect(ai[0]!.capability).toBe('ai.operations');
+    expect(ai[0]!.mutates).toBeUndefined();
+    expect(ai[0]!.nonMutating).toBe(true);
   });
 });
 
