@@ -749,12 +749,17 @@ export function forecastVsActual(
    * through its end, the same convention `openingBalance` already uses, so
    * closing(M) === opening(M+1). Nothing stops that being computed.
    *
-   * The FORECAST side is what cannot be rebuilt. Re-estimating a past month needs the
-   * payouts that were expected AT THE TIME, which needs the bookings that existed at the
-   * time — and this read model carries no booking date (see `WorkbookViews.forecast`).
-   * Using today's bookings would hand the re-estimate the answer, exactly as it would for
-   * occupancy. A comparison built on that would look like accuracy without being it, so
-   * none is produced.
+   * The FORECAST side is what is missing, and since `booksAsAt` exists the obstacle is no
+   * longer that it cannot be built. Re-estimating a past month needs the payouts expected
+   * AT THE TIME, and those follow from the bookings that existed then, which `BookingDate`
+   * now supplies wherever the source records it. Every other term — opening balance, the
+   * rent obligation window, the trailing variable average — is already dated.
+   *
+   * What is missing is data to validate it against. The generated demonstration set
+   * records no booking dates, so a cash backtest built here could not be exercised before
+   * being shown to anyone, and this is the horizon where a wrong number is most expensive.
+   * It stays unbuilt until a source with booking dates exists to prove it. That is a
+   * smaller and more specific blocker than the one recorded here previously.
    */
   if (estimate.horizon === 'cashflow') return null;
 
