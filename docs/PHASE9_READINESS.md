@@ -6,9 +6,12 @@ Phase 9 in [ARCHITECTURE.md](ARCHITECTURE.md) §11 is "Tools, guardrails, loggin
 dashboard, budget cap", with the note *"Must sit on proven data; otherwise it lies
 confidently."* This document is the audit of how close that is.
 
-No OpenAI integration exists. `aiEnabled()` returns `false`, `dispatchToAi()` throws, no
-file anywhere reads an `OPENAI` environment variable, no AI SDK is installed, and no
-`/api/ai/*` route is declared. All five statements are asserted by
+A real OpenAI provider adapter now exists behind the `AiProvider` seam, and
+`POST /api/ai/copilot` is declared and wired. **Nothing calls out.** `aiEnabled()` reads
+configuration and answers `false` in every environment, because none is configured: no
+enable flag, no provider, no key, no model, no pricing, no cap. No AI SDK is installed,
+exactly one module may read the environment, exactly one may reach the network, and it may
+reach exactly one host — all asserted by
 [`tests/ai-isolation.test.ts`](../tests/ai-isolation.test.ts).
 
 ---
@@ -311,3 +314,34 @@ state, no error rendering, no refusal wording.
 
 Until 1 and 2 are answered, no AI feature can run: the guardrail refuses an unconfigured
 cap by design, and there is nowhere to log a call that is made.
+
+---
+
+## 8 · Provider facts, and where they came from
+
+Verified against the official documentation on **2026-08-26** rather than from memory, as
+required before selecting an implementation. No model id and no price is written into
+source; both are configuration, so a change at OpenAI is a configuration change here.
+
+| What was verified | Source |
+|---|---|
+| Recommended API surface for new integrations — the Responses API, and its request fields (`model`, `instructions`, `input`) | `developers.openai.com/api/docs/guides/migrate-to-responses`, `.../api/reference/typescript` |
+| Token usage field names — `input_tokens`, `input_tokens_details.cached_tokens`, `output_tokens`, `total_tokens` | `developers.openai.com/api/docs/guides/prompt-caching`; corroborated by `openai-python/src/openai/types/responses/response_usage.py` |
+| Current text model line and the cost-optimised member | `developers.openai.com/api/docs/models` |
+| Published pricing, stated per **1M tokens**, with a separate cached-input rate | `developers.openai.com/api/docs/pricing` |
+| Error statuses and types — 400, 401, 403, 429 (including project/organization spend limits), 500, 503 | `developers.openai.com/api/docs/guides/error-codes` |
+| Key handling and project separation — environment variables or a secret manager, never in code or a repository; separate projects for separate environments | `developers.openai.com/api/docs/guides/production-best-practices` |
+
+**The official Node SDK is deliberately not installed.** It retries twice by default, and
+§8 defines no retry policy; a retry is a second charge against a budget somebody has to
+answer for. The adapter calls the documented REST endpoint once, so "one request in, one
+call out" holds by construction rather than by remembering to disable a default. It also
+keeps the dependency count and the client-bundle surface unchanged.
+
+**A leak the tests caught before it shipped.** The adapter originally relayed the
+provider's own `error.type` through a conservative-looking pattern. A key is letters,
+digits and hyphens and matches that pattern, so a provider echoing something key-shaped
+would have had it repeated into an operator-facing message. Only literals from an
+allowlist the adapter owns are emitted now, so relaying cannot leak by construction.
+
+---
