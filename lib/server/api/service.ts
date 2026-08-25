@@ -17,6 +17,7 @@ import '@/lib/server/only';
 import { API_ROUTES } from './routes';
 import { ApiRouter } from './router';
 import { registerMutationHandlers } from './mutation-services';
+import { registerForecastHandlers } from './forecast-service';
 import type { MutationDependencies } from './mutations';
 import { resolveEnvironment, type ResolvedEnvironment } from '@/lib/server/environment/config';
 import { createRepositories } from '@/lib/server/sheets/repositories';
@@ -31,7 +32,7 @@ import {
 import { AuditLogger, InMemoryAuditSink, SupabaseAuditSink, CompositeAuditSink } from '@/lib/server/audit/logger';
 import { SupabaseAuthProvider } from '@/lib/server/auth/session';
 import { DemoAuthProvider } from '@/lib/server/auth/demo-identities';
-import { getReadCache } from '@/lib/data/providers';
+import { getDataProvider, getReadCache } from '@/lib/data/providers';
 import { getSharedDemoClient } from '@/lib/server/demo/live-store';
 import { processSlot } from '@/lib/server/runtime/process-state';
 
@@ -102,6 +103,10 @@ export function getApiRouter(): ApiRouter {
 
   const built = new ApiRouter({ authProvider, audit });
   registerMutationHandlers(built, API_ROUTES, deps);
+  // Read side (Phase 8). The provider is passed as a function, not an instance: it
+  // resolves per request, so a demonstration dataset switch is reflected immediately
+  // and production's environment check happens on the request rather than at boot.
+  registerForecastHandlers(built, getDataProvider);
   routerSlot.write(built);
   return built;
 }

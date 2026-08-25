@@ -40,6 +40,18 @@ export const API_ROUTES: readonly RouteDefinition[] = [
   { method: 'GET', path: '/api/analytics/parity', capability: 'audit.read',
     action: 'analytics.parity.read', summary: 'Server-vs-workbook reconciliation report' },
 
+  /* ---------------- Admin — forecasting (ARCHITECTURE §7 / §9) ----------------
+   * Deterministic estimates, never a model. Both paths return the §9 estimate whole:
+   * its ESTIMATE label, method, inputs, month count and confidence travel with the
+   * number — or with the explicit absence of one below the 2-month threshold.
+   * §7 also lists /api/forecast/cashflow. It stays undeclared until the per-platform
+   * payout lag it depends on is available in Settings; declaring it now would promise
+   * an answer this system cannot yet give honestly.                                 */
+  { method: 'GET', path: '/api/forecast/occupancy', capability: 'analytics.read',
+    action: 'forecast.occupancy.read', summary: 'Occupancy estimate for the month ahead (booking-on-hand + residual pickup)' },
+  { method: 'GET', path: '/api/forecast/revenue', capability: 'analytics.read',
+    action: 'forecast.revenue.read', summary: 'Revenue estimate for the month ahead (forecast nights × trailing ADR)' },
+
   { method: 'GET', path: '/api/revenue',  capability: 'revenue.read',  action: 'revenue.read',  entityType: 'REVENUE',  summary: 'Revenue ledger' },
   { method: 'GET', path: '/api/expenses', capability: 'expenses.read', action: 'expenses.read', entityType: 'EXPENSE',  summary: 'Operating expenses' },
   { method: 'GET', path: '/api/capex',    capability: 'capex.read',    action: 'capex.read',    entityType: 'CAPEX',    summary: 'CAPEX / setup spend' },
