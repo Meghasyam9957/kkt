@@ -94,13 +94,13 @@ export function assertAiPayloadEnvironment(
  * Whether an AI integration is configured for this environment.
  *
  * Always false in this phase: nothing reads an API key, so nothing can be configured. It
- * is a function rather than a constant so the Phase 7 integration changes one place.
+ * is a function rather than a constant so the Phase 9 integration changes one place.
  */
 export function aiEnabled(): boolean {
   return false;
 }
 
-/** The dispatch point. It refuses, on purpose, and will keep refusing until Phase 7. */
+/** The dispatch point. It refuses, on purpose, and will keep refusing until Phase 9. */
 export function dispatchToAi(payload: AiPayload, options: { resolved?: ResolvedEnvironment } = {}): never {
   // Environment check first: a mismatched payload is a bug worth surfacing even while the
   // feature is switched off, because it means the caller built it in the wrong place.

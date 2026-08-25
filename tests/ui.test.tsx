@@ -438,7 +438,9 @@ describe('10 · no credential access in client code', () => {
     const code = codeOnly(raw);
     // The comment may discuss OpenAI; the code must not reach for it.
     expect(code).not.toMatch(/from ['\"]openai|api\.openai\.com|fetch\s*\(/i);
-    expect(raw).toContain('Phase 7');
+    // §11 puts the AI copilot at Phase 9. Phase 7 (the investor portal) has shipped, so
+    // naming it here told a client the wrong thing about what they were waiting for.
+    expect(raw).toContain('Phase 9');
     // The composer is inert, not merely styled to look inert.
     expect(raw).toMatch(/disabled/);
   });

@@ -36,7 +36,7 @@ export default async function CopilotPage() {
           <Card>
             <CardHeader
               title="Conversation"
-              action={<Badge tone="warn">AI integration coming in Phase 7</Badge>}
+              action={<Badge tone="warn">AI integration coming in Phase 9</Badge>}
             />
             <CardBody className="sv-card__body--flush">
               <div className="sv-copilot__thread">
@@ -58,9 +58,9 @@ export default async function CopilotPage() {
               <div className="sv-copilot__composer">
                 <input
                   className="sv-copilot__input"
-                  placeholder="Available in Phase 7"
+                  placeholder="Available in Phase 9"
                   disabled
-                  aria-label="Ask the copilot (disabled until Phase 7)"
+                  aria-label="Ask the copilot (disabled until Phase 9)"
                 />
                 <button type="button" className="sv-btn sv-btn--primary" disabled>Send</button>
               </div>
