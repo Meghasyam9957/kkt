@@ -33,7 +33,7 @@ file anywhere reads an `OPENAI` environment variable, no AI SDK is installed, an
 | 14 | **PII sanitization** | 🟢 **Built** | §8.3 | Guest names stripped at the copilot boundary; the alerts API is unchanged for its own consumers. Contact details are structurally absent — no operations view carries them. |
 | 15 | **Forecast restriction** | 🟢 **Built** | §8.2 rule 4, §9 | Estimates arrive computed, labelled `ESTIMATE`, with method and status; the `inputs` block is withheld. No AI module may import a calculation engine. |
 | 16 | **Tests before enabling** | 🟡 **Partly built** | §8.1, §8.2 | See §4 below. |
-| 17 | **`POST /api/ai/copilot`** | 🔴 **Conflict** | §7, write governance | Declared by §7, **not declarable** in this registry. See §6. |
+| 17 | **`POST /api/ai/copilot`** | 🟢 **Built** | §7, write governance | Declared, guarded by `ai.operations`, wired to the copilot service on the mock provider. The write-governance rule was re-expressed rather than exempted — see §6. |
 
 🟢 built · 🟡 contract built, feature work remains · 🟠 partial or credential-blocked · 🔴 blocked on a decision
 
@@ -139,6 +139,7 @@ Built, and passing today:
 | `tests/ai-guardrails.test.ts` | §8.4 kill switches and budget precedence, §8.2 rule 1 numeric grounding |
 | `tests/ai-provider.test.ts` | The provider seam end to end against the mock: refusals, cost, usage logging, failure classification, gate ordering, environment isolation |
 | `tests/ai-copilot.test.ts` | The copilot path end to end: RBAC, ops-scoping, guest-name stripping, forecast restriction, anti-fabrication, one usage record per attempt, determinism, no network |
+| `tests/copilot-api.test.ts` | The HTTP route: authorization, validation, every outcome over the wire, transitive read reach, production wiring |
 | `tests/environment.test.ts` | Invariants 5 & 6 — a payload cannot cross environments |
 | `tests/security.test.ts` | No credential reachable from client code; `OPENAI_API_KEY` included |
 | `tests/rbac.test.ts` | Every route × every role, so a new `/api/ai/*` route is covered the moment it is declared |
@@ -169,6 +170,7 @@ meant to be configuration rather than surgery.
 | [`mock-provider.ts`](../lib/server/ai/mock-provider.ts) | A local, deterministic backend that answers without a model. Its default reply contains no digits, so it cannot satisfy §8.2 rule 1 by coincidence |
 | [`dispatch.ts`](../lib/server/ai/dispatch.ts) | The provider registry, and the one path a question travels |
 | [`copilot.ts`](../lib/server/ai/copilot.ts) | The copilot turn: authorise, build context, dispatch, shape §8.1's "answer + source period + provenance". Holds §8.2's five rules as the system prompt, transcribed |
+| [`../api/copilot-service.ts`](../lib/server/api/copilot-service.ts) | The HTTP handler: validate a body, resolve the period, delegate. Nothing else |
 
 Every gate sits in the dispatcher rather than in a caller, in a fixed order:
 
@@ -203,65 +205,92 @@ Nothing above it changes — not the context boundary, not the guardrails, not t
 
 ---
 
-## 6 · `POST /api/ai/copilot` — specified by §7, not declarable here
+## 6 · `POST /api/ai/copilot` — declared, and why this POST is non-mutating
 
-§7 lists the route: **`POST /api/ai/copilot` — ADMIN (OPS: ops-scoped)**. It is not
-declared, and this is the reason rather than an oversight.
+§7 lists the route: **`POST /api/ai/copilot` — ADMIN (OPS: ops-scoped)**. It is now
+declared and wired. The obstacle was never the route; it was a rule that had outgrown its
+own wording.
 
-**The registry refuses it.** Every non-GET route in `API_ROUTES` must declare
-`mutates: true` and carry a capability ending in `.write`. That rule is asserted
-independently in three suites — `tests/security.test.ts`, `tests/rbac.test.ts` and
-`tests/environment.test.ts` — and `tests/mutations.test.ts` additionally treats every
-mutating route as an entity write, with idempotency through the `operations` table, an
-allocated id and an audit entity type.
+### The invariant that changed
 
-A copilot question mutates nothing. It allocates no id, writes no sheet and has no entity.
-There is no write capability that honestly describes it, and `WRITE_CAPABILITIES` is
-defined as the set INVESTOR must hold none of — putting an AI capability in it would
-misstate what that list means.
+The registry required every **non-GET** route to declare `mutates: true` and carry a
+capability ending in `.write`. Two of the three suites enforcing it already named the real
+invariant in their own titles — *"every **write path** is declared, flagged and
+capability-gated"* — and inferred one from the HTTP verb because, until now, every non-GET
+route was a write.
 
-Three ways out, all of them decisions:
+So the classification is now **declared rather than inferred**, and the rule reads:
 
-| Option | Cost |
+> Every non-GET route declares **exactly one** of `mutates: true` or `nonMutating: true`.
+
+That is **stricter than what it replaced**, not weaker: a POST declaring neither used to be
+inexpressible and is now an explicit failure. Nothing about a genuine business write
+changed — a mutating route still needs its flag, its `.write` capability, its
+`MUTATION_DEFINITIONS` entry, its idempotency, its allocated id and its audit entity.
+
+The rule lives in one place, [`assertWriteGovernance`](../lib/server/api/routes.ts), called
+by `tests/security.test.ts`, `tests/rbac.test.ts` and `tests/environment.test.ts`, so the
+three cannot drift apart.
+
+### Why a copilot question is not a business-data mutation
+
+It allocates no id, writes no sheet cell, has no entity, is not idempotent and creates no
+record. Calling it a write would put a false statement in the registry and hand it a
+`.write` capability — and `WRITE_CAPABILITIES` is defined as the set INVESTOR must hold
+none of, so an AI capability inside it would misstate what that list means.
+
+### What keeps the exemption narrow
+
+A flag is a claim; these are the checks that the claim is true.
+
+| Guard | Where |
 |---|---|
-| Exempt non-mutating POSTs in the registry | Changes a governance rule three suites enforce, and every future POST inherits the exemption |
-| Declare it `GET` | Contradicts §7, and puts a free-text question into a URL — which the privacy rule on query strings argues against |
-| Mint a `.write` capability for it | Misstates the capability model to satisfy a lint-shaped rule |
+| The non-mutating set is **exactly** `['POST /api/ai/copilot']`, derived from the registry | `assertWriteGovernance` |
+| A non-mutating route may only be `POST` — never `PATCH`, never `DELETE` | `assertWriteGovernance` |
+| It must carry no `.write` capability, no `entityType`, no investor scoping | `assertWriteGovernance` |
+| Its path must start with `/api/ai/` | `assertWriteGovernance` |
+| The declared AI surface is exactly this one route | `tests/ai-isolation.test.ts` |
+| Its capability holders are exactly SUPER_ADMIN + ADMIN + OPERATIONS | `tests/rbac.test.ts` |
+| Its handler module imports no repository, Sheets client or mutation path | `tests/security.test.ts` |
+| **A whole request touches only whitelisted reads** — measured through a proxied provider, so transitive reach is covered rather than one file's imports | `tests/copilot-api.test.ts` |
+| The route is actually bound in the production router, not merely declared | `tests/copilot-api.test.ts` |
 
-**When it becomes declarable**, one thing is already determined and need not be decided
-again: the capability matching §7's role set is `ai.operations`, which is exactly
-SUPER_ADMIN + ADMIN + OPERATIONS. "OPS: ops-scoped" then falls out of the context boundary
-with nothing invented — OPERATIONS holds no financial capability, so its context is
-`getAlerts` alone. This is the same resolution used for `GET /api/analytics/alerts`.
+### The contract
 
-**Also missing regardless of that choice:**
+`POST /api/ai/copilot`, capability `ai.operations`, action `ai.copilot.ask`.
+
+**Request body** is exactly `{ "question": string }`, `.strict()` so an unexpected key is a
+422 rather than a silently confirmed contract. There is deliberately no length bound:
+§8.4's control for input size is "context caps: max input tokens per feature", whose values
+are unspecified, and a character limit here would pre-empt that decision in a different
+unit. The period comes from §7's existing query filter conventions via the helper every
+analytics read shares.
+
+**Response** is the `CopilotAnswer` the service already produces — §8.1's *"answer + source
+period + provenance"* — returned unchanged. A refusal is a **200 with an outcome**, not an
+HTTP error: the caller was authorised, and §8.4 asks for a clear message rather than a
+status code standing in for one. The six internal refusal codes are preserved as they are.
+
+**Today every request refuses with `INTEGRATION_DISABLED`**, because the composition root
+configures no provider, no pricing, no cap and no switches. Each absence is a named
+refusal rather than a default.
+
+### Still missing on this route
 
 - **Rate limits.** §8.4 requires them "per user and per role". No rate-limiting
   infrastructure exists anywhere in this repository, and no values are specified.
-- **The request shape.** §7 specifies a body for no route, and for reads the shape was
-  determinable from the repository. Here it is not: whether §7's `?month=` / `?propertyId=`
-  / `?platform=` filter conventions arrive as query or body on a POST is unstated.
-
-The response shape *is* determinable — §8.1's `A1` is "Answer + source period +
-provenance", which is `CopilotAnswer`. So the handler is a thin wrapper the day the route
-question is answered; `answerCopilotQuestion` is complete and tested without it.
+- **A usage sink that retains anything.** Production wires `DiscardingAiUsageSink`, which
+  discards while AI is off and **throws if `aiEnabled()` ever returns true** — so enabling
+  AI requires providing a real sink rather than remembering to. The table itself is still
+  blocked on retention (§2).
+- **User-facing wording for a refusal.** Unchanged: the codes exist and carry an
+  operator's message; §8 specifies no text for the person who asked.
 
 ### The copilot page
 
-`docs/SRIVILLU_UI_REDESIGN_PLAN.md` §8 documents the composer as deliberately inert —
-clicking a suggested prompt "inserts it into the composer (no request is sent; the composer
-stays disabled)". That is the documented contract, so the page is unchanged. No contract is
-documented for a *connected* copilot: no loading state, no error rendering, no mapping from
-a refusal reason to anything a person reads. That last one is the gap worth naming.
-
-### Refusal reasons have no user-facing wording
-
-`AiRefusalReason` distinguishes six refusals — `INTEGRATION_DISABLED`,
-`BUDGET_UNCONFIGURED`, `BUDGET_EXCEEDED`, `FEATURE_SWITCHED_OFF`, `NO_PROVIDER`,
-`NO_PRICING`. §8.4 requires "a clear message" and the code carries one for an operator, but
-**§8 specifies no mapping from these codes to text a user sees**, and the wording differs by
-audience: "no budget cap is configured" is an operator's sentence, not a manager's. The
-mapping is left unwritten rather than guessed.
+Still unchanged. Its documented contract in the UI redesign plan says the composer is inert
+and no request is sent, and no contract is documented for a connected one — no loading
+state, no error rendering, no refusal wording.
 
 ---
 
@@ -274,10 +303,10 @@ mapping is left unwritten rather than guessed.
 4. **Cost currency**, and confirmation of the per-token pricing assumed (§10.2).
 5. **Rate limits and per-feature token caps** (§8.4 names both without values).
 6. **Where per-feature kill switches are stored**, given settings are workbook-owned.
-7. **How `POST /api/ai/copilot` should be declared**, given this repository's write
-   governance treats every non-GET route as a mutation (§6).
-8. **What a refused copilot turn says to the person who asked** — the codes exist, the
+7. **What a refused copilot turn says to the person who asked** — the codes exist, the
    user-facing wording is unspecified.
+8. **Rate limits per user and per role** (§8.4), for which no infrastructure and no values
+   exist.
 
 Until 1 and 2 are answered, no AI feature can run: the guardrail refuses an unconfigured
 cap by design, and there is nowhere to log a call that is made.
