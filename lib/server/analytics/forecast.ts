@@ -613,10 +613,19 @@ export function forecastVsActual(
   if (!actualMonth) return null;
 
   /*
-   * Cash flow is deliberately not compared. Its estimate is a projected CLOSING BALANCE,
-   * and the monthly series carries movements — cash in, cash out, net — not a cumulative
-   * balance. Comparing a balance against a movement would produce a number that looks
-   * like accuracy and is not one, so nothing is produced at all.
+   * Cash flow is deliberately not compared, and it is worth being precise about which
+   * half is missing, because it is not the half it first appears to be.
+   *
+   * The ACTUAL side is available: a month's closing balance is the cumulative net cash
+   * through its end, the same convention `openingBalance` already uses, so
+   * closing(M) === opening(M+1). Nothing stops that being computed.
+   *
+   * The FORECAST side is what cannot be rebuilt. Re-estimating a past month needs the
+   * payouts that were expected AT THE TIME, which needs the bookings that existed at the
+   * time — and this read model carries no booking date (see `WorkbookViews.forecast`).
+   * Using today's bookings would hand the re-estimate the answer, exactly as it would for
+   * occupancy. A comparison built on that would look like accuracy without being it, so
+   * none is produced.
    */
   if (estimate.horizon === 'cashflow') return null;
 

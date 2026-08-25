@@ -211,7 +211,7 @@ function Accuracy({
     <Card>
       <CardHeader
         title={title}
-        subtitle="Each completed month re-estimated from the months before it, so the method's accuracy is visible rather than asserted. Confirmed bookings and later rates are both excluded from the re-estimate — the workbook keeps no record of what was on the books at the time, and counting today's would make every past month look perfectly predicted."
+        subtitle="Each completed month re-estimated from the months before it, so the method's accuracy is visible rather than asserted. Confirmed bookings and later rates are both excluded from the re-estimate: this view cannot reconstruct which bookings existed at the time, and counting today's would make every past month look perfectly predicted. What is measured is therefore the pickup basis on its own — the full method, with the month's confirmed bookings behind it, is more accurate than these figures suggest."
       />
       <CardBody className="sv-card__body--flush">
         {rows.length === 0 ? (

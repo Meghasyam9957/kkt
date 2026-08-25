@@ -1,5 +1,5 @@
 /**
- * FORECAST API (ARCHITECTURE §7) — `GET /api/forecast/{occupancy,revenue}`.
+ * FORECAST API (ARCHITECTURE §7) — `GET /api/forecast/{occupancy,revenue,cashflow}`.
  *
  * What these cases are actually protecting:
  *
@@ -9,9 +9,11 @@
  *   2. insufficient history survives the transport — `value: null` and a reason, never a
  *      zero, never an empty 200 that reads as "nothing happened that month";
  *   3. the guard applies exactly as it does to every other declared route: ADMIN and
- *      SUPER_ADMIN through, OPERATIONS and INVESTOR refused, anonymous unauthenticated;
- *   4. cash flow is NOT reachable — §7 lists it, this milestone defers it, and a 404 is
- *      the honest answer rather than a route that invents a payout lag.
+ *      SUPER_ADMIN through, OPERATIONS and INVESTOR refused, anonymous unauthenticated,
+ *      with cash flow behind the capability that guards the cash ledger itself;
+ *   4. the accuracy tables say only what they can support — both horizons where a
+ *      re-estimate is possible, nothing at all for cash flow, and no settled month that
+ *      can be moved by a booking made afterwards.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ApiRouter } from '@/lib/server/api/router';
@@ -19,8 +21,9 @@ import { registerForecastHandlers } from '@/lib/server/api/forecast-service';
 import { InMemoryAuthProvider, type TestUser } from '@/lib/server/auth/session';
 import { AuditLogger, InMemoryAuditSink } from '@/lib/server/audit/logger';
 import { FixtureDashboardDataProvider } from '@/lib/data/providers/fixture-provider';
-import { buildDemoOps } from '@/lib/data/fixtures/workbook';
+import { buildDemoOps, buildDemoWorkbook } from '@/lib/data/fixtures/workbook';
 import { MINIMUM_USABLE_MONTHS } from '@/lib/server/analytics/forecast';
+import { monthPeriod } from '@/lib/server/analytics/kpi';
 import type { DashboardDataProvider, ReportFilters } from '@/lib/data/providers/types';
 import { USERS } from './support/harness';
 import { baseline } from './fixtures/scenarios';
@@ -144,6 +147,43 @@ describe('Forecast API · response', () => {
     expect(revenue.body.data.accuracy.length).toBeGreaterThan(0);
     for (const row of occupancy.body.data.accuracy) expect(row.horizon).toBe('occupancy');
     for (const row of revenue.body.data.accuracy) expect(row.horizon).toBe('revenue');
+  });
+
+  it('re-estimates settled months without the books, exactly as the screen claims', async () => {
+    /*
+     * The screen tells the reader that confirmed bookings are excluded from the
+     * re-estimate. This pins that claim to the behaviour: adding confirmed bookings for
+     * the month AHEAD moves the forward estimate and must leave every settled month's
+     * accuracy row untouched. If a future booking could shift a past month's row, the
+     * re-estimate would be reading the books after all.
+     */
+    const workbook = buildDemoWorkbook();
+    const forecastMonth = monthPeriod(
+      (await new FixtureDashboardDataProvider({ now: FIXED_NOW }).getForecast(NO_FILTERS)).data.monthKey,
+    );
+    const withBookings = {
+      ...workbook,
+      reservations: [
+        ...workbook.reservations,
+        {
+          ...workbook.reservations[0]!,
+          BookingID: 'BK-TEST-0001',
+          BookingStatus: 'Confirmed',
+          CheckInDate: forecastMonth.start,
+          CheckOutDate: forecastMonth.start + 6,
+        },
+      ],
+    };
+
+    const plain = await new FixtureDashboardDataProvider({ now: FIXED_NOW }).getForecast(NO_FILTERS);
+    const loaded = await new FixtureDashboardDataProvider({ workbook: withBookings, now: FIXED_NOW })
+      .getForecast(NO_FILTERS);
+
+    // The forward estimate sees the new booking...
+    expect(loaded.data.occupancy.inputs.bookingOnHandNights)
+      .toBeGreaterThan(plain.data.occupancy.inputs.bookingOnHandNights);
+    // ...and not one settled month moves.
+    expect(loaded.data.accuracy).toEqual(plain.data.accuracy);
   });
 
   it('compares the same settled months on both horizons', async () => {

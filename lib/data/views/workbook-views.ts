@@ -187,14 +187,32 @@ export class WorkbookViews {
    *
    * `accuracy` backtests the residual-pickup basis on BOTH horizons: each past month is
    * re-estimated from the months before it with the books deliberately excluded, because
-   * the workbook keeps no record of what was on-hand at the time. Including today's
-   * reservations would make a settled month look perfectly predicted, which would be
-   * flattery rather than measurement.
+   * this read model carries no booking date and so cannot reconstruct what was on the
+   * books at the time. (04_RESERVATIONS does have a `BookingDate` column; `ReservationRecord`
+   * does not read it. Reading it would allow a faithful reconstruction — the one real
+   * enhancement available here.) Counting today's reservations instead would make every
+   * settled month look perfectly predicted, which is flattery rather than measurement.
    *
-   * What this is, and what it is not: §9 asks that forecast-vs-actual be "retained each
-   * month". Nothing here is retained — every row is re-derived on the spot. It therefore
-   * measures the METHOD's accuracy, which is the honest thing to claim while no store of
-   * forecasts as they were actually issued exists.
+   * WHY NOTHING IS STORED — §9 says forecast-vs-actual "is retained each month so accuracy
+   * becomes visible over time". Read against the rest of the architecture, that is a
+   * requirement about visibility, not about a database:
+   *
+   *   - the subject of the sentence is "forecast vs actual", the COMPARISON, and §11 lists
+   *     the Phase 8 deliverable as exactly that — "deterministic service, sufficiency
+   *     gating, forecast-vs-actual" — with no store and no capture job;
+   *   - a retained forecast is a financial figure. §1.3 says Supabase must never hold
+   *     "any KPI or financial figure as a source", D3 repeats it ("identity/audit/
+   *     sequences/AI logs only — never business data"), and §1.3's own test settles it:
+   *     wiping Supabase must lose "only identity and history";
+   *   - the workbook cannot hold it either. §5.6 forbids writing to 19_ANALYTICS and
+   *     forbids inserting sheets or columns, and none of the 22 sheets is a forecast sheet;
+   *   - §10.1 declares exactly two scheduled functions — a daily summary and an hourly
+   *     alert sweep. No monthly capture exists anywhere in the design.
+   *
+   * So both candidate homes are closed by name, and the deliverable §11 names is the
+   * comparison. Re-deriving it satisfies the stated purpose — accuracy visible month after
+   * month — and violates nothing. What it costs is fidelity to the forecast AS ISSUED,
+   * which is stated on the screen rather than glossed over.
    */
   forecast(): ForecastView {
     const asOf = isoToSerial(this.ops.today);
