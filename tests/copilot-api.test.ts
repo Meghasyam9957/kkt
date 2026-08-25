@@ -22,7 +22,7 @@ import { FixtureDashboardDataProvider } from '@/lib/data/providers/fixture-provi
 import { DemoGridProvider } from '@/lib/data/providers/demo-grid-provider';
 import { MockAiProvider, MOCK_REPLY } from '@/lib/server/ai/mock-provider';
 import { InMemoryAiUsageSink, type AiTokenPricing } from '@/lib/server/ai/provider';
-import { ALL_FEATURES_OFF } from '@/lib/server/ai/guardrails';
+import { ALL_FEATURES_OFF, budgetState } from '@/lib/server/ai/guardrails';
 import { aiEnabled } from '@/lib/server/ai/guard';
 import type { CopilotRuntime } from '@/lib/server/ai/copilot';
 import type { DashboardDataProvider } from '@/lib/data/providers/types';
@@ -288,6 +288,7 @@ describe('copilot API · every attempt produces exactly one usage record (§8.4)
       expect(res.status).toBe(200);
       expect(res.body.outcome).toBe(outcome);
       expect(res.body.reason).toBe(reason);
+      expect(res.body.budgetState).toBe(budgetState(s.runtime.feature.budget));
       if (outcome !== 'OK') expect(res.body.message).toBeTruthy();
 
       expect(s.sink().records.length).toBe(1);
@@ -296,6 +297,22 @@ describe('copilot API · every attempt produces exactly one usage record (§8.4)
       });
     });
   }
+
+  it('the budget state crosses the wire beside the answer', async () => {
+    // It sits in the same body as usage.cost, which already reaches these roles; it is
+    // strictly less specific than that figure and asks the reader for nothing.
+    const s = setup({
+      feature: {
+        integrationEnabled: true,
+        switches: { ...ALL_FEATURES_OFF, copilot: true },
+        budget: { cap: 100, spent: 85 },
+      },
+    });
+    const res = await s.post(USERS.admin!);
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBe('OK');
+    expect(res.body.budgetState).toBe('WARNING');
+  });
 
   it('a refusal never reaches the provider and costs nothing', async () => {
     for (const [label, overrides, outcome] of attempts) {

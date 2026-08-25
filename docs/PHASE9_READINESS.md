@@ -34,7 +34,7 @@ file anywhere reads an `OPENAI` environment variable, no AI SDK is installed, an
 | 15 | **Forecast restriction** | 🟢 **Built** | §8.2 rule 4, §9 | Estimates arrive computed, labelled `ESTIMATE`, with method and status; the `inputs` block is withheld. No AI module may import a calculation engine. |
 | 16 | **Tests before enabling** | 🟡 **Partly built** | §8.1, §8.2 | See §4 below. |
 | 17 | **`POST /api/ai/copilot`** | 🟢 **Built** | §7, write governance | Declared, guarded by `ai.operations`, wired to the copilot service on the mock provider. The write-governance rule was re-expressed rather than exempted — see §6. |
-| 18 | **§8.4 soft warning surfaced** | 🟡 **TECH — follow-up** | §8.4 | `aiFeatureStatus` computes the 70% warning state, but nothing consumes it: it reaches no operator, log line or response. **No decision is needed** — §8.4 names the threshold and the breach behaviour but no destination for the warning itself, so where it should surface is an engineering choice, not a management one. |
+| 18 | **§8.4 soft warning surfaced** | 🟡 **TECH — follow-up** | §8.4 | The budget state (`UNCONFIGURED`/`OK`/`WARNING`/`BREACHED`) is now propagated through `AiDispatchResult` and `CopilotAnswer`, so it reaches the HTTP response. **No human-facing surface and no audit destination exist yet**, and the warning stays unreachable in the current production configuration because neither a cap nor a spend source is configured. **No decision is needed for the remaining work** — §8.4 names the threshold and the breach behaviour but no destination for the warning itself, so where it should surface is an engineering choice, not a management one. |
 
 🟢 built · 🟡 contract built, feature work remains · 🟠 partial or credential-blocked · 🔴 blocked on a decision
 

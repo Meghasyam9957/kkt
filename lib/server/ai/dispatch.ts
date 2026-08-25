@@ -27,8 +27,8 @@ import '@/lib/server/only';
  */
 import { assertAiPayloadEnvironment } from '@/lib/server/ai/guard';
 import {
-  aiFeatureStatus, findUngroundedFigures,
-  type AiFeatureBlockedReason, type AiFeatureContext, type AiUsageRecord,
+  aiFeatureStatus, budgetState, findUngroundedFigures,
+  type AiFeatureBlockedReason, type AiFeatureContext, type AiUsageRecord, type BudgetState,
 } from '@/lib/server/ai/guardrails';
 import {
   AiProviderError, computeCost,
@@ -118,6 +118,20 @@ export interface AiDispatchResult {
   ungrounded: readonly string[];
   /** Why, whenever the outcome is not OK. §8.4: never a silent anything. */
   message: string | null;
+  /**
+   * Where spend stood against the cap when this turn was decided (§8.4).
+   *
+   * Derived from the budget itself, NOT from `AiFeatureStatus.warning`. That boolean
+   * answers "did this call run past 70%", which is false on every refusal path by
+   * construction — including a refusal *caused* by the budget — so at 85% spend with the
+   * feature switched off it reports `false`, and at 120% it reports `false` again because
+   * BREACHED is a different state. §8.4's concern is the spend position, so the state is
+   * what travels.
+   *
+   * It states a fact and asks for nothing. Where a person should see it, in what words,
+   * and what they should do about it are undecided — see docs/DECISIONS_REQUIRED.md.
+   */
+  budgetState: BudgetState;
   /** §8.4's log line for this call, refusals included. Already handed to the sink. */
   usage: AiUsageRecord;
 }
@@ -157,6 +171,10 @@ export async function dispatchCompletion(
   const clock = context.now ?? Date.now;
   const started = clock();
 
+  // Pure in the budget, so it is read once and reported identically on every path below —
+  // including the paths that refuse before the budget is consulted at all.
+  const budget = budgetState(context.feature.budget);
+
   const finish = async (
     outcome: AiDispatchOutcome,
     reason: AiRefusalReason | null,
@@ -179,7 +197,7 @@ export async function dispatchCompletion(
       outcome,
     };
     await context.sink.record(record);
-    return { outcome, reason, text, ungrounded, message, usage: record };
+    return { outcome, reason, text, ungrounded, message, budgetState: budget, usage: record };
   };
 
   const refuse = (reason: AiRefusalReason, message: string) =>

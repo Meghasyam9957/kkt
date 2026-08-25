@@ -35,6 +35,7 @@ import {
   dispatchCompletion,
   type AiDispatchOutcome, type AiRefusalReason,
 } from '@/lib/server/ai/dispatch';
+import type { BudgetState } from '@/lib/server/ai/guardrails';
 import type { AiFeatureContext, AiUsageRecord } from '@/lib/server/ai/guardrails';
 import type { AiProvider, AiTokenPricing, AiUsageSink } from '@/lib/server/ai/provider';
 import type { DashboardDataProvider, ReportFilters } from '@/lib/data/providers/types';
@@ -128,6 +129,8 @@ export interface CopilotAnswer {
   ungrounded: readonly string[];
   /** §8.4's clear message, for an operator. Not specified as user-facing text. */
   message: string | null;
+  /** Where spend stood against the cap (§8.4), passed through unchanged from the dispatch. */
+  budgetState: BudgetState;
   usage: AiUsageRecord;
 }
 
@@ -186,6 +189,7 @@ export async function answerCopilotQuestion(
     omitted: context.omitted,
     ungrounded: result.ungrounded,
     message: result.message,
+    budgetState: result.budgetState,
     usage: result.usage,
   };
 }

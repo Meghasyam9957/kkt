@@ -22,7 +22,7 @@ import { dispatchCompletion, resolveAiProvider } from '@/lib/server/ai/dispatch'
 import { MockAiProvider, MOCK_REPLY } from '@/lib/server/ai/mock-provider';
 import { InMemoryAiUsageSink, type AiTokenPricing } from '@/lib/server/ai/provider';
 import { aiEnabled, AiEnvironmentMismatchError } from '@/lib/server/ai/guard';
-import { ALL_FEATURES_OFF } from '@/lib/server/ai/guardrails';
+import { ALL_FEATURES_OFF, budgetState } from '@/lib/server/ai/guardrails';
 import { DemoGridProvider } from '@/lib/data/providers/demo-grid-provider';
 import { FixtureDashboardDataProvider } from '@/lib/data/providers/fixture-provider';
 import { resolveEnvironment } from '@/lib/server/environment/config';
@@ -364,6 +364,8 @@ describe('copilot · every attempt produces exactly one usage outcome (§8.4)', 
 
       expect(answer.outcome).toBe(outcome);
       expect(answer.reason).toBe(reason);
+      // Passed through from the dispatch unchanged, on every one of the nine endings.
+      expect(answer.budgetState).toBe(budgetState(runtime.feature.budget));
       expect(sinkOf(runtime).records.length).toBe(1);
       expect(sinkOf(runtime).records[0]).toMatchObject({
         feature: 'copilot', model: 'mock-model', userId: 'user-uuid', outcome,
@@ -374,6 +376,22 @@ describe('copilot · every attempt produces exactly one usage outcome (§8.4)', 
       expect(answer.source).toBe('FIXTURE');
     });
   }
+
+  it('the budget state reaches the answer unchanged, and adds no semantics', async () => {
+    const runtime = runtimeFor({
+      feature: {
+        integrationEnabled: true,
+        switches: { ...ALL_FEATURES_OFF, copilot: true },
+        budget: { cap: 100, spent: 85 },
+      },
+    });
+    const answer = await ask('ADMIN', runtime);
+    expect(answer.outcome).toBe('OK');
+    expect(answer.budgetState).toBe('WARNING');
+    // No wording, no surface, no obligation travels with it — the copilot layer adds
+    // nothing to what the dispatch computed.
+    expect(answer.message).toBeNull();
+  });
 
   it('a refusal never reaches the provider', async () => {
     for (const [label, overrides] of attempts.filter(([, , o]) => o === 'REFUSED')) {

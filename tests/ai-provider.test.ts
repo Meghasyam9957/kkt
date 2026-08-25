@@ -24,7 +24,7 @@ import {
   type AiCompletionRequest, type AiProviderFailure, type AiTokenPricing,
 } from '@/lib/server/ai/provider';
 import { aiEnabled, buildAiPayload, AiEnvironmentMismatchError } from '@/lib/server/ai/guard';
-import { ALL_FEATURES_OFF } from '@/lib/server/ai/guardrails';
+import { ALL_FEATURES_OFF, budgetState } from '@/lib/server/ai/guardrails';
 import { buildCopilotContext } from '@/lib/server/ai/copilot-context';
 import { FixtureDashboardDataProvider } from '@/lib/data/providers/fixture-provider';
 import { resolveEnvironment } from '@/lib/server/environment/config';
@@ -245,6 +245,9 @@ describe('AI dispatch · refusals are answers, and every one is logged', () => {
       expect(result.outcome).toBe('REFUSED');
       expect(result.reason).toBe(reason);
       expect(result.text).toBeNull();
+      // The budget state is reported on every path, including the ones that refuse
+      // before the budget is consulted — it describes the spend, not the decision.
+      expect(result.budgetState).toBe(budgetState(context.feature.budget));
       expect(result.message).toMatch(message);
       expect(provider.calls).toEqual([]);
 
@@ -294,6 +297,7 @@ describe('AI dispatch · a call that goes through', () => {
 
     expect(result.outcome).toBe('OK');
     expect(result.reason).toBeNull();
+    expect(result.budgetState).toBe('OK');
     expect(result.text).toBe(MOCK_REPLY);
     expect(result.ungrounded).toEqual([]);
     expect(result.message).toBeNull();
@@ -329,6 +333,102 @@ describe('AI dispatch · a call that goes through', () => {
     });
     expect((await dispatchCompletion(new MockAiProvider(), requestFor(), context)).outcome)
       .toBe('OK');
+  });
+});
+
+/* ================================================================== *
+ * Budget state on the way out
+ * ================================================================== */
+
+describe('AI dispatch · the budget state travels with every result (§8.4)', () => {
+  const cases: Array<[string, { cap: number | null; spent: number }, string]> = [
+    ['spend is comfortable', { cap: 100, spent: 10 }, 'OK'],
+    ['spend is just under the soft warning', { cap: 100, spent: 69.99 }, 'OK'],
+    ['spend reaches 70% of the cap', { cap: 100, spent: 70 }, 'WARNING'],
+    ['spend is past the soft warning', { cap: 100, spent: 85 }, 'WARNING'],
+    ['spend reaches the cap', { cap: 100, spent: 100 }, 'BREACHED'],
+    ['spend is over the cap', { cap: 100, spent: 120 }, 'BREACHED'],
+    ['no cap is configured', { cap: null, spent: 0 }, 'UNCONFIGURED'],
+    ['no cap is configured and spend is large', { cap: null, spent: 999 }, 'UNCONFIGURED'],
+  ];
+
+  for (const [label, budget, expected] of cases) {
+    it(`reports ${expected} when ${label}`, async () => {
+      const context = contextFor({
+        feature: {
+          integrationEnabled: true,
+          switches: { ...ALL_FEATURES_OFF, copilot: true },
+          budget,
+        },
+      });
+      const result = await dispatchCompletion(new MockAiProvider(), requestFor(), context);
+      expect(result.budgetState).toBe(expected);
+    });
+  }
+
+  it('is derived from the budget, not from whether the call ran', async () => {
+    /*
+     * The distinction this field exists for. `AiFeatureStatus.warning` is false on every
+     * refusal path by construction, so at 85% spend with the copilot switched off it
+     * would say `false` — and a reader would conclude spend was comfortable. The state
+     * says WARNING regardless of why the turn ended.
+     */
+    const context = contextFor({
+      feature: {
+        integrationEnabled: true,
+        switches: ALL_FEATURES_OFF,
+        budget: { cap: 100, spent: 85 },
+      },
+    });
+    const result = await dispatchCompletion(new MockAiProvider(), requestFor(), context);
+    expect(result.outcome).toBe('REFUSED');
+    expect(result.reason).toBe('FEATURE_SWITCHED_OFF');
+    expect(result.budgetState).toBe('WARNING');
+  });
+
+  it('says BREACHED, not OK, when the budget is what refused the call', async () => {
+    // The other half of the same trap: a boolean would report false at 120% of cap.
+    const context = contextFor({
+      feature: {
+        integrationEnabled: true,
+        switches: { ...ALL_FEATURES_OFF, copilot: true },
+        budget: { cap: 100, spent: 120 },
+      },
+    });
+    const result = await dispatchCompletion(new MockAiProvider(), requestFor(), context);
+    expect(result.reason).toBe('BUDGET_EXCEEDED');
+    expect(result.budgetState).toBe('BREACHED');
+  });
+
+  it('reports the state on a provider failure too, and still records one usage row', async () => {
+    const context = contextFor({
+      feature: {
+        integrationEnabled: true,
+        switches: { ...ALL_FEATURES_OFF, copilot: true },
+        budget: { cap: 100, spent: 85 },
+      },
+    });
+    const result = await dispatchCompletion(
+      new MockAiProvider({ fail: 'TIMEOUT' }), requestFor(), context,
+    );
+    expect(result.outcome).toBe('TIMEOUT');
+    expect(result.budgetState).toBe('WARNING');
+    expect(sinkOf(context).records.length).toBe(1);
+  });
+
+  it('adds nothing to the usage record — §8.4 enumerates its fields', async () => {
+    // The state is a fact about the period, not about the call, and §8.4's log line has
+    // no slot for it. It travels beside the record, never inside it.
+    const context = contextFor({
+      feature: {
+        integrationEnabled: true,
+        switches: { ...ALL_FEATURES_OFF, copilot: true },
+        budget: { cap: 100, spent: 85 },
+      },
+    });
+    const result = await dispatchCompletion(new MockAiProvider(), requestFor(), context);
+    expect(Object.keys(result.usage)).not.toContain('budgetState');
+    expect(Object.keys(result.usage)).not.toContain('warning');
   });
 });
 
