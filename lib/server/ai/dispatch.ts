@@ -87,7 +87,8 @@ export type AiDispatchOutcome =
   | 'TIMEOUT'
   | 'RATE_LIMITED'
   | 'UNAVAILABLE'
-  | 'INVALID_RESPONSE';
+  | 'INVALID_RESPONSE'
+  | 'AUTHENTICATION';
 
 /**
  * Why a call was refused, as a code rather than a sentence.

@@ -32,6 +32,16 @@ import type { AiFeature, AiUsageRecord } from '@/lib/server/ai/guardrails';
 export interface AiTokenUsage {
   promptTokens: number;
   completionTokens: number;
+  /**
+   * How many of the prompt tokens the provider served from its own cache, when it says so.
+   *
+   * Preserved because the provider reports it and discarding a fact costs more than
+   * carrying it. It is priced only when a cached rate is configured; otherwise these
+   * tokens are billed here at the full input rate, which overstates the cost and can only
+   * trip a cap early. Undefined means the provider did not report it — never zero, which
+   * would claim it reported no cache hits.
+   */
+  cachedPromptTokens?: number;
 }
 
 export interface AiCompletionRequest {
@@ -88,7 +98,17 @@ export interface AiProvider {
  * differ in what a caller should do next, rather than a catalogue of provider error codes.
  * §10.3's ~10 s function limit is why TIMEOUT is first among them.
  */
-export type AiProviderFailure = 'TIMEOUT' | 'RATE_LIMITED' | 'UNAVAILABLE' | 'INVALID_RESPONSE';
+export type AiProviderFailure =
+  | 'TIMEOUT'
+  | 'RATE_LIMITED'
+  | 'UNAVAILABLE'
+  | 'INVALID_RESPONSE'
+  /**
+   * The credential or the account rejected the call — a wrong key, a key without access
+   * to the model, a disabled project. Retrying spends nothing and fixes nothing, so it is
+   * the second non-retryable kind alongside a malformed answer.
+   */
+  | 'AUTHENTICATION';
 
 /** Whether trying the same call again could plausibly succeed. */
 const RETRYABLE: Record<AiProviderFailure, boolean> = {
@@ -98,6 +118,7 @@ const RETRYABLE: Record<AiProviderFailure, boolean> = {
   // A malformed answer will be malformed again for the same input. Retrying spends money
   // to reach the same place, which is the failure mode §8.4's cap exists to catch.
   INVALID_RESPONSE: false,
+  AUTHENTICATION: false,
 };
 
 export class AiProviderError extends Error {
@@ -145,14 +166,26 @@ export function estimateTokens(text: string): number {
  */
 export interface AiTokenPricing {
   model: string;
-  /** ISO 4217. */
+  /** ISO 4217. The currency the PROVIDER bills in. */
   currency: string;
   promptCostPerToken: number;
   completionCostPerToken: number;
+  /**
+   * The discounted rate for prompt tokens served from cache, when one is configured.
+   * Optional because not every provider publishes one, and an absent rate must not be
+   * read as free.
+   */
+  cachedPromptCostPerToken?: number;
 }
 
 export function computeCost(usage: AiTokenUsage, pricing: AiTokenPricing): number {
-  return usage.promptTokens * pricing.promptCostPerToken
+  // Clamped: a provider reporting more cached tokens than prompt tokens is reporting
+  // nonsense, and the arithmetic must not turn nonsense into a discount.
+  const cached = Math.min(Math.max(usage.cachedPromptTokens ?? 0, 0), usage.promptTokens);
+  const uncached = usage.promptTokens - cached;
+  const cachedRate = pricing.cachedPromptCostPerToken ?? pricing.promptCostPerToken;
+  return uncached * pricing.promptCostPerToken
+    + cached * cachedRate
     + usage.completionTokens * pricing.completionCostPerToken;
 }
 

@@ -144,8 +144,11 @@ describe('AI provider · the local mock', () => {
   });
 
   it('can be told to fail, and says whether retrying could help', async () => {
+    // Exhaustive by type: a new failure kind cannot be added without deciding here
+    // whether retrying it could ever help.
     const retryable: Record<AiProviderFailure, boolean> = {
-      TIMEOUT: true, RATE_LIMITED: true, UNAVAILABLE: true, INVALID_RESPONSE: false,
+      TIMEOUT: true, RATE_LIMITED: true, UNAVAILABLE: true,
+      INVALID_RESPONSE: false, AUTHENTICATION: false,
     };
     for (const [failure, expected] of Object.entries(retryable) as [AiProviderFailure, boolean][]) {
       const provider = new MockAiProvider({ fail: failure });

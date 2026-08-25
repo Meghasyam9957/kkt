@@ -78,9 +78,20 @@ function aiSources(): Array<{ file: string; text: string }> {
  * file nobody thought to tell the suite about.
  */
 const AI_MODULES = [
-  'copilot-context.ts', 'copilot.ts', 'dispatch.ts', 'guard.ts', 'guardrails.ts',
-  'mock-provider.ts', 'provider.ts',
+  'config.ts', 'copilot-context.ts', 'copilot.ts', 'dispatch.ts', 'guard.ts',
+  'guardrails.ts', 'mock-provider.ts', 'openai-provider.ts', 'provider.ts',
 ];
+
+/**
+ * The modules allowed to do something the rest of the AI layer may not, and the only
+ * thing each of them is allowed to do.
+ *
+ * An exemption that is a category anyone may join is not a boundary. These are
+ * enumerated, and each test below asserts both halves: the named module may, and
+ * every other module may not.
+ */
+const MAY_REACH_NETWORK = ['openai-provider.ts'];
+const MAY_READ_ENVIRONMENT = ['config.ts'];
 
 /** Every key name appearing anywhere in a payload, at any depth. */
 function allKeys(value: unknown, out: Set<string> = new Set()): Set<string> {
@@ -149,20 +160,50 @@ describe('AI isolation · the seam is inert', () => {
     expect(() => dispatchToAi(payload)).toThrow(AiNotEnabledError);
   });
 
-  it('no AI module reads a model credential', () => {
-    const offenders = aiSources()
-      .filter((s) => /process\.env\.[A-Z_]*(OPENAI|ANTHROPIC|AI_API)/.test(s.text))
-      .map((s) => s.file);
-    expect(offenders).toEqual([]);
+  it('exactly one AI module reads the environment, and it never holds the secret', () => {
+    /*
+     * The credential has to be read somewhere now that a real provider exists. That
+     * somewhere is enumerated: `config.ts` and nothing else. Every other AI module is
+     * handed what it needs, so none of them can pick a secret up by accident.
+     */
+    const readers = aiSources()
+      .filter((s) => /process\.env|\benv\[/.test(s.text))
+      .map((s) => s.file)
+      .sort();
+    expect(readers).toEqual([...MAY_READ_ENVIRONMENT].sort());
   });
 
-  it('no AI module can reach the network', () => {
-    // No client, no URL, no socket. An isolation boundary that could call out would be
-    // one code review away from calling out with the payload it was built to restrict.
-    const offenders = aiSources()
+  it('the resolved configuration cannot carry the key, however it is serialised', async () => {
+    // The property that makes the reader safe: the object it returns has no field the
+    // secret could live in, so logging or returning it cannot leak one.
+    const { resolveAiConfig } = await import('@/lib/server/ai/config');
+    const config = resolveAiConfig(
+      { TEST_OPENAI_API_KEY: 'sk-proj-not-a-real-key', TEST_AI_PROVIDER: 'openai' },
+      'TEST_',
+    );
+
+    expect(config.apiKeyPresent).toBe(true);
+    expect(JSON.stringify(config)).not.toContain('sk-proj');
+  });
+
+  it('only the provider adapter can reach the network', () => {
+    /*
+     * This used to assert that NO AI module could call out. A real provider has to, so
+     * the assertion narrows to name the one that may rather than disappearing. The
+     * point was never "nothing calls out" — it was that nothing calls out carrying the
+     * payload this boundary exists to restrict, and every other module still cannot.
+     */
+    const reachers = aiSources()
       .filter((s) => /\bfetch\s*\(|https?:\/\/|XMLHttpRequest|node:https?\b/.test(s.text))
-      .map((s) => s.file);
-    expect(offenders).toEqual([]);
+      .map((s) => s.file)
+      .sort();
+    expect(reachers).toEqual([...MAY_REACH_NETWORK].sort());
+  });
+
+  it('the adapter reaches exactly one host, and it is the documented endpoint', () => {
+    const source = aiSources().find((s) => s.file === 'openai-provider.ts')!;
+    const urls = [...new Set(source.text.match(/https?:\/\/[^'"`\s]+/g) ?? [])];
+    expect(urls).toEqual(['https://api.openai.com/v1/responses']);
   });
 
   it('no AI SDK is installed', () => {
