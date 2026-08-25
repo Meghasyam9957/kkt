@@ -12,6 +12,7 @@ import { createHarness, USERS, ALL_ROUTES, samplePath, type Harness } from './su
 import { assertWritable, SheetWriteForbiddenError } from '@/lib/server/sheets/client';
 import { FORBIDDEN_WRITE_CELL, SHEETS } from '@/lib/contract/contract.generated';
 import { PII_CAPABILITIES, FINANCIAL_CAPABILITIES, capabilitiesFor } from '@/lib/server/auth/roles';
+import { assertWriteGovernance, NON_MUTATING_ROUTES } from '@/lib/server/api/routes';
 
 const ROOT = process.cwd();
 
@@ -273,12 +274,29 @@ describe('security · V1 workbook protection', () => {
    * Phase B write architecture) with the rules that actually protect the workbook now.
    */
   it('every write endpoint is flagged, capability-gated and never a DELETE', () => {
-    const writes = ALL_ROUTES.filter((r) => r.method !== 'GET');
-    expect(writes.length).toBeGreaterThan(0);
-    for (const route of writes) {
-      expect(route.mutates, `${route.path} must declare mutates`).toBe(true);
-      expect(route.capability.endsWith('.write'), `${route.path} needs a .write capability`).toBe(true);
-      expect(route.method).not.toBe('DELETE');
+    // The rule itself lives beside the registry so the three suites enforcing it cannot
+    // drift apart. What it asserts is unchanged for a mutation and stricter overall:
+    // every non-GET route must now declare exactly one classification, and the
+    // non-mutating set is enumerated rather than open.
+    assertWriteGovernance(ALL_ROUTES, (condition, message) => {
+      expect(condition, message).toBe(true);
+    });
+  });
+
+  it('the only non-mutating POST is the copilot, and it can write nothing', () => {
+    expect(NON_MUTATING_ROUTES.map((r) => `${r.method} ${r.path}`)).toEqual(['POST /api/ai/copilot']);
+
+    // A route flag is a claim; this is the check that the claim is true. The handler
+    // module must not be able to reach a repository, the Sheets client or the mutation
+    // pipeline at all — so it cannot write whatever its declaration says.
+    const handler = fs.readFileSync(path.join(ROOT, 'lib/server/api/copilot-service.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+    for (const banned of [
+      /Repository/, /@\/lib\/server\/sheets/, /mutation-services/, /@\/lib\/server\/api\/mutations/,
+      /executeMutation/, /IdAllocator/, /assertWritable/,
+    ]) {
+      expect(handler, String(banned)).not.toMatch(banned);
     }
   });
 
@@ -341,7 +359,8 @@ describe('security · report', () => {
       secretsInClientCode: 0,
       hardcodedCredentials: 0,
       envFilePresent: fs.existsSync(path.join(ROOT, '.env')),
-      writeEndpoints: ALL_ROUTES.filter((r) => r.method !== 'GET').length,
+      writeEndpoints: ALL_ROUTES.filter((r) => r.mutates).length,
+      nonMutatingPostEndpoints: NON_MUTATING_ROUTES.length,
       v1ProtectedSheets: ['CALC', 'PNL', 'ANALYTICS', 'QA', 'GUIDE', 'DASHBOARD'],
       notYetImplemented: ['rate limiting', 'secure response headers', 'CSRF for write routes'],
     }, null, 2));

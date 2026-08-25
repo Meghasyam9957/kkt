@@ -24,6 +24,25 @@ export interface RouteDefinition {
   entityType?: string;
   /** True on every mutation route. The write-governance tests key on this flag. */
   mutates?: boolean;
+  /**
+   * True on a non-GET route that changes NO business data.
+   *
+   * The write-governance rule was written as "every non-GET route is a mutation", which
+   * held while every non-GET route was one. Two of the three suites enforcing it already
+   * name the real invariant in their own titles — "every WRITE PATH is declared, flagged
+   * and capability-gated" — and infer it from the HTTP verb because nothing yet needed
+   * the distinction. §7's `POST /api/ai/copilot` does: asking a question allocates no id,
+   * writes no sheet, has no entity and is not idempotent, so declaring it a mutation
+   * would put a false statement in the registry and hand it a `.write` capability it must
+   * never hold.
+   *
+   * So the classification is explicit rather than inferred, and every non-GET route now
+   * declares exactly one of the two — which is a stricter rule than the one it replaces,
+   * because a POST declaring neither is now a failure rather than an omission nobody
+   * notices. What a non-mutating route must additionally satisfy is asserted in the
+   * governance suites, including that the set of them is exactly the one route below.
+   */
+  nonMutating?: true;
   summary: string;
 }
 
@@ -69,6 +88,21 @@ export const API_ROUTES: readonly RouteDefinition[] = [
     action: 'forecast.revenue.read', summary: 'Revenue estimate for the month ahead (forecast nights × trailing ADR)' },
   { method: 'GET', path: '/api/forecast/cashflow', capability: 'cashflow.read',
     action: 'forecast.cashflow.read', summary: 'Projected closing cash balance for the month ahead' },
+
+  /* ---------------- Admin — AI (ARCHITECTURE §7 / §8) ----------------
+   * §7 lists this as "ADMIN (OPS: ops-scoped)". `ai.operations` is exactly that set —
+   * SUPER_ADMIN, ADMIN and OPERATIONS — and the "ops-scoped" half needs no rule here:
+   * the copilot context boundary grants each tool only to a caller holding the
+   * capability that already guards the same data, and OPERATIONS holds no financial
+   * capability, so its context is the alerts alone. The same resolution as
+   * GET /api/analytics/alerts, for the same reason.
+   *
+   * `nonMutating` rather than `mutates`: see the field's definition above. The handler
+   * calls the copilot service and does nothing else — no calculation, no provider
+   * choice, no pricing, no budget, no filtering.
+   */
+  { method: 'POST', path: '/api/ai/copilot', capability: 'ai.operations', nonMutating: true,
+    action: 'ai.copilot.ask', summary: 'Ask the management copilot a question' },
 
   { method: 'GET', path: '/api/revenue',  capability: 'revenue.read',  action: 'revenue.read',  entityType: 'REVENUE',  summary: 'Revenue ledger' },
   { method: 'GET', path: '/api/expenses', capability: 'expenses.read', action: 'expenses.read', entityType: 'EXPENSE',  summary: 'Operating expenses' },
@@ -197,6 +231,72 @@ export const API_ROUTES: readonly RouteDefinition[] = [
   { method: 'PATCH', path: '/api/properties/:id', capability: 'properties.write', mutates: true,
     action: 'property.update', entityType: 'PROPERTY', summary: 'Amend property master input fields' },
 ] as const;
+
+/**
+ * Write governance, in one place so the three suites that enforce it cannot drift.
+ *
+ * The rule used to read "every non-GET route is a mutation". That was true while every
+ * non-GET route was one, and it is what two of the three suites already call it in their
+ * own titles — a WRITE path, flagged and capability-gated. §7's POST /api/ai/copilot is
+ * a non-GET route that writes nothing, so the classification is now declared rather than
+ * inferred from the verb, and every non-GET route must declare exactly ONE of the two.
+ *
+ * That is stricter than what it replaces: a POST declaring neither used to be impossible
+ * to express and is now an explicit failure.
+ */
+export function assertWriteGovernance(
+  routes: readonly RouteDefinition[],
+  check: (condition: boolean, message: string) => void,
+): void {
+  const nonGet = routes.filter((r) => r.method !== 'GET');
+  check(nonGet.length > 0, 'there must be non-GET routes to govern');
+
+  for (const route of nonGet) {
+    const where = `${route.method} ${route.path}`;
+    const mutating = route.mutates === true;
+    const exempt = route.nonMutating === true;
+
+    check(mutating !== exempt,
+      `${where} must declare exactly one of mutates:true or nonMutating:true`);
+    check(route.method !== 'DELETE',
+      `${where}: no DELETE route may exist — removal is a status transition`);
+    check((route.investorScoped ?? false) === false,
+      `${where}: a non-GET route must never be investor-scoped`);
+
+    if (mutating) {
+      check(route.capability.endsWith('.write'),
+        `${where} must demand a .write capability (has ${route.capability})`);
+    } else {
+      // The exempt class is deliberately narrow, and every clause below is what stops it
+      // becoming a door for a business write that would rather not be governed.
+      check(route.method === 'POST',
+        `${where}: a non-mutating route may only be POST`);
+      check(!route.capability.endsWith('.write'),
+        `${where}: a non-mutating route must not hold a write capability (has ${route.capability})`);
+      check(route.path.startsWith('/api/ai/'),
+        `${where}: the non-mutating exemption exists for AI interaction only`);
+      check(route.entityType === undefined,
+        `${where}: a non-mutating route has no entity to name`);
+    }
+  }
+
+  // The exemption is an enumerated set, not a category anyone may join. A second entry
+  // fails here until it is written down, and writing it down means reading this function.
+  check(
+    JSON.stringify(routes.filter((r) => r.nonMutating).map((r) => `${r.method} ${r.path}`))
+      === JSON.stringify(['POST /api/ai/copilot']),
+    'the non-mutating route set must be exactly [POST /api/ai/copilot]',
+  );
+}
+
+/**
+ * Non-GET routes that write nothing.
+ *
+ * Enumerated so the governance suites can assert what is in it, not merely that each
+ * member is well-formed: a second entry fails the suite until someone writes it down,
+ * and writing it down means reading what the exemption costs.
+ */
+export const NON_MUTATING_ROUTES = API_ROUTES.filter((r) => r.nonMutating);
 
 /** Routes exposing investor-facing data, used by the isolation suite. */
 export const INVESTOR_ROUTES = API_ROUTES.filter((r) => r.investorScoped);

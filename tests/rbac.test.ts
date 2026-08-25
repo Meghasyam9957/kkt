@@ -11,6 +11,7 @@ import path from 'node:path';
 import { createHarness, USERS, ALL_ROUTES, samplePath, type Harness } from './support/harness';
 import { ROLES, roleHasCapability, capabilitiesFor, type Role } from '@/lib/server/auth/roles';
 import { canLoadRoute, rolesForRoute } from '@/lib/server/auth/guard';
+import { assertWriteGovernance, NON_MUTATING_ROUTES } from '@/lib/server/api/routes';
 
 interface MatrixRow {
   route: string; role: string; expected: 'ALLOW' | 'DENY'; actual: number; pass: boolean;
@@ -147,13 +148,19 @@ describe('RBAC · role model invariants', () => {
    * WRITE GOVERNANCE (replaces the Phase 3 "no write API exists" marker, which the
    * approved Phase B brief superseded — with STRONGER rules, not weaker ones).
    */
-  it('every non-GET route is a declared mutation with a write capability', () => {
-    for (const route of ALL_ROUTES.filter((r) => r.method !== 'GET')) {
-      expect(route.mutates, `${route.method} ${route.path} must declare mutates: true`).toBe(true);
-      expect(route.capability.endsWith('.write'),
-        `${route.path} must demand a .write capability (has ${route.capability})`).toBe(true);
-      expect(route.investorScoped ?? false,
-        `${route.path}: a mutation route must never be investor-scoped`).toBe(false);
+  it('every non-GET route declares exactly one classification, and a write demands .write', () => {
+    assertWriteGovernance(ALL_ROUTES, (condition, message) => {
+      expect(condition, message).toBe(true);
+    });
+  });
+
+  it('the non-mutating exemption reaches the same roles §7 names, and no others', () => {
+    // ai.operations is exactly SUPER_ADMIN + ADMIN + OPERATIONS. Asserted here rather
+    // than left to the matrix so the intent is stated, not merely satisfied.
+    for (const route of NON_MUTATING_ROUTES) {
+      const holders = ROLES.filter((r) => roleHasCapability(r, route.capability));
+      expect(holders.sort(), route.path).toEqual(['ADMIN', 'OPERATIONS', 'SUPER_ADMIN']);
+      expect(roleHasCapability('INVESTOR', route.capability), route.path).toBe(false);
     }
   });
 

@@ -109,12 +109,12 @@ describe('invariant 2 · demo cannot write the production workbook', () => {
    */
   it('every write path is declared, flagged and capability-gated', async () => {
     const { ALL_ROUTES } = await import('./support/harness');
-    const writes = ALL_ROUTES.filter((r) => r.method !== 'GET');
-    expect(writes.length).toBeGreaterThan(0);
-    for (const route of writes) {
-      expect(route.mutates, `${route.path} must declare mutates`).toBe(true);
-      expect(route.capability.endsWith('.write'), `${route.path} must demand a .write capability`).toBe(true);
-    }
+    const { assertWriteGovernance } = await import('@/lib/server/api/routes');
+    // This test's own title always named the real invariant — a WRITE path. It inferred
+    // one from the HTTP verb because, until the copilot, every non-GET route was a write.
+    assertWriteGovernance(ALL_ROUTES, (condition, message) => {
+      expect(condition, message).toBe(true);
+    });
   });
 
   it('production writes are OFF by default and only the literal "true" enables them', () => {
