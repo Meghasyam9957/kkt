@@ -21,12 +21,13 @@ import {
 } from '@/lib/server/analytics/kpi';
 import { serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial, edate } from '@/lib/shared/dates';
 import {
-  forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, MINIMUM_USABLE_MONTHS,
+  forecastOccupancy, forecastRevenue, forecastCashFlow, forecastVsActual, usableHistory,
+  MINIMUM_USABLE_MONTHS,
   type ForecastAccuracy, type PropertyMonthMetrics,
 } from '@/lib/server/analytics/forecast';
 import { BUSINESS_RULES, PNL as PNL_CONTRACT } from '@/lib/contract/contract.generated';
 import {
-  OPEN_MAINTENANCE_STATUSES, OPEN_HOUSEKEEPING_STATUSES,
+  OPEN_MAINTENANCE_STATUSES, OPEN_HOUSEKEEPING_STATUSES, OCCUPANCY_STATUSES,
   type WorkbookData, type MonthlyMetrics, type OperationsData, type MaintenanceTicket,
   type ReservationRecord, type RentRecord,
 } from '@/lib/shared/domain';
@@ -119,6 +120,66 @@ export class WorkbookViews {
   }
 
   /**
+   * ARCHITECTURE §9's four cash-flow terms, each taken from the register that owns it.
+   *
+   * Opening balance — cumulative net cash recorded before the month. That is exactly the
+   * running balance the Cash Flow screen already shows ("cumulative from the start of the
+   * ledger, not a restart at zero each month"), reused rather than redefined.
+   *
+   * Expected payouts — the booking's own payout, landing at check-out plus that
+   * platform's lag from 02_SETTINGS. The forecast month is always in the future, so
+   * nothing landing in it can already sit inside the opening balance; there is no
+   * double-count to avoid. A recorded ActualPayout wins over the estimate when one
+   * exists, because a known figure beats a derived one.
+   *
+   * Scheduled fixed costs — the 08_RENT_FIXED_COSTS obligation register, for agreements
+   * live in that month. `escalationPct` is NOT applied: the register states no escalation
+   * anniversary, and inventing one would move real money on a guess.
+   *
+   * Variable costs — 06_EXPENSES operating rows that are not `Fixed Operating`. The
+   * contract draws that line itself, which is what keeps the fixed costs counted once
+   * from the schedule instead of a second time through the average.
+   */
+  private cashFlowTerms(monthKey: string): {
+    openingBalance: number;
+    expectedPayouts: number;
+    scheduledFixedCosts: number;
+    variableCostsByMonth: Record<string, number>;
+  } {
+    const period = monthPeriod(monthKey);
+    const { settings } = this.workbook;
+
+    const openingBalance = this.workbook.cashflow
+      .filter((t) => t.Date !== null && t.Date < period.start)
+      .reduce((sum, t) => sum + t.MoneyIn - t.MoneyOut, 0);
+
+    const expectedPayouts = this.workbook.reservations
+      .filter((b) => (OCCUPANCY_STATUSES as readonly string[]).includes(b.BookingStatus))
+      .reduce((sum, b) => {
+        const lag = settings.platformPayoutLagDays[b.Platform] ?? 0;
+        const lands = b.PayoutDate ?? (b.CheckOutDate === null ? null : b.CheckOutDate + lag);
+        if (lands === null || lands < period.start || lands >= period.end) return sum;
+        return sum + (b.ActualPayout > 0 ? b.ActualPayout : expectedPayout(b, settings));
+      }, 0);
+
+    const monthStartIso = serialToIso(period.start);
+    const monthEndIso = serialToIso(period.end - 1);
+    const scheduledFixedCosts = this.rent
+      .filter((r) => r.agreementStart <= monthEndIso && (!r.agreementEnd || r.agreementEnd >= monthStartIso))
+      .reduce((sum, r) => sum + r.monthlyAmount, 0);
+
+    const variableCostsByMonth: Record<string, number> = {};
+    for (const e of this.workbook.expenses) {
+      if (e.Date === null || e.ExpenseType !== 'Operating') continue;
+      if (e.ExpenseCategory === 'Fixed Operating') continue;
+      const key = monthKeyOf(e.Date);
+      variableCostsByMonth[key] = (variableCostsByMonth[key] ?? 0) + expenseTotal(e);
+    }
+
+    return { openingBalance, expectedPayouts, scheduledFixedCosts, variableCostsByMonth };
+  }
+
+  /**
    * ARCHITECTURE §9 — the month ahead, estimated.
    *
    * "Today" comes from the operations data, never the clock, so the same workbook always
@@ -175,7 +236,11 @@ export class WorkbookViews {
       }
     }
 
-    return { monthKey, occupancy, revenue: forecastRevenue(request, occupancy), accuracy };
+    const cashflow = forecastCashFlow({
+      series, monthKey, asOf, ...this.cashFlowTerms(monthKey),
+    });
+
+    return { monthKey, occupancy, revenue: forecastRevenue(request, occupancy), cashflow, accuracy };
   }
 
   monthsWithData(): string[] {

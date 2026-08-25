@@ -13,9 +13,9 @@ import '@/lib/server/only';
  * accepted. `data.monthKey` states which month the estimate is for; a caller never has
  * to infer it.
  *
- * Cash flow (§7's third path) is deliberately not declared yet: it needs the per-platform
- * payout lag from Settings, and a route that cannot answer honestly is worse than one
- * that does not exist.
+ * All three of §7's paths are served. Cash flow carries no forecast-vs-actual, because
+ * its estimate is a projected closing BALANCE and the monthly series records movements;
+ * an empty list is the truthful answer, not an oversight.
  */
 import type { ApiRouter } from './router';
 import type {
@@ -49,10 +49,13 @@ export function forecastResponse(
   horizon: ForecastHorizon,
 ): Envelope<ForecastResponse> {
   const { data, meta } = envelope;
+  const estimate = horizon === 'occupancy' ? data.occupancy
+    : horizon === 'revenue' ? data.revenue
+      : data.cashflow;
   return {
     data: {
       monthKey: data.monthKey,
-      estimate: horizon === 'occupancy' ? data.occupancy : data.revenue,
+      estimate,
       accuracy: data.accuracy.filter((a) => a.horizon === horizon),
     },
     meta,
@@ -73,4 +76,6 @@ export function registerForecastHandlers(
     forecastResponse(await provider().getForecast(NO_FILTERS), 'occupancy'));
   router.register('GET', '/api/forecast/revenue', async () =>
     forecastResponse(await provider().getForecast(NO_FILTERS), 'revenue'));
+  router.register('GET', '/api/forecast/cashflow', async () =>
+    forecastResponse(await provider().getForecast(NO_FILTERS), 'cashflow'));
 }

@@ -379,5 +379,7 @@ export interface ForecastView {
   monthKey: string;
   occupancy: ForecastEstimate;
   revenue: ForecastEstimate;
+  /** ARCHITECTURE §9 cash flow: projected CLOSING balance for that month. */
+  cashflow: ForecastEstimate;
   accuracy: ForecastAccuracy[];
 }

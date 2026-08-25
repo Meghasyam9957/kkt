@@ -2,16 +2,21 @@ import '@/lib/server/only';
 /**
  * FORECASTING — deterministic, no AI. The port of ARCHITECTURE §9.
  *
- * §9 fixes the methods; this module implements the first two horizons:
+ * §9 fixes the methods; this module implements three of its four horizons:
  *
  *   Occupancy  booking-on-hand (confirmed future nights) + rolling 3-month average of
  *              the residual pickup.                              Minimum: 2 complete months
- *   Revenue    forecast occupied nights × trailing ADR.          Minimum: 2 complete months
+ *   Revenue    forecast occupied nights × trailing ADR
+ *              (property-level).                                 Minimum: 2 complete months
+ *   Cash flow  opening balance + expected payouts (per-platform lag from Settings)
+ *              − scheduled rent/fixed costs
+ *              − trailing variable-cost average.                 Minimum: 2 complete months
  *
- * Cash flow and seasonality are deliberately absent: cash flow needs the per-platform
- * payout lag from Settings, and seasonality is not applied below 12 months of history.
- * §9 orders these "in order of preference as history accumulates", so a horizon that
- * cannot yet be computed honestly is not computed at all.
+ * Seasonality is deliberately absent. §9 applies a month-of-year index only at 12+ months
+ * of history and states "otherwise not applied"; below that the estimates here are
+ * month-of-year agnostic by construction, which is the documented behaviour and not an
+ * omission. §9 orders these "in order of preference as history accumulates", so a method
+ * that cannot yet be applied honestly is not applied at all.
  *
  * Every rule §9 states is enforced here rather than in the caller:
  *   - below the threshold the result is INSUFFICIENT_DATA and `value` is null — never a
@@ -34,7 +39,7 @@ export type ForecastStatus = 'SUFFICIENT' | 'INSUFFICIENT_DATA';
 /** §9: "Confidence: HIGH / MEDIUM / LOW … a stated rule, not a vibe." */
 export type ForecastConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
 
-export type ForecastHorizon = 'occupancy' | 'revenue';
+export type ForecastHorizon = 'occupancy' | 'revenue' | 'cashflow';
 
 /**
  * Minimum complete, usable months before a horizon may be estimated. §9 states 2 for
@@ -105,6 +110,29 @@ export interface ForecastInputs {
   adrBasis: 'property' | 'portfolio' | null;
   /** The per-unit rates behind a property-level ADR. Empty on every other path. */
   propertyRates: PropertyRateContribution[];
+  /** The cash-flow horizon's four §9 terms. Null on every other horizon. */
+  cash: CashFlowInputs | null;
+}
+
+/**
+ * §9's cash-flow terms, each from the register that owns it — kept separate from the
+ * occupancy fields above because they are different quantities, and a reader who has to
+ * work out which of them applies to the estimate in front of them will eventually get it
+ * wrong.
+ */
+export interface CashFlowInputs {
+  /** Cumulative net cash recorded before the month, the balance the ledger already shows. */
+  openingBalance: number;
+  /** Payouts expected to land in the month: check-out plus that platform's own lag. */
+  expectedPayouts: number;
+  /** Rent and fixed costs scheduled to fall due in the month, from the obligation register. */
+  scheduledFixedCosts: number;
+  /** Rolling 3-month average of variable operating spend. */
+  trailingVariableCosts: number;
+  /** Months that contributed to that average. */
+  variableMonthsUsed: number;
+  /** Projected movement: payouts less scheduled and averaged spend. Balance minus opening. */
+  netMovement: number;
 }
 
 export interface ForecastEstimate {
@@ -249,6 +277,7 @@ function insufficient(
       trailingAdr: null,
       adrBasis: null,
       propertyRates: [],
+      cash: null,
     },
     reason:
       `${usableMonths} complete month${usableMonths === 1 ? '' : 's'} of trading history; ` +
@@ -332,6 +361,7 @@ export function forecastOccupancy(request: OccupancyForecastRequest): ForecastEs
       trailingAdr: null,
       adrBasis: null,
       propertyRates: [],
+      cash: null,
     },
     reason: null,
   };
@@ -450,6 +480,116 @@ export function forecastRevenue(
       trailingAdr,
       adrBasis: propertyLevel ? 'property' : 'portfolio',
       propertyRates,
+      cash: null,
+    },
+    reason: null,
+  };
+}
+
+export interface CashFlowForecastRequest {
+  /** The full monthly series, oldest first. Decides sufficiency and the rolling window. */
+  series: readonly MonthlyMetrics[];
+  /** The month being forecast. */
+  monthKey: string;
+  /** Everything on or before this is history. Passed in — never read from the clock. */
+  asOf: Serial;
+  /**
+   * Cumulative net cash recorded before the month. This is the convention the Cash Flow
+   * screen already shows as its running balance — "cumulative from the start of the
+   * ledger, not a restart at zero each month" — reused rather than redefined.
+   */
+  openingBalance: number;
+  /** Payouts expected to land in the month, already lagged per platform by the caller. */
+  expectedPayouts: number;
+  /** Rent and fixed costs scheduled to fall due in the month. */
+  scheduledFixedCosts: number;
+  /** Variable operating spend by month key. The window months are selected here. */
+  variableCostsByMonth: Readonly<Record<string, number>>;
+}
+
+/**
+ * §9 cash flow: opening balance + expected payouts (per-platform lag from Settings)
+ * − scheduled rent/fixed costs − trailing variable-cost average.
+ *
+ * The four terms come from four different registers, and each is taken from the one that
+ * owns it: the cash ledger for the balance, the reservations plus the Settings lag for
+ * the payouts, the rent obligation register for what falls due, and the expense ledger
+ * for what varies. The split between the last two is the contract's own — 06_EXPENSES
+ * categorises rows as `Fixed Operating` or not — so the fixed costs are counted once,
+ * from the schedule, and never a second time through the average.
+ *
+ * `value` is the projected CLOSING balance, because that is the figure an operator acts
+ * on: it answers "will there be enough to pay the rent", which a net movement does not.
+ *
+ * The result is deliberately CONSERVATIVE, and the reason should be understood before it
+ * is read. §9's inflow is "expected payouts", which are payouts from bookings that
+ * already exist. Nights the occupancy horizon expects to still be picked up are NOT
+ * counted as cash: they are not booked, so their payout date is unknowable, and a cash
+ * balance inflated by bookings nobody has made yet is the one error in this system that
+ * could cause a real payment to be missed. The estimate therefore reads low whenever the
+ * month ahead is lightly booked — which is exactly when caution is worth having.
+ *
+ * The horizon shares §9's 2-month minimum. It is the horizon where being wrong is most
+ * expensive, so it refuses in exactly the same way as the others.
+ */
+export function forecastCashFlow(request: CashFlowForecastRequest): ForecastEstimate {
+  const {
+    series, monthKey, asOf, openingBalance, expectedPayouts, scheduledFixedCosts,
+    variableCostsByMonth,
+  } = request;
+  const method =
+    'Opening balance + expected payouts (per-platform lag) − scheduled rent and fixed costs '
+    + '− rolling 3-month average variable cost';
+
+  const history = usableHistory(series, asOf);
+  if (history.length < MINIMUM_USABLE_MONTHS) {
+    return insufficient('cashflow', monthKey, method, 'currency', history.length, 0);
+  }
+
+  const window = history.slice(-PICKUP_WINDOW_MONTHS);
+  const variable = window.map((m) => variableCostsByMonth[m.monthKey] ?? 0);
+  const trailingVariableCosts = safeDiv(variable.reduce((sum, v) => sum + v, 0), variable.length);
+
+  const netMovement = expectedPayouts - scheduledFixedCosts - trailingVariableCosts;
+
+  /*
+   * Confidence, on the same rule the other horizons use and with the same meaning: the
+   * share of the estimate that is already known rather than averaged. Here the payouts
+   * come from bookings that exist and the fixed costs from a signed obligation; only the
+   * variable average is a projection. No new threshold is introduced — `classifyConfidence`
+   * still applies §9's own 2 and 12.
+   */
+  const known = Math.abs(expectedPayouts) + Math.abs(scheduledFixedCosts);
+  const coverage = safeDiv(known, known + Math.abs(trailingVariableCosts));
+
+  return {
+    horizon: 'cashflow',
+    monthKey,
+    status: 'SUFFICIENT',
+    label: 'ESTIMATE',
+    method,
+    value: openingBalance + netMovement,
+    unit: 'currency',
+    occupancyPct: null,
+    confidence: classifyConfidence(history.length, coverage),
+    inputs: {
+      usableMonths: history.length,
+      trailingMonthsUsed: variable.length,
+      bookingOnHandNights: 0,
+      residualPickupNights: 0,
+      bookingOnHandCoverage: coverage,
+      availableNights: 0,
+      trailingAdr: null,
+      adrBasis: null,
+      propertyRates: [],
+      cash: {
+        openingBalance,
+        expectedPayouts,
+        scheduledFixedCosts,
+        trailingVariableCosts,
+        variableMonthsUsed: variable.length,
+        netMovement,
+      },
     },
     reason: null,
   };
@@ -471,6 +611,14 @@ export function forecastVsActual(
 
   const actualMonth = usableHistory(series, asOf).find((m) => m.monthKey === estimate.monthKey);
   if (!actualMonth) return null;
+
+  /*
+   * Cash flow is deliberately not compared. Its estimate is a projected CLOSING BALANCE,
+   * and the monthly series carries movements — cash in, cash out, net — not a cumulative
+   * balance. Comparing a balance against a movement would produce a number that looks
+   * like accuracy and is not one, so nothing is produced at all.
+   */
+  if (estimate.horizon === 'cashflow') return null;
 
   const actual = estimate.horizon === 'occupancy'
     ? actualMonth.occupiedNights

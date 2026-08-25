@@ -14,8 +14,8 @@ import { describe, it, expect } from 'vitest';
 import {
   forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, classifyConfidence,
   MINIMUM_USABLE_MONTHS, FULL_HISTORY_MONTHS, PICKUP_WINDOW_MONTHS,
-  propertyRateMix,
-  type OccupancyForecastRequest, type PropertyMonthMetrics,
+  propertyRateMix, forecastCashFlow,
+  type OccupancyForecastRequest, type PropertyMonthMetrics, type CashFlowForecastRequest,
 } from '@/lib/server/analytics/forecast';
 import { monthPeriod, computeMonthlySeries, fyMonthKeysFor, activeUnitCount } from '@/lib/server/analytics/kpi';
 import { buildDemoDataset, DEMO_QUIET_MONTHS } from '@/lib/data/demo/dataset';
@@ -523,5 +523,172 @@ describe('forecast - property-level ADR', () => {
     expect(out.value).toBeNull();
     expect(out.inputs.adrBasis).toBeNull();
     expect(out.inputs.propertyRates).toEqual([]);
+  });
+});
+
+/* ================================================================== *
+ * 8 · Cash flow — the four terms §9 names
+ *
+ * "opening balance + expected payouts (with per-platform lag from Settings)
+ *  − scheduled rent/fixed costs − trailing variable-cost average"
+ *
+ * The engine receives the four terms already gathered; which register each comes from is
+ * the view's job, asserted through the provider elsewhere. What is pinned here is the
+ * arithmetic, the refusal, and the confidence rule.
+ * ================================================================== */
+
+describe('forecast · cash flow', () => {
+  const history = [
+    traded('2026-12', 30, 5000), traded('2027-01', 30, 5000), traded('2027-02', 30, 5000),
+  ];
+
+  const cash = (over: Partial<CashFlowForecastRequest> = {}): CashFlowForecastRequest => ({
+    series: history,
+    monthKey: '2027-03',
+    asOf: asOfStartOf('2027-03'),
+    openingBalance: 200_000,
+    expectedPayouts: 150_000,
+    scheduledFixedCosts: 90_000,
+    variableCostsByMonth: { '2026-12': 40_000, '2027-01': 30_000, '2027-02': 50_000 },
+    ...over,
+  });
+
+  it('projects the closing balance, which is the figure an operator acts on', () => {
+    const out = forecastCashFlow(cash());
+    // variable average = (40,000 + 30,000 + 50,000) / 3 = 40,000
+    // movement = 150,000 − 90,000 − 40,000 = 20,000
+    // closing  = 200,000 + 20,000 = 220,000
+    expect(out.status).toBe('SUFFICIENT');
+    expect(out.inputs.cash!.trailingVariableCosts).toBe(40_000);
+    expect(out.inputs.cash!.netMovement).toBe(20_000);
+    expect(out.value).toBe(220_000);
+    expect(out.unit).toBe('currency');
+    expect(out.label).toBe('ESTIMATE');
+  });
+
+  it('carries every term it used, so the number can be argued with', () => {
+    const terms = forecastCashFlow(cash()).inputs.cash!;
+    expect(terms.openingBalance).toBe(200_000);
+    expect(terms.expectedPayouts).toBe(150_000);
+    expect(terms.scheduledFixedCosts).toBe(90_000);
+    expect(terms.variableMonthsUsed).toBe(3);
+  });
+
+  it('averages only the rolling window, not the whole history', () => {
+    const longer = [traded('2026-10', 30, 5000), traded('2026-11', 30, 5000), ...history];
+    const out = forecastCashFlow(cash({
+      series: longer,
+      // The two oldest months are wildly expensive and must not reach the average.
+      variableCostsByMonth: {
+        '2026-10': 900_000, '2026-11': 900_000,
+        '2026-12': 40_000, '2027-01': 30_000, '2027-02': 50_000,
+      },
+    }));
+    expect(out.inputs.cash!.trailingVariableCosts).toBe(40_000);
+    expect(out.inputs.cash!.variableMonthsUsed).toBe(PICKUP_WINDOW_MONTHS);
+  });
+
+  it('treats a month with no recorded variable spend as zero, not as missing', () => {
+    const out = forecastCashFlow(cash({ variableCostsByMonth: { '2027-02': 60_000 } }));
+    // Two window months recorded nothing; the average is still over all three.
+    expect(out.inputs.cash!.trailingVariableCosts).toBe(20_000);
+  });
+
+  it('reports a shortfall as a negative balance rather than clamping at zero', () => {
+    const out = forecastCashFlow(cash({ openingBalance: 10_000, expectedPayouts: 0 }));
+    // 10,000 + (0 − 90,000 − 40,000) = −120,000. A cash forecast that cannot go negative
+    // is useless at precisely the moment it matters.
+    expect(out.value).toBe(-120_000);
+  });
+
+  it('refuses below the two-month minimum — the same rule as every other horizon', () => {
+    const out = forecastCashFlow(cash({ series: [traded('2027-02', 30, 5000)] }));
+    expect(out.status).toBe('INSUFFICIENT_DATA');
+    expect(out.value).toBeNull();
+    expect(out.confidence).toBeNull();
+    expect(out.inputs.cash).toBeNull();
+    expect(out.reason).toMatch(/1 complete month of trading history/);
+  });
+
+  it('never turns an unavailable estimate into a zero balance', () => {
+    const out = forecastCashFlow(cash({ series: [] }));
+    expect(out.value).not.toBe(0);
+    expect(out.value).toBeNull();
+  });
+
+  it('states confidence from how much of the month is known rather than averaged', () => {
+    // Everything contracted, nothing averaged: coverage 1. Three months is short of the
+    // full year, so MEDIUM rather than HIGH.
+    const known = forecastCashFlow(cash({ variableCostsByMonth: {} }));
+    expect(known.inputs.bookingOnHandCoverage).toBe(1);
+    expect(known.confidence).toBe('MEDIUM');
+
+    // Nothing contracted and everything averaged: coverage 0, limited history → LOW.
+    const guessed = forecastCashFlow(cash({ expectedPayouts: 0, scheduledFixedCosts: 0 }));
+    expect(guessed.inputs.bookingOnHandCoverage).toBe(0);
+    expect(guessed.confidence).toBe('LOW');
+  });
+
+  it('is deterministic across repeated execution', () => {
+    const once = JSON.stringify(forecastCashFlow(cash()));
+    for (let i = 0; i < 4; i++) expect(JSON.stringify(forecastCashFlow(cash()))).toBe(once);
+  });
+
+  it('produces no forecast-vs-actual, because a balance is not a movement', () => {
+    const settled = [...history, traded('2027-03', 30, 5000)];
+    const estimate = forecastCashFlow(cash());
+    expect(forecastVsActual(estimate, settled, asOfStartOf('2027-04'))).toBeNull();
+  });
+});
+
+/* ================================================================== *
+ * 9 · Seasonality — the method §9 withholds below 12 months
+ *
+ * §9: "Seasonality | month-of-year index | 12+ months — otherwise not applied."
+ *
+ * There is no seasonal code to test, and that is the point: below the threshold the
+ * estimates must be month-of-year AGNOSTIC. These cases prove the absence is real rather
+ * than assumed, so a seasonal adjustment cannot later be slipped in without failing here.
+ * ================================================================== */
+
+describe('forecast · seasonality gating', () => {
+  it('documents the boundary §9 states', () => {
+    expect(FULL_HISTORY_MONTHS).toBe(12);
+  });
+
+  it('applies no month-of-year adjustment: identical history, identical estimate', () => {
+    // The same trailing shape, forecasting two very different calendar months. A seasonal
+    // index would separate December from June. Below 12 months, nothing may.
+    const forDecember = forecastOccupancy(request({
+      series: [traded('2026-09', 30, 4000), traded('2026-10', 30, 4000), traded('2026-11', 30, 4000)],
+      monthKey: '2026-12', asOf: asOfStartOf('2026-12'),
+    }));
+    const forJune = forecastOccupancy(request({
+      series: [traded('2027-03', 30, 4000), traded('2027-04', 30, 4000), traded('2027-05', 30, 4000)],
+      monthKey: '2027-06', asOf: asOfStartOf('2027-06'),
+    }));
+
+    expect(forDecember.value).toBe(forJune.value);
+    expect(forDecember.inputs.residualPickupNights).toBe(forJune.inputs.residualPickupNights);
+  });
+
+  it('claims no seasonal input in anything it reports', () => {
+    const out = forecastOccupancy(request({
+      series: [traded('2026-12', 40, 4000), traded('2027-01', 44, 4000)],
+    }));
+    // The method string is the app's own account of what it did. It must not claim an
+    // adjustment it did not make.
+    expect(out.method).not.toMatch(/season|month-of-year|index/i);
+    expect(Object.keys(out.inputs)).not.toContain('seasonalIndex');
+  });
+
+  it('still applies none once a full year exists, because permission is not implementation', () => {
+    const year = Array.from({ length: 12 }, (_, i) =>
+      traded(`2026-${String(i + 1).padStart(2, '0')}`, 30, 4000));
+    const out = forecastOccupancy(request({
+      series: year, monthKey: '2027-01', asOf: asOfStartOf('2027-01'),
+    }));
+    expect(out.inputs.usableMonths).toBe(FULL_HISTORY_MONTHS);
+    expect(out.method).not.toMatch(/season/i);
   });
 });

@@ -27,11 +27,17 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
 /** HIGH / MEDIUM / LOW → the tone the design system already uses for standing. */
 const CONFIDENCE_TONE = { HIGH: 'good', MEDIUM: 'warn', LOW: 'bad' } as const;
 
+const HORIZON_TITLES = {
+  occupancy: 'Occupancy',
+  revenue: 'Revenue',
+  cashflow: 'Cash flow',
+} as const;
+
 function Estimate({ estimate, children }: { estimate: ForecastEstimate; children: React.ReactNode }) {
   return (
     <Card>
       <CardHeader
-        title={estimate.horizon === 'occupancy' ? 'Occupancy' : 'Revenue'}
+        title={HORIZON_TITLES[estimate.horizon]}
         subtitle={estimate.method}
         action={<Badge tone="neutral">{estimate.label}</Badge>}
       />
@@ -56,8 +62,9 @@ function Insufficient({ estimate }: { estimate: ForecastEstimate }) {
 }
 
 function Forecast({ view }: { view: ForecastView }) {
-  const { occupancy, revenue, accuracy, monthKey } = view;
+  const { occupancy, revenue, cashflow, accuracy, monthKey } = view;
   const period = formatMonthLong(monthKey);
+  const cash = cashflow.inputs.cash;
 
   return (
     <>
@@ -120,6 +127,59 @@ function Forecast({ view }: { view: ForecastView }) {
           </Estimate>
         )}
       </div>
+
+      <div style={{ height: 'var(--space-4)' }} />
+
+      {cashflow.status === 'INSUFFICIENT_DATA' || cash === null ? (
+        <Insufficient estimate={cashflow} />
+      ) : (
+        <Estimate estimate={cashflow}>
+          <p className="sv-kpi__value">
+            <span className={(cashflow.value ?? 0) < 0 ? 'sv-negative' : ''}>
+              {formatCurrency(cashflow.value ?? 0)}
+            </span>
+          </p>
+          <p className="sv-demo__meta">
+            Projected balance at the end of {period} ·{' '}
+            <Badge tone={CONFIDENCE_TONE[cashflow.confidence ?? 'LOW']}>
+              {cashflow.confidence} confidence
+            </Badge>
+          </p>
+          {/*
+            The four §9 terms, each shown as its own line. A cash forecast that shows only
+            its result is one an operator cannot argue with, and this is the horizon they
+            are most likely to act on.
+          */}
+          <ul className="sv-demo__highlights">
+            <li>Opening balance {formatCurrency(cash.openingBalance)}</li>
+            <li>
+              Expected payouts {formatCurrency(cash.expectedPayouts)} — confirmed bookings,
+              landing at check-out plus each platform&rsquo;s own lag
+            </li>
+            <li>
+              Less scheduled rent and fixed costs {formatCurrency(cash.scheduledFixedCosts)}{' '}
+              — from the obligation register, without assumed escalation
+            </li>
+            <li>
+              Less variable operating spend {formatCurrency(cash.trailingVariableCosts)} —
+              rolling {cash.variableMonthsUsed}-month average
+            </li>
+            <li>
+              Net movement{' '}
+              <span className={cash.netMovement < 0 ? 'sv-negative' : ''}>
+                {formatCurrency(cash.netMovement)}
+              </span>
+            </li>
+            <li>
+              Deliberately conservative: only bookings that already exist are counted as
+              cash. The {Math.round(occupancy.inputs.residualPickupNights)} nights the
+              occupancy estimate expects still to be booked are not — they have no payout
+              date, and a balance inflated by bookings nobody has made is how a real
+              payment gets missed.
+            </li>
+          </ul>
+        </Estimate>
+      )}
 
       <div style={{ height: 'var(--space-4)' }} />
 

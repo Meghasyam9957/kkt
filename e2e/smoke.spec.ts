@@ -166,11 +166,11 @@ test('the Forecast screen estimates the month ahead and shows its working', asyn
   await signInAs(page, 'Demo Administrator');
   await page.goto('/admin/analytics/forecast');
 
-  // Both horizons render, each labelled ESTIMATE as §9 requires.
+  // All three horizons render, each labelled ESTIMATE as §9 requires.
   await expect(page.getByRole('heading', { name: 'Forecast', level: 1 })).toBeVisible();
-  await expect(page.locator('.sv-badge', { hasText: 'ESTIMATE' })).toHaveCount(2);
+  await expect(page.locator('.sv-badge', { hasText: 'ESTIMATE' })).toHaveCount(3);
 
-  // The seeded year has a full history, so both horizons produce a figure rather than
+  // The seeded year has enough history, so every horizon produces a figure rather than
   // the insufficient-data state — and the inputs behind them are on screen.
   const main = page.locator('main');
   await expect(main).toContainText('booking-on-hand');
@@ -187,6 +187,15 @@ test('the Forecast screen estimates the month ahead and shows its working', asyn
   // Forecast vs actual, on BOTH horizons, in their own units.
   await expect(main).toContainText('Occupancy against actual');
   await expect(main).toContainText('Revenue against actual');
+
+  // §9's third horizon. The four terms are on screen, and so is the reason the figure is
+  // deliberately conservative.
+  await expect(main).toContainText('Cash flow');
+  await expect(main).toContainText('Opening balance');
+  await expect(main).toContainText('Expected payouts');
+  await expect(main).toContainText('Less scheduled rent and fixed costs');
+  await expect(main, 'a cash forecast must say what it does not count')
+    .toContainText('Deliberately conservative');
 });
 
 test('Forecast is reachable from the navigation, and no longer lands on Performance', async ({ page }) => {

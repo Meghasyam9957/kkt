@@ -169,6 +169,35 @@ describe('Forecast API · response', () => {
     expect(body.data.accuracy).toEqual(view.data.accuracy.filter((a) => a.horizon === 'revenue'));
   });
 
+  it('returns the cash-flow estimate with all four §9 terms behind it', async () => {
+    const res = await s.request(USERS.admin!, '/api/forecast/cashflow');
+    const { estimate } = res.body.data;
+    const cash = estimate.inputs.cash;
+
+    expect(res.status).toBe(200);
+    expect(estimate.horizon).toBe('cashflow');
+    expect(estimate.label).toBe('ESTIMATE');
+    expect(estimate.unit).toBe('currency');
+    expect(estimate.method).toMatch(/opening balance/i);
+    expect(estimate.method).toMatch(/per-platform lag/i);
+
+    // Each term is present and the stated arithmetic actually holds, so the figure can be
+    // checked against its own inputs rather than trusted.
+    for (const key of ['openingBalance', 'expectedPayouts', 'scheduledFixedCosts',
+      'trailingVariableCosts', 'netMovement'] as const) {
+      expect(typeof cash[key], key).toBe('number');
+    }
+    expect(cash.netMovement).toBeCloseTo(
+      cash.expectedPayouts - cash.scheduledFixedCosts - cash.trailingVariableCosts, 6,
+    );
+    expect(estimate.value).toBeCloseTo(cash.openingBalance + cash.netMovement, 6);
+  });
+
+  it('carries no forecast-vs-actual for cash flow, because a balance is not a movement', async () => {
+    const res = await s.request(USERS.admin!, '/api/forecast/cashflow');
+    expect(res.body.data.accuracy).toEqual([]);
+  });
+
   it('is deterministic: the same request answers identically every time', async () => {
     const first = await s.request(USERS.admin!, '/api/forecast/occupancy');
     const second = await s.request(USERS.admin!, '/api/forecast/occupancy');
@@ -287,10 +316,13 @@ describe('Forecast API · authorization', () => {
     expect(refused[0]!.result).toBe('DENY');
   });
 
-  it('does not expose a cash-flow forecast this milestone cannot compute honestly', async () => {
-    // §7 lists /api/forecast/cashflow; it depends on the per-platform payout lag from
-    // Settings. Undeclared is the truthful state — 404, not an invented number.
-    const res = await s.request(USERS.admin!, '/api/forecast/cashflow');
-    expect(res.status).toBe(404);
+  it('guards the cash-flow forecast with the capability that guards the cash ledger', async () => {
+    // `cashflow.read`, not `analytics.read`: a projection of the cash position is a cash
+    // figure. ADMIN and SUPER_ADMIN hold both today, so exactness costs nothing.
+    expect((await s.request(USERS.admin!, '/api/forecast/cashflow')).status).toBe(200);
+    expect((await s.request(USERS.superAdmin!, '/api/forecast/cashflow')).status).toBe(200);
+    expect((await s.request(USERS.operations!, '/api/forecast/cashflow')).status).toBe(403);
+    expect((await s.request(USERS.investorA!, '/api/forecast/cashflow')).status).toBe(403);
+    expect((await s.request(null, '/api/forecast/cashflow')).status).toBe(401);
   });
 });
