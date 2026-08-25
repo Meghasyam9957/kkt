@@ -139,9 +139,34 @@ describe('Forecast API · response', () => {
     const occupancy = await s.request(USERS.admin!, '/api/forecast/occupancy');
     const revenue = await s.request(USERS.admin!, '/api/forecast/revenue');
 
+    // §9 asks for forecast-vs-actual on the horizons that exist, so BOTH carry one.
     expect(occupancy.body.data.accuracy.length).toBeGreaterThan(0);
+    expect(revenue.body.data.accuracy.length).toBeGreaterThan(0);
     for (const row of occupancy.body.data.accuracy) expect(row.horizon).toBe('occupancy');
     for (const row of revenue.body.data.accuracy) expect(row.horizon).toBe('revenue');
+  });
+
+  it('compares the same settled months on both horizons', async () => {
+    const occupancy = await s.request(USERS.admin!, '/api/forecast/occupancy');
+    const revenue = await s.request(USERS.admin!, '/api/forecast/revenue');
+    const months = (r: any) => r.body.data.accuracy.map((a: any) => a.monthKey);
+
+    expect(months(revenue)).toEqual(months(occupancy));
+  });
+
+  it('measures revenue accuracy in money, against the month that actually traded', async () => {
+    const { body } = await s.request(USERS.admin!, '/api/forecast/revenue');
+    const view = await s.provider.getForecast(NO_FILTERS);
+    const series = await s.provider.getMonthlySeries(NO_FILTERS);
+
+    for (const row of body.data.accuracy) {
+      const month = series.data.find((m: { monthKey: string }) => m.monthKey === row.monthKey)!;
+      // The actual is the month's own room revenue — the same figure the revenue horizon
+      // estimates — not a re-derived one.
+      expect(row.actual).toBe(month.roomRevenue);
+      expect(row.variance).toBeCloseTo(row.actual - row.forecast, 6);
+    }
+    expect(body.data.accuracy).toEqual(view.data.accuracy.filter((a) => a.horizon === 'revenue'));
   });
 
   it('is deterministic: the same request answers identically every time', async () => {

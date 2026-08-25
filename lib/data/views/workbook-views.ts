@@ -124,11 +124,16 @@ export class WorkbookViews {
    * "Today" comes from the operations data, never the clock, so the same workbook always
    * yields the same forecast. The horizon is the month after the one being traded.
    *
-   * `accuracy` backtests the residual-pickup basis: each past month is re-estimated from
-   * the months before it with the books deliberately excluded, because the workbook keeps
-   * no record of what was on-hand at the time. Including today's reservations would make
-   * a settled month look perfectly predicted, which would be flattery rather than
-   * measurement.
+   * `accuracy` backtests the residual-pickup basis on BOTH horizons: each past month is
+   * re-estimated from the months before it with the books deliberately excluded, because
+   * the workbook keeps no record of what was on-hand at the time. Including today's
+   * reservations would make a settled month look perfectly predicted, which would be
+   * flattery rather than measurement.
+   *
+   * What this is, and what it is not: §9 asks that forecast-vs-actual be "retained each
+   * month". Nothing here is retained — every row is re-derived on the spot. It therefore
+   * measures the METHOD's accuracy, which is the honest thing to claim while no store of
+   * forecasts as they were actually issued exists.
    */
   forecast(): ForecastView {
     const asOf = isoToSerial(this.ops.today);
@@ -145,18 +150,29 @@ export class WorkbookViews {
     const occupancy = forecastOccupancy(request);
 
     const settled = usableHistory(series, asOf);
+    const perUnit = this.propertyHistory();
     const accuracy: ForecastAccuracy[] = [];
     for (let i = MINIMUM_USABLE_MONTHS; i < settled.length; i++) {
       const month = settled[i]!;
-      const backtest = forecastOccupancy({
+      const earlier = new Set(settled.slice(0, i).map((m) => m.monthKey));
+      const backtest = {
         series: settled.slice(0, i),
         reservations: [],
         monthKey: month.monthKey,
         asOf: month.monthStart,
         activeUnits: month.activeUnits,
-      });
-      const compared = forecastVsActual(backtest, series, asOf);
-      if (compared) accuracy.push(compared);
+        // The per-unit rates as they stood BEFORE the month being re-estimated. Handing
+        // the backtest the whole history would let it price a month with a rate the
+        // estimate could not have known, which is the same flattery as counting today's
+        // bookings.
+        propertyHistory: perUnit.filter((h) => earlier.has(h.monthKey)),
+      };
+      const occupancyBacktest = forecastOccupancy(backtest);
+      const estimates = [occupancyBacktest, forecastRevenue(backtest, occupancyBacktest)];
+      for (const estimate of estimates) {
+        const compared = forecastVsActual(estimate, series, asOf);
+        if (compared) accuracy.push(compared);
+      }
     }
 
     return { monthKey, occupancy, revenue: forecastRevenue(request, occupancy), accuracy };

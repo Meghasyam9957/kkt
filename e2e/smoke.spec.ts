@@ -178,6 +178,15 @@ test('the Forecast screen estimates the month ahead and shows its working', asyn
   await expect(main).toContainText(/(HIGH|MEDIUM|LOW) confidence/);
   await expect(main, 'a forecast must never be presented as an unexplained number')
     .toContainText('Booking-on-hand');
+
+  // §9 asks for a property-level ADR: the units behind the blended rate are on screen,
+  // so the rate can be checked rather than trusted.
+  await expect(main, 'the property-level rate must show the units it was blended from')
+    .toContainText('Unit rates:');
+
+  // Forecast vs actual, on BOTH horizons, in their own units.
+  await expect(main).toContainText('Occupancy against actual');
+  await expect(main).toContainText('Revenue against actual');
 });
 
 test('Forecast is reachable from the navigation, and no longer lands on Performance', async ({ page }) => {

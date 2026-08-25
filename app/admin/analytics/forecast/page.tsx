@@ -123,45 +123,73 @@ function Forecast({ view }: { view: ForecastView }) {
 
       <div style={{ height: 'var(--space-4)' }} />
 
-      <Card>
-        <CardHeader
-          title="Forecast against actual"
-          subtitle="Each completed month re-estimated from the months before it, so the method's accuracy is visible rather than asserted. Confirmed bookings are excluded from the re-estimate — the workbook keeps no record of what was on the books at the time, and counting today's would make every past month look perfectly predicted."
+      <div className="sv-chart-grid">
+        <Accuracy
+          title="Occupancy against actual"
+          unit="nights"
+          rows={accuracy.filter((a) => a.horizon === 'occupancy')}
         />
-        <CardBody className="sv-card__body--flush">
-          {accuracy.length === 0 ? (
-            <EmptyState
-              title="No completed months to compare yet"
-              message="Accuracy appears once the forecast has a settled month behind it."
-            />
-          ) : (
-            <DataTable
-              columns={ACCURACY_COLUMNS}
-              rows={accuracy}
-              caption="Forecast versus actual occupied nights"
-              getRowKey={(a) => `${a.horizon}-${a.monthKey}`}
-            />
-          )}
-        </CardBody>
-      </Card>
+        <Accuracy
+          title="Revenue against actual"
+          unit="currency"
+          rows={accuracy.filter((a) => a.horizon === 'revenue')}
+        />
+      </div>
     </>
   );
 }
 
-const ACCURACY_COLUMNS: Column<ForecastAccuracy>[] = [
-  { key: 'month', header: 'Month', render: (a) => formatMonthShort(a.monthKey) },
-  { key: 'forecast', header: 'Forecast nights', numeric: true, render: (a) => Math.round(a.forecast) },
-  { key: 'actual', header: 'Actual nights', numeric: true, render: (a) => Math.round(a.actual) },
-  {
-    key: 'variance', header: 'Variance', numeric: true,
-    render: (a) => (
-      <span className={a.variance < 0 ? 'sv-negative' : ''}>
-        {a.variance > 0 ? '+' : ''}{Math.round(a.variance)}
-      </span>
-    ),
-  },
-  {
-    key: 'variancePct', header: 'Variance %', numeric: true,
-    render: (a) => (a.variancePct === null ? '—' : formatPercent(a.variancePct, 1)),
-  },
-];
+/**
+ * One horizon's forecast-vs-actual. Nights and rupees get separate tables rather than
+ * separate rows: a single column of numbers where some are nights and some are money is
+ * a table nobody can read at a glance, and misreading it is a costly kind of mistake.
+ */
+function Accuracy({
+  title, unit, rows,
+}: { title: string; unit: 'nights' | 'currency'; rows: ForecastAccuracy[] }) {
+  return (
+    <Card>
+      <CardHeader
+        title={title}
+        subtitle="Each completed month re-estimated from the months before it, so the method's accuracy is visible rather than asserted. Confirmed bookings and later rates are both excluded from the re-estimate — the workbook keeps no record of what was on the books at the time, and counting today's would make every past month look perfectly predicted."
+      />
+      <CardBody className="sv-card__body--flush">
+        {rows.length === 0 ? (
+          <EmptyState
+            title="No completed months to compare yet"
+            message="Accuracy appears once the forecast has a settled month behind it."
+          />
+        ) : (
+          <DataTable
+            columns={accuracyColumns(unit)}
+            rows={rows}
+            caption={`Forecast versus actual ${unit === 'nights' ? 'occupied nights' : 'room revenue'}`}
+            getRowKey={(a) => `${a.horizon}-${a.monthKey}`}
+          />
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+const accuracyColumns = (unit: 'nights' | 'currency'): Column<ForecastAccuracy>[] => {
+  const amount = (value: number) =>
+    unit === 'currency' ? formatCurrency(value) : String(Math.round(value));
+  return [
+    { key: 'month', header: 'Month', render: (a) => formatMonthShort(a.monthKey) },
+    { key: 'forecast', header: 'Forecast', numeric: true, render: (a) => amount(a.forecast) },
+    { key: 'actual', header: 'Actual', numeric: true, render: (a) => amount(a.actual) },
+    {
+      key: 'variance', header: 'Variance', numeric: true,
+      render: (a) => (
+        <span className={a.variance < 0 ? 'sv-negative' : ''}>
+          {a.variance > 0 ? '+' : ''}{amount(a.variance)}
+        </span>
+      ),
+    },
+    {
+      key: 'variancePct', header: 'Variance %', numeric: true,
+      render: (a) => (a.variancePct === null ? '—' : formatPercent(a.variancePct, 1)),
+    },
+  ];
+};
