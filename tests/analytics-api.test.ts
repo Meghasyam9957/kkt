@@ -208,3 +208,115 @@ describe('Analytics API · authorization', () => {
     expect(records.map((r) => r.result)).toEqual(['ALLOW', 'DENY']);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * Alerts — §7's ADMIN + OPS endpoint
+ *
+ * The one analytics read OPERATIONS may reach, because it is the only one that carries no
+ * money. That difference is the point of these cases: the same guard that refuses
+ * OPERATIONS every other analytics path must admit it here, and the payload must stay
+ * free of anything that would make admitting it wrong.
+ * ------------------------------------------------------------------ */
+
+describe('Analytics API · alerts', () => {
+  let s: Setup;
+  beforeEach(() => { s = setup(); });
+
+  const ALERT_FIELDS = ['key', 'severity', 'propertyId', 'title', 'action', 'reference'];
+
+  it('returns the operations board’s urgent list, unmodified', async () => {
+    const res = await s.request(USERS.admin!, '/api/analytics/alerts');
+    const board = await s.provider.getOperations({ month: '', propertyId: null, platform: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual(board.data.urgent);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(res.body.meta.source).toBe('FIXTURE');
+    expect(res.body.meta.asOf).toBe('2027-01-19T06:00:00.000Z');
+  });
+
+  it('keeps the most pressing item first, as the board does', async () => {
+    const { body } = await s.request(USERS.admin!, '/api/analytics/alerts');
+    const order = { critical: 0, high: 1, watch: 2 } as const;
+    const ranks: number[] = body.data.map((a: { severity: keyof typeof order }) => order[a.severity]);
+
+    // The invariant is the ordering, not any particular severity: which severities exist
+    // depends on the data, and this fixture workbook happens to carry no Critical ticket.
+    expect([...ranks].sort((a, b) => a - b)).toEqual(ranks);
+    expect(ranks[0]).toBe(Math.min(...ranks));
+  });
+
+  it('says what happened AND what to do, on every item', async () => {
+    const { body } = await s.request(USERS.admin!, '/api/analytics/alerts');
+    for (const alert of body.data) {
+      expect(Object.keys(alert).sort()).toEqual([...ALERT_FIELDS].sort());
+      expect(alert.title.length, alert.key).toBeGreaterThan(0);
+      expect(alert.action.length, alert.key).toBeGreaterThan(10);
+      expect(alert.propertyId, alert.key).toMatch(/^(HYD-|COMMON)/);
+    }
+  });
+
+  it('carries no financial figure at all — which is why OPERATIONS may read it', async () => {
+    const { body } = await s.request(USERS.admin!, '/api/analytics/alerts');
+    for (const alert of body.data) {
+      for (const [field, value] of Object.entries(alert)) {
+        expect(typeof value, `${alert.key}.${field}`).toBe('string');
+      }
+    }
+    expect(JSON.stringify(body.data)).not.toMatch(/₹|revenue|profit|margin|payout/i);
+  });
+
+  it('leaks no guest contact detail', async () => {
+    // The same guard the operations board is already held to.
+    const { body } = await s.request(USERS.admin!, '/api/analytics/alerts');
+    expect(JSON.stringify(body.data)).not.toMatch(/@|\+91|phone|email/i);
+  });
+
+  it('is deterministic: the same request answers identically every time', async () => {
+    const first = await s.request(USERS.admin!, '/api/analytics/alerts');
+    const second = await s.request(USERS.admin!, '/api/analytics/alerts');
+    expect(JSON.stringify(second.body)).toBe(JSON.stringify(first.body));
+  });
+});
+
+describe('Analytics API · alerts authorization', () => {
+  let s: Setup;
+  beforeEach(() => { s = setup(); });
+
+  it('admits OPERATIONS, unlike every other analytics read', async () => {
+    // §7 lists this route as ADMIN + OPS. It is guarded by `operations.view`, which is
+    // exactly that set — so the difference from the financial analytics routes is a
+    // capability difference, not a special case in the handler.
+    expect((await s.request(USERS.operations!, '/api/analytics/alerts')).status).toBe(200);
+    expect((await s.request(USERS.operations!, '/api/analytics/dashboard')).status).toBe(403);
+  });
+
+  it('admits ADMIN and SUPER_ADMIN', async () => {
+    expect((await s.request(USERS.admin!, '/api/analytics/alerts')).status).toBe(200);
+    expect((await s.request(USERS.superAdmin!, '/api/analytics/alerts')).status).toBe(200);
+  });
+
+  it('refuses INVESTOR', async () => {
+    const res = await s.request(USERS.investorA!, '/api/analytics/alerts');
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('refuses an anonymous caller', async () => {
+    const res = await s.request(null, '/api/analytics/alerts');
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('refuses a suspended account', async () => {
+    expect((await s.request(USERS.suspended!, '/api/analytics/alerts')).status).toBe(403);
+  });
+
+  it('records the read in the audit trail, allowed and refused alike', async () => {
+    await s.request(USERS.operations!, '/api/analytics/alerts');
+    await s.request(USERS.investorA!, '/api/analytics/alerts');
+
+    const records = s.audit.byAction('analytics.alerts.read');
+    expect(records.map((r) => r.result)).toEqual(['ALLOW', 'DENY']);
+  });
+});

@@ -39,6 +39,21 @@ export const API_ROUTES: readonly RouteDefinition[] = [
     action: 'analytics.byPlatform.read', summary: 'OTA mix for a period' },
   { method: 'GET', path: '/api/analytics/parity', capability: 'audit.read',
     action: 'analytics.parity.read', summary: 'Server-vs-workbook reconciliation report' },
+  /*
+   * §7 lists this as ADMIN + OPS, and `operations.view` is exactly that set — the same
+   * capability that guards the board these alerts are computed from.
+   *
+   * §7 also notes the source as "the V1 alerts stack, filtered by role". Neither half of
+   * THAT note survives contact with the architecture. The V1 stack lives in 99_CALC (E121:G180,
+   * read by AnalyticsRepository.readAlerts, which has no callers), and the read
+   * provider is forbidden to touch that class — Decision D1, enforced by
+   * tests/live-provider.test.ts, because those blocks key off the shared reporting
+   * cell. This application computes its alerts server-side instead, per §1.1's fifth
+   * principle. And there is nothing to filter by role: UrgentItem carries no amount,
+   * rate or margin by design, so every role the guard admits may see all of it.
+   */
+  { method: 'GET', path: '/api/analytics/alerts', capability: 'operations.view',
+    action: 'analytics.alerts.read', summary: 'Operational alerts, most pressing first' },
 
   /* ---------------- Admin — forecasting (ARCHITECTURE §7 / §9) ----------------
    * Deterministic estimates, never a model. Each path returns the §9 estimate whole:

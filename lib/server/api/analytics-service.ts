@@ -86,4 +86,20 @@ export function registerAnalyticsHandlers(
     const { data, meta } = await p.getDashboard(filters);
     return { data: data.platforms, meta };
   });
+
+  /*
+   * Alerts are the operations board's urgent list — the same objects the Today screen and
+   * the dashboard already render, in the same severity order, computed once in
+   * `WorkbookViews.buildUrgent`. Projecting them out of the board rather than rebuilding
+   * them is what keeps the API, the board and the shell's alert count from disagreeing
+   * about how many things need a person today.
+   *
+   * The date they describe is the operations day, which comes from the data rather than
+   * the clock — so this endpoint is as deterministic as the board it mirrors.
+   */
+  router.register('GET', '/api/analytics/alerts', async (ctx) => {
+    const { p, filters } = await resolve(ctx.request);
+    const { data, meta } = await p.getOperations(filters);
+    return { data: data.urgent, meta };
+  });
 }
