@@ -22,7 +22,7 @@ import {
 import { serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial, edate } from '@/lib/shared/dates';
 import {
   forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, MINIMUM_USABLE_MONTHS,
-  type ForecastAccuracy,
+  type ForecastAccuracy, type PropertyMonthMetrics,
 } from '@/lib/server/analytics/forecast';
 import { BUSINESS_RULES, PNL as PNL_CONTRACT } from '@/lib/contract/contract.generated';
 import {
@@ -68,6 +68,7 @@ export class WorkbookViews {
   private readonly ops: OperationsData;
   private readonly rent: readonly RentRecord[];
   private seriesCache: MonthlyMetrics[] | null = null;
+  private propertyHistoryCache: PropertyMonthMetrics[] | null = null;
 
   constructor(source: ViewSource) {
     this.workbook = source.workbook;
@@ -83,6 +84,38 @@ export class WorkbookViews {
       this.seriesCache = computeMonthlySeries(this.workbook, fyMonthKeysFor(this.workbook));
     }
     return this.seriesCache;
+  }
+
+  /**
+   * Per-unit monthly history for the financial year — §9's "(property-level)" ADR input.
+   *
+   * Built from `computeByProperty`, the same per-unit engine the property screens read,
+   * so a unit's forecast rate and its reported rate are the same calculation. Blocked
+   * units are excluded, matching the V1 rule `activeUnitCount` already applies: a unit
+   * that is not on sale should neither add capacity nor lend its old rate to the mix.
+   */
+  private propertyHistory(): PropertyMonthMetrics[] {
+    if (this.propertyHistoryCache) return this.propertyHistoryCache;
+    const onSale = new Set(
+      this.workbook.properties
+        .filter((p) => p.PropertyID !== '' && p.PropertyStatus !== 'Blocked')
+        .map((p) => p.PropertyID),
+    );
+    const out: PropertyMonthMetrics[] = [];
+    for (const month of this.series()) {
+      for (const unit of computeByProperty(this.workbook, monthPeriod(month.monthKey))) {
+        if (!onSale.has(unit.propertyId)) continue;
+        out.push({
+          propertyId: unit.propertyId,
+          monthKey: month.monthKey,
+          occupiedNights: unit.occupiedNights,
+          adr: unit.adr,
+          availableNights: unit.availableNights,
+        });
+      }
+    }
+    this.propertyHistoryCache = out;
+    return out;
   }
 
   /**
@@ -107,6 +140,7 @@ export class WorkbookViews {
       monthKey,
       asOf,
       activeUnits: activeUnitCount(this.workbook),
+      propertyHistory: this.propertyHistory(),
     };
     const occupancy = forecastOccupancy(request);
 

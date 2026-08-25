@@ -51,6 +51,35 @@ export const FULL_HISTORY_MONTHS = 12;
 /** §9: the rolling window for residual pickup. */
 export const PICKUP_WINDOW_MONTHS = 3;
 
+/**
+ * One unit's own trading, for one month — the shape `computeByProperty` already produces.
+ *
+ * §9 asks for a property-level ADR, and this is the only input that can supply one. The
+ * portfolio series has already blended the units together; a blended rate cannot be taken
+ * apart again afterwards, so the per-unit figures have to arrive intact.
+ */
+export interface PropertyMonthMetrics {
+  propertyId: string;
+  monthKey: string;
+  /** Nights this unit sold that month. */
+  occupiedNights: number;
+  /** This unit's own room revenue ÷ occupied nights that month. */
+  adr: number;
+  /** Sellable nights for this unit that month — one unit, so the month's length. */
+  availableNights: number;
+}
+
+/** How one unit contributed to the property-level rate, so the blend can be audited. */
+export interface PropertyRateContribution {
+  propertyId: string;
+  /** Nights this unit is estimated to sell, by the same §9 method as the portfolio. */
+  forecastNights: number;
+  /** This unit's own trailing ADR. */
+  trailingAdr: number;
+  /** This unit's share of the estimated night mix, 0..1. */
+  weight: number;
+}
+
 /** What the estimate was computed from — §9 requires the inputs to travel with it. */
 export interface ForecastInputs {
   /** Complete months with trading activity behind the estimate. */
@@ -67,6 +96,15 @@ export interface ForecastInputs {
   availableNights: number;
   /** Trailing ADR used by the revenue horizon; null for the occupancy horizon. */
   trailingAdr: number | null;
+  /**
+   * Which basis produced `trailingAdr`. §9 asks for property-level; 'portfolio' means no
+   * per-unit history was supplied and the blended series rate stood in — reported rather
+   * than hidden, because the two answer differently whenever the unit mix moves. Null on
+   * the occupancy horizon, which uses no rate at all.
+   */
+  adrBasis: 'property' | 'portfolio' | null;
+  /** The per-unit rates behind a property-level ADR. Empty on every other path. */
+  propertyRates: PropertyRateContribution[];
 }
 
 export interface ForecastEstimate {
@@ -105,6 +143,44 @@ const safeDiv = (numerator: number, denominator: number): number =>
 /** Sellable nights in a month: its length × the units on sale. */
 const availableNightsIn = (p: Period, activeUnits: number): number =>
   (p.end - p.start) * activeUnits;
+
+interface NightsEstimate {
+  bookingOnHandNights: number;
+  residualPickupNights: number;
+  forecastNights: number;
+  trailingMonthsUsed: number;
+  bookingOnHandCoverage: number;
+}
+
+/**
+ * §9's occupancy arithmetic, in exactly one place: what is already on the books, plus the
+ * shortfall against the level the recent months actually reached, capped at what is
+ * sellable.
+ *
+ * The portfolio horizon and each unit's share of the property-level rate both run through
+ * here, so a single unit is estimated by precisely the rule the portfolio is estimated by
+ * — the alternative being two implementations of §9 that could quietly diverge.
+ */
+function estimateNights(
+  windowNights: readonly number[],
+  bookingOnHandNights: number,
+  availableNights: number,
+): NightsEstimate {
+  const trailingAverageNights = safeDiv(
+    windowNights.reduce((sum, n) => sum + n, 0),
+    windowNights.length,
+  );
+  const residualPickupNights = Math.max(0, trailingAverageNights - bookingOnHandNights);
+  // Never sell more nights than exist.
+  const forecastNights = Math.min(availableNights, bookingOnHandNights + residualPickupNights);
+  return {
+    bookingOnHandNights,
+    residualPickupNights,
+    forecastNights,
+    trailingMonthsUsed: windowNights.length,
+    bookingOnHandCoverage: Math.min(1, safeDiv(bookingOnHandNights, forecastNights)),
+  };
+}
 
 /**
  * Months that may be reasoned from.
@@ -171,6 +247,8 @@ function insufficient(
       bookingOnHandCoverage: 0,
       availableNights,
       trailingAdr: null,
+      adrBasis: null,
+      propertyRates: [],
     },
     reason:
       `${usableMonths} complete month${usableMonths === 1 ? '' : 's'} of trading history; ` +
@@ -189,6 +267,12 @@ export interface OccupancyForecastRequest {
   asOf: Serial;
   /** Units on sale, from `activeUnitCount`. */
   activeUnits: number;
+  /**
+   * Per-unit monthly history, oldest first, for §9's property-level ADR. Optional: when
+   * it is absent the revenue horizon falls back to the portfolio rate and says so in
+   * `method` and `inputs.adrBasis`, rather than presenting a blend it did not perform.
+   */
+  propertyHistory?: readonly PropertyMonthMetrics[];
 }
 
 /**
@@ -222,18 +306,11 @@ export function forecastOccupancy(request: OccupancyForecastRequest): ForecastEs
   const bookingOnHandNights = occupiedNights([...reservations], period);
 
   const window = history.slice(-PICKUP_WINDOW_MONTHS);
-  const trailingAverageNights = safeDiv(
-    window.reduce((sum, m) => sum + m.occupiedNights, 0),
-    window.length,
-  );
-
-  const residualPickupNights = Math.max(0, trailingAverageNights - bookingOnHandNights);
-  // Never sell more nights than exist.
-  const forecastNights = Math.min(
+  const nights = estimateNights(
+    window.map((m) => m.occupiedNights),
+    bookingOnHandNights,
     availableNights,
-    bookingOnHandNights + residualPickupNights,
   );
-  const bookingOnHandCoverage = Math.min(1, safeDiv(bookingOnHandNights, forecastNights));
 
   return {
     horizon: 'occupancy',
@@ -241,22 +318,78 @@ export function forecastOccupancy(request: OccupancyForecastRequest): ForecastEs
     status: 'SUFFICIENT',
     label: 'ESTIMATE',
     method,
-    value: forecastNights,
+    value: nights.forecastNights,
     unit: 'nights',
-    occupancyPct: safeDiv(forecastNights, availableNights),
-    confidence: classifyConfidence(history.length, bookingOnHandCoverage),
+    occupancyPct: safeDiv(nights.forecastNights, availableNights),
+    confidence: classifyConfidence(history.length, nights.bookingOnHandCoverage),
     inputs: {
       usableMonths: history.length,
-      trailingMonthsUsed: window.length,
-      bookingOnHandNights,
-      residualPickupNights,
-      bookingOnHandCoverage,
+      trailingMonthsUsed: nights.trailingMonthsUsed,
+      bookingOnHandNights: nights.bookingOnHandNights,
+      residualPickupNights: nights.residualPickupNights,
+      bookingOnHandCoverage: nights.bookingOnHandCoverage,
       availableNights,
       trailingAdr: null,
+      adrBasis: null,
+      propertyRates: [],
     },
     reason: null,
   };
 }
+
+/**
+ * §9's "(property-level)" ADR.
+ *
+ * Each unit is estimated on its own history and its own confirmed bookings — the same
+ * rule the portfolio runs — and its trailing ADR is then weighted by the share of the
+ * night mix it represents. The portfolio's night TOTAL stays authoritative: this changes
+ * the rate, never the volume, so the occupancy and revenue horizons still cannot disagree
+ * about how many nights are expected.
+ *
+ * Why the granularity earns its keep: a portfolio ADR prices next month at last quarter's
+ * unit mix. When the ₹6,000 two-bedroom is heavily booked and the ₹3,000 one-bedroom is
+ * not, the blended rate understates the month — and it understates it again, in the other
+ * direction, when the mix reverses.
+ *
+ * A unit that sold nothing in the window carries no rate of its own and is left out of
+ * the blend rather than entered at zero; its nights are then priced at the blend of the
+ * units that did sell, which is the nearest honest rate available for it.
+ */
+export function propertyRateMix(
+  request: OccupancyForecastRequest,
+  windowMonthKeys: readonly string[],
+): PropertyRateContribution[] {
+  const history = request.propertyHistory ?? [];
+  if (history.length === 0) return [];
+
+  const period = monthPeriod(request.monthKey);
+  const wanted = new Set(windowMonthKeys);
+  const propertyIds = [...new Set(history.map((m) => m.propertyId))].sort();
+
+  const contributions = propertyIds.map((propertyId) => {
+    const months = history.filter((m) => m.propertyId === propertyId && wanted.has(m.monthKey));
+    const rated = months.filter((m) => m.occupiedNights > 0);
+    const trailingAdr = safeDiv(rated.reduce((sum, m) => sum + m.adr, 0), rated.length);
+    const onHand = occupiedNights(
+      reservationsFor(request.reservations, propertyId),
+      period,
+    );
+    // One property row is one unit, so its sellable nights are the month's length.
+    const unitNights = months[0]?.availableNights ?? (period.end - period.start);
+    const nights = estimateNights(months.map((m) => m.occupiedNights), onHand, unitNights);
+    return { propertyId, forecastNights: nights.forecastNights, trailingAdr, weight: 0 };
+  });
+
+  const rated = contributions.filter((c) => c.forecastNights > 0 && c.trailingAdr > 0);
+  const total = rated.reduce((sum, c) => sum + c.forecastNights, 0);
+  if (total === 0) return [];
+  return rated.map((c) => ({ ...c, weight: c.forecastNights / total }));
+}
+
+const reservationsFor = (
+  reservations: readonly ReservationRecord[],
+  propertyId: string,
+): ReservationRecord[] => reservations.filter((b) => b.PropertyID === propertyId);
 
 /**
  * §9 revenue: forecast occupied nights × trailing ADR.
@@ -266,20 +399,23 @@ export function forecastOccupancy(request: OccupancyForecastRequest): ForecastEs
  * occupied nights) averaged over the same rolling window — the arithmetic is not
  * duplicated here.
  *
- * §9 specifies ADR "(property-level)". This milestone averages at portfolio level and
- * says so in `method`; per-property ADR is a refinement, not a different rule.
+ * §9 specifies ADR "(property-level)", and `propertyRateMix` supplies exactly that when
+ * per-unit history is available: each unit's own trailing rate, weighted by the share of
+ * the night mix that unit is estimated to sell. Without that history the portfolio rate
+ * stands in, and `method` and `inputs.adrBasis` both say which one produced the number.
  */
 export function forecastRevenue(
   request: OccupancyForecastRequest,
   occupancy: ForecastEstimate = forecastOccupancy(request),
 ): ForecastEstimate {
   const { series, monthKey, asOf } = request;
-  const method = 'Forecast occupied nights × trailing ADR (portfolio)';
   const history = usableHistory(series, asOf);
 
   if (occupancy.status === 'INSUFFICIENT_DATA' || occupancy.value === null) {
     return insufficient(
-      'revenue', monthKey, method, 'currency', history.length, occupancy.inputs.availableNights,
+      'revenue', monthKey,
+      'Forecast occupied nights × trailing ADR', 'currency',
+      history.length, occupancy.inputs.availableNights,
     );
   }
 
@@ -287,7 +423,16 @@ export function forecastRevenue(
   // Mean of the months' own ADRs. Months that sold nothing carry ADR 0 and would drag a
   // plain mean down, so only months that actually sold a night contribute a rate.
   const rated = window.filter((m) => m.occupiedNights > 0);
-  const trailingAdr = safeDiv(rated.reduce((sum, m) => sum + m.adr, 0), rated.length);
+  const portfolioAdr = safeDiv(rated.reduce((sum, m) => sum + m.adr, 0), rated.length);
+
+  const propertyRates = propertyRateMix(request, window.map((m) => m.monthKey));
+  const propertyLevel = propertyRates.length > 0;
+  const trailingAdr = propertyLevel
+    ? propertyRates.reduce((sum, c) => sum + c.weight * c.trailingAdr, 0)
+    : portfolioAdr;
+  const method = propertyLevel
+    ? 'Forecast occupied nights × trailing ADR (property-level, weighted by each unit’s estimated night mix)'
+    : 'Forecast occupied nights × trailing ADR (portfolio — no per-unit history available)';
 
   return {
     horizon: 'revenue',
@@ -299,7 +444,13 @@ export function forecastRevenue(
     unit: 'currency',
     occupancyPct: occupancy.occupancyPct,
     confidence: occupancy.confidence,
-    inputs: { ...occupancy.inputs, trailingMonthsUsed: rated.length, trailingAdr },
+    inputs: {
+      ...occupancy.inputs,
+      trailingMonthsUsed: rated.length,
+      trailingAdr,
+      adrBasis: propertyLevel ? 'property' : 'portfolio',
+      propertyRates,
+    },
     reason: null,
   };
 }

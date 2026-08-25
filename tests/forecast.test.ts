@@ -14,7 +14,8 @@ import { describe, it, expect } from 'vitest';
 import {
   forecastOccupancy, forecastRevenue, forecastVsActual, usableHistory, classifyConfidence,
   MINIMUM_USABLE_MONTHS, FULL_HISTORY_MONTHS, PICKUP_WINDOW_MONTHS,
-  type OccupancyForecastRequest,
+  propertyRateMix,
+  type OccupancyForecastRequest, type PropertyMonthMetrics,
 } from '@/lib/server/analytics/forecast';
 import { monthPeriod, computeMonthlySeries, fyMonthKeysFor, activeUnitCount } from '@/lib/server/analytics/kpi';
 import { buildDemoDataset, DEMO_QUIET_MONTHS } from '@/lib/data/demo/dataset';
@@ -374,5 +375,153 @@ describe('forecast · forecast vs actual', () => {
   it('returns nothing for an estimate that was never made', () => {
     const refused = forecastOccupancy(request({ series: [] }));
     expect(forecastVsActual(refused, history, asOfStartOf('2027-03'))).toBeNull();
+  });
+});
+
+/* ================================================================== *
+ * 7 · Property-level ADR — the granularity §9 names
+ *
+ * The rule is "forecast occupied nights x trailing ADR (property-level)". The case that
+ * makes the granularity matter is a MIX SHIFT: the same portfolio night total, sold by a
+ * different set of units than the recent past. A portfolio rate prices that month at last
+ * quarter's mix and is wrong by the size of the shift.
+ *
+ * Numbers below are chosen so every figure can be checked by hand:
+ *   HYD-A  20 nights/month at 6,000
+ *   HYD-B  10 nights/month at 3,000
+ *   portfolio  30 nights/month at 5,000  (150,000 / 30)
+ * ================================================================== */
+
+describe('forecast - property-level ADR', () => {
+  const WINDOW = ['2026-12', '2027-01', '2027-02'];
+
+  /** Portfolio months: 30 nights at a blended 5,000 (A: 20 at 6,000, B: 10 at 3,000). */
+  const portfolio = WINDOW.map((m) => traded(m, 30, 5000));
+
+  const unitMonth = (
+    propertyId: string, monthKey: string, nights: number, adr: number,
+  ): PropertyMonthMetrics => {
+    const p = monthPeriod(monthKey);
+    return { propertyId, monthKey, occupiedNights: nights, adr, availableNights: p.end - p.start };
+  };
+
+  const perUnit: PropertyMonthMetrics[] = WINDOW.flatMap((m) => [
+    unitMonth('HYD-A', m, 20, 6000),
+    unitMonth('HYD-B', m, 10, 3000),
+  ]);
+
+  const unitBooking = (propertyId: string, checkIn: string, checkOut: string): ReservationRecord =>
+    ({
+      PropertyID: propertyId, BookingStatus: 'Confirmed',
+      CheckInDate: isoToSerial(checkIn), CheckOutDate: isoToSerial(checkOut),
+    }) as unknown as ReservationRecord;
+
+  /** March 2027, two units on sale, nothing yet on the books. */
+  const steady = () => request({
+    series: portfolio, propertyHistory: perUnit, activeUnits: 2,
+    monthKey: '2027-03', asOf: asOfStartOf('2027-03'),
+  });
+
+  /**
+   * The mix shifts: the cheap unit is heavily booked for March and the expensive one is
+   * not. 25 nights confirmed on HYD-B, none on HYD-A.
+   */
+  const shifted = () => request({
+    ...steady(),
+    reservations: [unitBooking('HYD-B', '2027-03-01', '2027-03-26')],
+  });
+
+  it('reports that the rate came from the units, not from the portfolio', () => {
+    const out = forecastRevenue(steady());
+    expect(out.inputs.adrBasis).toBe('property');
+    expect(out.method).toMatch(/property-level/i);
+    expect(out.inputs.propertyRates.map((r) => r.propertyId)).toEqual(['HYD-A', 'HYD-B']);
+  });
+
+  it('weights each unit by the nights it is estimated to sell, summing to one', () => {
+    const rates = forecastRevenue(steady()).inputs.propertyRates;
+    // Nothing on the books, so each unit falls back to its own trailing level: 20 and 10.
+    expect(rates.map((r) => r.forecastNights)).toEqual([20, 10]);
+    expect(rates.map((r) => r.trailingAdr)).toEqual([6000, 3000]);
+    expect(rates[0]!.weight).toBeCloseTo(2 / 3, 10);
+    expect(rates[1]!.weight).toBeCloseTo(1 / 3, 10);
+    expect(rates.reduce((s, r) => s + r.weight, 0)).toBeCloseTo(1, 10);
+  });
+
+  it('agrees with the portfolio rate while the mix is unchanged', () => {
+    // (2/3 x 6000) + (1/3 x 3000) = 5000, which is what the blended series already says.
+    expect(forecastRevenue(steady()).inputs.trailingAdr).toBeCloseTo(5000, 6);
+  });
+
+  it('diverges from the portfolio rate when the mix shifts - the point of the rule', () => {
+    const out = forecastRevenue(shifted());
+    // HYD-A: no books, trailing 20 -> 20 nights. HYD-B: 25 confirmed, above its trailing
+    // 10, so no further pickup -> 25 nights. Weights 20/45 and 25/45.
+    const rates = out.inputs.propertyRates;
+    expect(rates.map((r) => r.forecastNights)).toEqual([20, 25]);
+    expect(out.inputs.trailingAdr).toBeCloseTo((20 / 45) * 6000 + (25 / 45) * 3000, 6);
+    // 4,333.33 against the portfolio's 5,000: the cheap unit is carrying the month, and a
+    // blended rate would have overstated it by about 15%.
+    expect(out.inputs.trailingAdr!).toBeLessThan(5000);
+  });
+
+  it('changes the rate and never the night total', () => {
+    const occupancy = forecastOccupancy(shifted());
+    const revenue = forecastRevenue(shifted(), occupancy);
+    // Portfolio: trailing 30, 25 on the books, residual 5 -> 30 nights. Untouched by the mix.
+    expect(occupancy.value).toBe(30);
+    expect(revenue.value).toBeCloseTo(30 * revenue.inputs.trailingAdr!, 6);
+    expect(revenue.inputs.bookingOnHandNights).toBe(occupancy.inputs.bookingOnHandNights);
+  });
+
+  it('falls back to the portfolio rate when no per-unit history is supplied, and says so', () => {
+    const out = forecastRevenue(request({
+      series: portfolio, activeUnits: 2, monthKey: '2027-03', asOf: asOfStartOf('2027-03'),
+    }));
+    expect(out.inputs.adrBasis).toBe('portfolio');
+    expect(out.inputs.propertyRates).toEqual([]);
+    expect(out.method).toMatch(/portfolio/i);
+    expect(out.inputs.trailingAdr).toBe(5000);
+  });
+
+  it('leaves a unit with no rate out of the blend rather than entering it at zero', () => {
+    // HYD-C is on sale and has bookings, but sold nothing in the window, so it has no
+    // rate of its own. Its nights are priced at the blend of the units that did sell.
+    const withDormant = request({
+      series: portfolio, activeUnits: 3, monthKey: '2027-03', asOf: asOfStartOf('2027-03'),
+      propertyHistory: [...perUnit, ...WINDOW.map((m) => unitMonth('HYD-C', m, 0, 0))],
+      reservations: [unitBooking('HYD-C', '2027-03-01', '2027-03-11')],
+    });
+    const out = forecastRevenue(withDormant);
+
+    expect(out.inputs.propertyRates.map((r) => r.propertyId)).toEqual(['HYD-A', 'HYD-B']);
+    expect(out.inputs.trailingAdr).toBeCloseTo(5000, 6);
+    expect(out.inputs.trailingAdr).not.toBe(0);
+  });
+
+  it('produces no mix at all when nothing in the window sold', () => {
+    expect(propertyRateMix(
+      request({
+        series: portfolio, activeUnits: 2, monthKey: '2027-03', asOf: asOfStartOf('2027-03'),
+        propertyHistory: WINDOW.flatMap((m) => [unitMonth('HYD-A', m, 0, 0), unitMonth('HYD-B', m, 0, 0)]),
+      }),
+      WINDOW,
+    )).toEqual([]);
+  });
+
+  it('is deterministic across repeated execution', () => {
+    const once = JSON.stringify(forecastRevenue(shifted()));
+    for (let i = 0; i < 4; i++) expect(JSON.stringify(forecastRevenue(shifted()))).toBe(once);
+  });
+
+  it('still refuses entirely when the history is too short, per-unit data or not', () => {
+    const out = forecastRevenue(request({
+      series: [traded('2027-02', 30, 5000)], propertyHistory: perUnit, activeUnits: 2,
+      monthKey: '2027-03', asOf: asOfStartOf('2027-03'),
+    }));
+    expect(out.status).toBe('INSUFFICIENT_DATA');
+    expect(out.value).toBeNull();
+    expect(out.inputs.adrBasis).toBeNull();
+    expect(out.inputs.propertyRates).toEqual([]);
   });
 });

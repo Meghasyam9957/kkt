@@ -102,6 +102,20 @@ function Forecast({ view }: { view: ForecastView }) {
                 {revenue.inputs.trailingMonthsUsed} month
                 {revenue.inputs.trailingMonthsUsed === 1 ? '' : 's'} contributed a rate
               </li>
+              {/*
+                §9 asks for a property-level ADR. The blend is shown unit by unit so the
+                rate can be checked against the units behind it rather than taken on trust.
+              */}
+              {revenue.inputs.adrBasis === 'property' ? (
+                <li>
+                  Unit rates:{' '}
+                  {revenue.inputs.propertyRates
+                    .map((r) => `${r.propertyId} ${formatCurrency(r.trailingAdr)} (${formatPercent(r.weight, 0)})`)
+                    .join(' · ')}
+                </li>
+              ) : (
+                <li>Portfolio rate — no per-unit history was available to blend</li>
+              )}
             </ul>
           </Estimate>
         )}
