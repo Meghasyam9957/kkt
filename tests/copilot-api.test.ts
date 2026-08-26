@@ -137,6 +137,12 @@ describe('copilot API · authorization (§7)', () => {
     expect(res.status).toBe(200);
     expect(res.body.outcome).toBe('OK');
     expect(res.body.answer).toBe(MOCK_REPLY);
+    /*
+     * The stub declares itself over HTTP. Without this an interface has no way to tell a
+     * mock's fixed string from a model's answer, and the person reading the screen has
+     * none either — which is the one failure nobody would notice.
+     */
+    expect(res.body.simulated).toBe(true);
     // §8.1's A1 — answer plus source period plus provenance.
     expect(res.body.period).toMatch(/^\d{4}-\d{2}$/);
     expect(res.body.source).toBe('FIXTURE');

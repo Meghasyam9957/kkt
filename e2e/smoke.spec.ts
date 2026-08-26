@@ -220,3 +220,66 @@ test('operations cannot open the forecast', async ({ page }) => {
   await page.goto('/admin/analytics/forecast');
   await expect(page.locator('main')).toContainText(/[Nn]ot available/);
 });
+
+/* ------------------------------------------------------------------ *
+ * Copilot — functional only. No screenshots are taken here.
+ * ------------------------------------------------------------------ */
+
+test('the copilot composer is usable and submits from the keyboard', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+  await page.goto('/admin/ai');
+
+  const input = page.getByLabel(/ask the copilot/i);
+  await expect(input).toBeEnabled();
+  // Empty question, nothing to send.
+  await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
+
+  await input.click();
+  await page.keyboard.type('what needs attention today');
+  await expect(page.getByRole('button', { name: 'Send' })).toBeEnabled();
+  await page.keyboard.press('Enter');
+
+  // Whatever the deployment answers, the question is echoed and the composer settles.
+  await expect(page.locator('.sv-copilot__asked')).toContainText('what needs attention today');
+  await expect(page.locator('.sv-copilot__thread')).toHaveAttribute('aria-busy', 'false');
+});
+
+test('an unconfigured deployment says so instead of inventing an answer', async ({ page }) => {
+  /*
+   * The e2e server runs DEMO with no AI variables set, so the copilot is refused. That is
+   * the state worth pinning: the screen must report it rather than render a blank thread
+   * or, far worse, a plausible-looking reply. If this deployment is ever configured with
+   * the local mock, the answer block appears instead — labelled "Simulated" — and the
+   * first assertion below is the one that still has to hold.
+   */
+  await signInAs(page, 'Demo Administrator');
+  await page.goto('/admin/ai');
+
+  await page.getByLabel(/ask the copilot/i).fill('what needs attention today');
+  await page.getByRole('button', { name: 'Send' }).click();
+
+  const result = page.locator('.sv-copilot__result');
+  await expect(result).not.toBeEmpty();
+  // Nothing is presented as a model answer when the server produced none.
+  await expect(page.locator('.sv-copilot__answer')).toHaveCount(0);
+  await expect(result).toContainText('Configuration required');
+});
+
+test('the copilot page does not overflow sideways on a phone', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/admin/ai');
+  await page.waitForSelector('.sv-copilot__composer');
+
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, 'the copilot screen must not scroll horizontally at 375px').toBeLessThanOrEqual(0);
+});
+
+test('an investor cannot open the copilot', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await expect(page.locator('.sv-sidebar')).not.toContainText('Copilot');
+  await page.goto('/admin/ai');
+  await expect(page.locator('main')).toContainText(/[Nn]ot available/);
+  await expect(page.getByLabel(/ask the copilot/i)).toHaveCount(0);
+});

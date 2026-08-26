@@ -31,7 +31,7 @@ import { budgetState } from '@/lib/server/ai/guardrails';
 import { aiEnabled } from '@/lib/server/ai/guard';
 import {
   copilotViewState, copilotShowsAnswer, copilotBudgetNotable,
-  COPILOT_VIEW_STATES, COPILOT_OPERATOR_ONLY_FIELDS,
+  COPILOT_VIEW_STATES, COPILOT_OPERATOR_ONLY_FIELDS, copilotRefusalKind,
 } from '@/lib/shared/ai-copilot-view';
 import type { EnvLike } from '@/lib/shared/env';
 
@@ -144,6 +144,20 @@ describe('activation · nothing degrades into something that answers', () => {
     expect(aiProviderIsReal('mock')).toBe(false);
     expect(aiProviderIsReal('openai')).toBe(true);
     expect(resolveAiProvider('mock')!.external).toBe(false);
+  });
+
+  it('the local mock needs no credential; the real provider still does', () => {
+    /*
+     * What makes a demonstration possible without a key. The mock opens no socket, so
+     * requiring one would force a junk value into the single variable that must only ever
+     * hold a real secret. Everything else — pricing, currency, the cap — is still
+     * required, so the demo exercises the same budget machinery a real provider would.
+     */
+    expect(permit({ DEMO_AI_PROVIDER: 'mock', DEMO_OPENAI_API_KEY: '' }).permitted).toBe(true);
+    expect(permit({ DEMO_AI_PROVIDER: 'openai', DEMO_OPENAI_API_KEY: '' }).reason).toBe('NO_API_KEY');
+    // And the mock is not a way around the cap.
+    expect(permit({ DEMO_AI_PROVIDER: 'mock', DEMO_OPENAI_API_KEY: '', DEMO_AI_BUDGET_CAP: '' }).reason)
+      .toBe('NO_BUDGET_CAP');
   });
 
   it('every locally constructible provider is one configuration may name', () => {
@@ -434,8 +448,24 @@ describe('copilot view states · complete, and free of wording', () => {
     }
   });
 
-  it('names the fields a composer must not print as an answer', () => {
-    expect(COPILOT_OPERATOR_ONLY_FIELDS).toEqual(['message', 'usage']);
+  it('names the fields a composer must never render', () => {
+    /*
+     * `usage` only. `message` was on this list and should not have been: §8.4 requires a
+     * budget breach to degrade "with a clear message — never a silent overspend", so
+     * suppressing it would produce the silence the rule forbids. It belongs in the system
+     * region, which is a different rule from "never rendered".
+     */
+    expect(COPILOT_OPERATOR_ONLY_FIELDS).toEqual(['usage']);
+  });
+
+  it('groups refusals by what a person could do about them', () => {
+    expect(copilotRefusalKind('BUDGET_EXCEEDED')).toBe('budget');
+    expect(copilotRefusalKind('FEATURE_SWITCHED_OFF')).toBe('disabled');
+    for (const reason of [
+      'INTEGRATION_DISABLED', 'NO_PROVIDER', 'NO_PRICING', 'BUDGET_UNCONFIGURED', null,
+    ] as const) {
+      expect(copilotRefusalKind(reason), String(reason)).toBe('configuration');
+    }
   });
 
   it('reaches no server module at runtime', () => {
@@ -452,22 +482,44 @@ describe('copilot view states · complete, and free of wording', () => {
  * 10 · The interface is still not connected
  * ================================================================== */
 
-describe('copilot page · deliberately inert until DEMO/UAT is configured', () => {
+describe('copilot page · connected, and still holding no configuration', () => {
   const page = () => readRepoFile('app/admin/ai/page.tsx');
+  const console_ = () => readRepoFile('components/copilot/CopilotConsole.tsx');
 
-  it('sends no request and holds no client state', () => {
-    expect(page()).not.toContain('use client');
+  it('the page stays a server component and fetches nothing itself', () => {
+    // Everything AI-shaped happens over one guarded route. The page renders a shell, so
+    // no provider state, model id or configuration is serialised into the page payload.
+    expect(page()).not.toContain("'use client'");
     expect(page()).not.toMatch(/\bfetch\(/);
-    expect(page()).not.toContain('/api/ai/copilot');
   });
 
-  it('names no credential and no provider', () => {
-    expect(page()).not.toMatch(/OPENAI|sk-[A-Za-z0-9_-]{8,}/);
+  it('neither the page nor the console names a credential', () => {
+    for (const [label, source] of [['page', page()], ['console', console_()]] as const) {
+      expect(source, label).not.toMatch(/OPENAI|sk-[A-Za-z0-9_-]{8,}|apiKey/i);
+    }
+  });
+
+  it('the console reaches exactly one path, on its own origin', () => {
+    const fetched = [...console_().matchAll(/fetch\(\s*'([^']+)'/g)].map((m) => m[1]);
+    expect(fetched).toEqual(['/api/ai/copilot']);
   });
 
   it('fabricates no answer', () => {
-    // The composer is disabled. A convincing assistant that invents figures would be
-    // worse than none, which is why nothing here renders as a model response.
-    expect(page()).toContain('disabled');
+    /*
+     * The rule that survived connecting the page: answer text is rendered from the
+     * server's field and from nowhere else. A hard-coded sentence dressed as a reply
+     * would be the one failure nobody looking at the screen could detect.
+     */
+    const source = console_();
+    expect(source).toContain('answer.answer');
+    // The only literal strings near the answer region are the flag label and the
+    // simulated badge, both of which describe the answer rather than being one.
+    expect(source).not.toMatch(/answer:\s*'[^']{40,}'/);
+  });
+
+  it('labels a stub as a stub', () => {
+    // ARCHITECTURE has no rule for this because no architecture anticipates a demo being
+    // mistaken for a product. The mock says so, on the answer, every time.
+    expect(console_()).toContain('answer.simulated');
   });
 });

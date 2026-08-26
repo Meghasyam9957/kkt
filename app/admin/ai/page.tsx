@@ -1,24 +1,21 @@
-import { PageHeader, Section, Card, CardHeader, CardBody, Badge, EmptyState } from '@/components/ui/primitives';
+import { PageHeader, Section, Card, CardHeader, CardBody, EmptyState } from '@/components/ui/primitives';
 import { checkPageAccess } from '@/lib/server/auth/page-guard';
 import { AccessDenied } from '@/components/shell/AccessDenied';
-import { SrivilluMark } from '@/components/shell/Logo';
+import { CopilotConsole } from '@/components/copilot/CopilotConsole';
 
 export const metadata = { title: 'Srivillu Copilot — Srivillu Home Stays' };
 
 /**
- * Copilot shell. Deliberately inert: no OpenAI call, no key, no fabricated answer.
- * A convincing-looking assistant that invents numbers would be worse than no assistant,
- * so the composer is disabled and says why.
+ * Copilot shell.
+ *
+ * The page is a server component and stays one: it checks access, lays out the shell, and
+ * mounts the console. It makes no AI call itself and holds no AI configuration, so nothing
+ * about a provider, a model or a credential is ever serialised into the page payload.
+ *
+ * Everything the console shows comes from `POST /api/ai/copilot` — one server-mediated
+ * request, answered by the same guarded router every other read goes through. The browser
+ * has no route to a model, and no key exists in this bundle to give it one.
  */
-const EXAMPLE_PROMPTS = [
-  'What needs attention today?',
-  'Which property performed best this month?',
-  'Why did revenue change compared with last month?',
-  'What are our biggest expenses?',
-  'Which channel brings the most profitable bookings?',
-  'How many nights are already booked for next month?',
-];
-
 export const dynamic = 'force-dynamic';
 
 export default async function CopilotPage() {
@@ -34,36 +31,9 @@ export default async function CopilotPage() {
       <Section>
         <div className="sv-copilot">
           <Card>
-            <CardHeader
-              title="Conversation"
-              action={<Badge tone="warn">AI integration coming in Phase 9</Badge>}
-            />
+            <CardHeader title="Conversation" />
             <CardBody className="sv-card__body--flush">
-              <div className="sv-copilot__thread">
-                <SrivilluMark size={44} />
-                <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 600 }}>
-                  Ask about the business
-                </p>
-                <p className="sv-muted" style={{ fontSize: '0.875rem', maxWidth: '48ch' }}>
-                  When this is connected, every answer will cite the period and the sheet it came
-                  from, and any figure it states will have come from a retrieved record rather
-                  than the model.
-                </p>
-                <div className="sv-copilot__prompts">
-                  {EXAMPLE_PROMPTS.map((prompt) => (
-                    <div key={prompt} className="sv-copilot__prompt">{prompt}</div>
-                  ))}
-                </div>
-              </div>
-              <div className="sv-copilot__composer">
-                <input
-                  className="sv-copilot__input"
-                  placeholder="Available in Phase 9"
-                  disabled
-                  aria-label="Ask the copilot (disabled until Phase 9)"
-                />
-                <button type="button" className="sv-btn sv-btn--primary" disabled>Send</button>
-              </div>
+              <CopilotConsole />
             </CardBody>
           </Card>
 
@@ -71,7 +41,10 @@ export default async function CopilotPage() {
             <Card>
               <CardHeader title="History" as="h3" />
               <CardBody>
-                <EmptyState title="No conversations yet" message="Past conversations will appear here once the copilot is live." />
+                <EmptyState
+                  title="Conversations are not kept"
+                  message="Nothing asked here is stored. No conversation log exists in this deployment."
+                />
               </CardBody>
             </Card>
             <div style={{ height: 'var(--space-3)' }} />
@@ -79,8 +52,9 @@ export default async function CopilotPage() {
               <CardHeader title="Sources" as="h3" />
               <CardBody>
                 <p className="sv-muted" style={{ fontSize: '0.8125rem' }}>
-                  Answers will be grounded in the revenue, expense, reservation and operations
-                  ledgers, retrieved through the same server layer this dashboard uses. Guest
+                  Answers are grounded in the revenue, expense, reservation and operations
+                  ledgers, retrieved through the same server layer this dashboard uses. Each
+                  answer states the period it describes and which reads produced it. Guest
                   personal data is excluded from the assistant&rsquo;s context.
                 </p>
               </CardBody>

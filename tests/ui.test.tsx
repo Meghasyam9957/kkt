@@ -436,13 +436,22 @@ describe('10 · no credential access in client code', () => {
   it('the AI page makes no model call', () => {
     const raw = fs.readFileSync(path.join(ROOT, 'app/admin/ai/page.tsx'), 'utf8');
     const code = codeOnly(raw);
-    // The comment may discuss OpenAI; the code must not reach for it.
-    expect(code).not.toMatch(/from ['\"]openai|api\.openai\.com|fetch\s*\(/i);
-    // §11 puts the AI copilot at Phase 9. Phase 7 (the investor portal) has shipped, so
-    // naming it here told a client the wrong thing about what they were waiting for.
-    expect(raw).toContain('Phase 9');
-    // The composer is inert, not merely styled to look inert.
-    expect(raw).toMatch(/disabled/);
+    // The comment may discuss OpenAI; the code must not reach for it. The page is a
+    // server component that lays out a shell and mounts the console — it fetches
+    // nothing itself, so no provider, model or key is ever in the page payload.
+    expect(code).not.toMatch(/from ['"]openai|api\.openai\.com|fetch\s*\(/i);
+    expect(code).not.toContain("'use client'");
+  });
+
+  it('the copilot console reaches its own server and nothing else', () => {
+    // The page is connected now, so the invariant moved to the component that does the
+    // connecting: one same-origin path, no provider SDK, no credential.
+    const raw = fs.readFileSync(path.join(ROOT, 'components/copilot/CopilotConsole.tsx'), 'utf8');
+    const code = codeOnly(raw);
+    expect(code).not.toMatch(/from ['"]openai|api\.openai\.com/i);
+    expect(code).not.toMatch(/OPENAI|apiKey/i);
+    const fetched = [...code.matchAll(/fetch\(\s*'([^']+)'/g)].map((m) => m[1]);
+    expect(fetched).toEqual(['/api/ai/copilot']);
   });
 });
 

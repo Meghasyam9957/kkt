@@ -544,10 +544,64 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-copilot__composer { display: flex; gap: var(--space-2); padding: var(--space-4); border-top: 1px solid var(--border-subtle); }
 .sv-copilot__input {
-  flex: 1; font: inherit; font-size: 0.875rem;
+  /* min-width:0 so a long question shrinks the field instead of widening the row. A flex
+     item defaults to min-width:auto, which is the usual cause of a composer that scrolls
+     the page sideways on a narrow screen. */
+  flex: 1; min-width: 0; font: inherit; font-size: 0.875rem;
   padding: 9px var(--space-4); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--text-muted);
+  border-radius: var(--radius-sm); background: var(--surface-sunken); color: var(--text-primary);
 }
+.sv-copilot__input:disabled { color: var(--text-muted); cursor: not-allowed; }
+
+/* Once a question has been asked the thread stops being a centred empty state and starts
+   being a transcript: top-aligned, left-read, full width. */
+.sv-copilot__thread:not([data-state='idle']) {
+  justify-content: flex-start; align-items: stretch; text-align: left;
+  padding: var(--space-5);
+}
+.sv-copilot__asked {
+  align-self: flex-end; max-width: min(46ch, 100%);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md); background: var(--surface-sunken);
+  font-size: 0.875rem; color: var(--text-primary);
+  /* A pasted question can be one unbroken string; it must wrap rather than scroll. */
+  overflow-wrap: anywhere;
+}
+.sv-copilot__result { width: 100%; }
+.sv-copilot__outcome { display: grid; gap: var(--space-4); }
+
+/* The model's text. Visually distinct from the system regions below it, because the
+   distinction between "what the data says" and "what the assistant said" is the whole
+   point of the layout. */
+.sv-copilot__answer {
+  display: grid; gap: var(--space-2); justify-items: start;
+  padding: var(--space-4); border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle); background: var(--surface-card);
+}
+.sv-copilot__answer-text {
+  font-size: 0.9375rem; line-height: 1.6; color: var(--text-primary);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.sv-copilot__flags {
+  font-size: 0.8125rem; color: var(--warn-fg);
+  background: var(--warn-bg); padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm); overflow-wrap: anywhere;
+}
+.sv-copilot__refusal {
+  display: grid; gap: var(--space-2); justify-items: start;
+  padding: var(--space-4); border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle); background: var(--surface-sunken);
+}
+.sv-copilot__refusal-text { font-size: 0.875rem; color: var(--text-primary); overflow-wrap: anywhere; }
+
+/* Provenance: system facts, never mixed into the answer container above. */
+.sv-copilot__facts {
+  display: grid; gap: var(--space-2) var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  font-size: 0.8125rem;
+}
+.sv-copilot__facts dt { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.6875rem; }
+.sv-copilot__facts dd { color: var(--text-primary); margin: 0; overflow-wrap: anywhere; }
 
 /* ------------------------------------------------------------------ *
  * Responsive

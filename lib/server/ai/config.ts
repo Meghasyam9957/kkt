@@ -291,7 +291,13 @@ export function aiProviderPermitted(
    * every question refuses, which is the sort of thing that gets diagnosed at a demo.
    */
   if (!isSelectableAiProvider(config.providerId)) return no('UNKNOWN_PROVIDER');
-  if (!config.apiKeyPresent) return no('NO_API_KEY');
+  /*
+   * Only a REAL provider needs a credential. The local mock opens no socket, so demanding
+   * a key for it would force a demonstration to put a junk value into the one variable
+   * that must only ever hold a real secret — which is how junk values end up in
+   * credential variables generally.
+   */
+  if (aiProviderIsReal(config.providerId) && !config.apiKeyPresent) return no('NO_API_KEY');
   if (!config.model) return no('NO_MODEL');
   if (!config.pricing) return no('NO_PRICING');
   if (config.currencyMismatch) return no('CURRENCY_MISMATCH');

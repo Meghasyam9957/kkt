@@ -131,6 +131,13 @@ export interface CopilotAnswer {
   message: string | null;
   /** Where spend stood against the cap (§8.4), passed through unchanged from the dispatch. */
   budgetState: BudgetState;
+  /**
+   * True when a local stub produced this rather than a language model.
+   *
+   * Carried to the HTTP surface so an interface cannot present a stub's fixed reply as an
+   * assistant's answer. Nothing about it is a decision — it reports which provider ran.
+   */
+  simulated: boolean;
   usage: AiUsageRecord;
 }
 
@@ -190,6 +197,7 @@ export async function answerCopilotQuestion(
     ungrounded: result.ungrounded,
     message: result.message,
     budgetState: result.budgetState,
+    simulated: result.simulated,
     usage: result.usage,
   };
 }

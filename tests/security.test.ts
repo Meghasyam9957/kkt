@@ -157,8 +157,19 @@ describe('security · the server/client boundary holds in the browser bundle', (
 
   const REEXPORT = new RegExp(String.raw`export\s+(?!type\s)[^;]*?from\s*['"]([^'"]+)['"]`, 'g');
 
-  /** Value imports only — `import type { X }` and `import { type X }` are erased. */
-  function valueImports(source: string): string[] {
+  /**
+   * Value imports only — `import type { X }` and `import { type X }` are erased.
+   *
+   * Comments are stripped first. Without that, a header sentence containing the words
+   * "import ... from" is swallowed by the non-greedy clause pattern and the module named
+   * on the NEXT line is reported as a value import — so a file was flagged for explaining
+   * that its imports are type-only. Same reasoning as `codeOnly` in the UI suite: a scan
+   * must read code, or it punishes the comment instead of catching the defect.
+   */
+  function valueImports(rawSource: string): string[] {
+    const source = rawSource
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/[^\n]*/g, ' ');
     const out: string[] = [];
     const pattern = /import\s+([\s\S]*?)\s*from\s*['"]([^'"]+)['"]/g;
     for (const match of source.matchAll(pattern)) {

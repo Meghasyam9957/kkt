@@ -141,6 +141,17 @@ export interface AiDispatchResult {
    * and what they should do about it are undecided — see docs/DECISIONS_REQUIRED.md.
    */
   budgetState: BudgetState;
+  /**
+   * True when the provider that would have answered is a local stub rather than a
+   * language model.
+   *
+   * It travels on every result, refusals included, because it is a fact about the
+   * deployment rather than about the turn. An interface that renders a stub's reply
+   * without saying so is presenting a fixed string as an assistant's reasoning, and the
+   * person reading it has no way to tell. So the fact travels, and the interface has no
+   * excuse for omitting it.
+   */
+  simulated: boolean;
   /** §8.4's log line for this call, refusals included. Already handed to the sink. */
   usage: AiUsageRecord;
 }
@@ -183,6 +194,9 @@ export async function dispatchCompletion(
   // Pure in the budget, so it is read once and reported identically on every path below —
   // including the paths that refuse before the budget is consulted at all.
   const budget = budgetState(context.feature.budget);
+  // Read from the provider itself, not from configuration: whatever is actually on the
+  // other end of this call is what the answer came from.
+  const simulated = provider !== null && !provider.external;
 
   const finish = async (
     outcome: AiDispatchOutcome,
@@ -206,7 +220,10 @@ export async function dispatchCompletion(
       outcome,
     };
     await context.sink.record(record);
-    return { outcome, reason, text, ungrounded, message, budgetState: budget, usage: record };
+    return {
+      outcome, reason, text, ungrounded, message,
+      budgetState: budget, simulated, usage: record,
+    };
   };
 
   const refuse = (reason: AiRefusalReason, message: string) =>

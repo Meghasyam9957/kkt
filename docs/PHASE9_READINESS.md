@@ -37,9 +37,10 @@ reach exactly one host — all asserted by
 | 15 | **Forecast restriction** | 🟢 **Built** | §8.2 rule 4, §9 | Estimates arrive computed, labelled `ESTIMATE`, with method and status; the `inputs` block is withheld. No AI module may import a calculation engine. |
 | 16 | **Tests before enabling** | 🟡 **Partly built** | §8.1, §8.2 | See §4 below. |
 | 17 | **`POST /api/ai/copilot`** | 🟢 **Built** | §7, write governance | Declared, guarded by `ai.operations`, wired to the copilot service on the mock provider. The write-governance rule was re-expressed rather than exempted — see §6. |
-| 18 | **§8.4 soft warning surfaced** | 🟡 **TECH — follow-up** | §8.4 | The budget state (`UNCONFIGURED`/`OK`/`WARNING`/`BREACHED`) is now propagated through `AiDispatchResult` and `CopilotAnswer`, so it reaches the HTTP response. **No human-facing surface and no audit destination exist yet**, and the warning stays unreachable in the current production configuration because neither a cap nor a spend source is configured. **No decision is needed for the remaining work** — §8.4 names the threshold and the breach behaviour but no destination for the warning itself, so where it should surface is an engineering choice, not a management one. |
+| 18 | **§8.4 soft warning surfaced** | 🟡 **TECH — follow-up** | §8.4 | The budget state (`UNCONFIGURED`/`OK`/`WARNING`/`BREACHED`) is now propagated through `AiDispatchResult` and `CopilotAnswer`, so it reaches the HTTP response. It now reaches a **human-facing surface**: the copilot console renders the state beside the answer whenever it is anything other than `OK`. No audit destination exists yet, and the warning stays unreachable in the current production configuration because neither a cap nor a spend source is configured. **No decision is needed for the remaining work** — §8.4 names the threshold and the breach behaviour but no destination for the warning itself, so where it should surface is an engineering choice, not a management one. |
 
 | 19 | **Rate limits** | 🟡 **Interface built — policy undecided** | §8.4 | `AiRateLimiter` and `AiRateLimitState` exist in [`rate-limit.ts`](../lib/server/ai/rate-limit.ts). **No limit value is chosen and no environment variable is declared for one**, because a limit is a number and naming `…_PER_HOUR` would already have picked the window. Demo runs `UnenforcedAiRateLimiter`, which allows everything and reports `state: 'none'`; it throws if constructed in production. Production is refused `NO_RATE_LIMIT_POLICY` — a gate that outlives the retention decision, since a durable spend source does not supply a rate-limit policy. |
+| 21 | **Copilot interface** | 🟢 **Connected** | §8.1 A1, §8.2, §8.4 | `app/admin/ai` mounts `CopilotConsole`, which posts to `/api/ai/copilot` and renders all seven view states with the server's own codes and messages. Provenance travels with every outcome; a simulated provider is labelled; nothing is optimistic. See §9.5. |
 | 20 | **DEMO/UAT activation** | 🟡 **Path built — values external** | §8.4, §13 Q6 | The full configuration contract, its validation rules and every named refusal are in §9. A demo can be switched on once four values exist: credential, model id, pricing, cap. Nothing degrades into a mock, an unlimited budget or an unpriced call. |
 
 🟢 built · 🟡 contract built, feature work remains · 🟠 partial or credential-blocked · 🔴 blocked on a decision
@@ -447,25 +448,46 @@ code can see:
    stored at all, for how long, and under whose access. §1.3 permits Supabase to hold AI
    usage logs; it fixes no period, so the table stays proposed rather than created.
 
-### 9.5 The interface is still not connected
+### 9.5 The interface is connected — to the server, never to a provider
 
-`app/admin/ai/page.tsx` is unchanged and remains inert: a server component with no client
-state, no `fetch`, no reference to `/api/ai/copilot`, and a disabled composer. Its
-precondition for connection — a credential, a model, a budget and pricing configured in
-DEMO/UAT — is not met, so connecting it would mean building a conversation surface with
-nothing behind it.
+`app/admin/ai/page.tsx` stays a server component: it checks `ai.copilot`, lays out the
+shell and mounts `components/copilot/CopilotConsole.tsx`. It fetches nothing itself, so no
+provider state, model id or configuration is ever serialised into the page payload.
 
-What *was* settled is the part that does not require connecting anything:
-`lib/shared/ai-copilot-view.ts` fixes the states a composer must handle — `idle`,
-`loading`, `answered`, `flagged`, `refused`, `unavailable`, `failed` — mapped exhaustively
-from the server contract. `refused` and `unavailable` are deliberately distinct: one is
-"not this turn", the other is "no AI on this deployment", and collapsing them is how an
-unconfigured demo comes to look like a broken feature.
+The console makes exactly one request, to exactly one path, on its own origin:
+`POST /api/ai/copilot`. There is no second endpoint, no provider SDK in the bundle and no
+credential to give one — asserted by the import-graph walk in `tests/security.test.ts` and
+again by source scans in `tests/copilot-ui.test.tsx`.
 
-It contains **no user-facing wording**, asserted by a test that rejects any string literal
-with a space in it. Refusal copy is an open decision, and a placeholder sentence written
-here would quietly answer it. Its imports from `lib/server` are type-only and erased at
-compile time, so a client component can use it without any path existing by which a
-credential, a provider error body or a usage row could reach a browser.
+**Seven states, all rendered.** `idle`, `loading`, `answered`, `flagged`, `refused`,
+`unavailable` and `failed`, mapped from the server contract by
+`lib/shared/ai-copilot-view.ts` rather than classified in the component. Refusals are
+grouped by what a person can act on — `configuration`, `disabled`, `budget` — and each is
+rendered with **the server's own code and message**. No refusal wording is written in the
+interface; §8 specifies none, and a placeholder would quietly answer a question
+docs/DECISIONS_REQUIRED.md records as open.
+
+**System facts and model text never share a container.** Period, source, read-time, which
+tools ran and which were withheld are the server's and are true whether or not a model
+answered; the answer is the model's. The separation is asserted structurally, not by
+inspection.
+
+**A stub is never dressed as an assistant.** `simulated` now travels on `AiDispatchResult`
+and `CopilotAnswer`, read from the provider itself (`external === false`). When it is true
+the answer carries a *Simulated — local mock, not a language model* badge. This is the one
+failure a person looking at the screen could not detect for themselves, so it is a
+property of the contract rather than a convention.
+
+**Nothing is optimistic.** No placeholder answer, no streamed guess. A duplicate submit is
+refused by a ref mutated synchronously before the first `await` — the disabled button is
+an affordance, and it only takes effect on the next render, which is a window two submits
+in one tick would otherwise slip through.
+
+**Demonstrable without a credential.** Setting `DEMO_AI_PROVIDER=mock` runs the local
+provider: no key required, because it opens no socket. Pricing, currency and the cap are
+still required, so a demonstration exercises the same budget machinery a real provider
+would — and every answer is labelled simulated. The recipe is in `.env.example`. With
+nothing configured at all, the screen reports *Configuration required* with the server's
+message, verified in a real browser by `e2e/smoke.spec.ts`.
 
 ---

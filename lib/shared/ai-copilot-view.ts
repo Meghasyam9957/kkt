@@ -1,11 +1,10 @@
 /**
  * COPILOT VIEW STATES — what an interface has to be able to show, before it shows it.
  *
- * The copilot page is deliberately inert: no request is sent, no answer is rendered, and
- * it stays that way until an authorised credential, an approved model and an approved
- * budget exist in DEMO/UAT. This module is the part that can be settled now — the set of
- * outcomes a connected composer must handle, derived from the server contract rather than
- * guessed at later by whoever wires the fetch.
+ * The set of outcomes a connected composer must handle, derived from the server contract
+ * rather than decided in a component. The page reads these; it does not classify a
+ * response itself, so there is one place where "what did the server just say" is answered
+ * and one place to change when a new outcome appears.
  *
  * Two things it deliberately does NOT contain:
  *
@@ -69,6 +68,32 @@ export function copilotViewState(
   }
 }
 
+/**
+ * Why a turn was refused, grouped by what a person could do about it.
+ *
+ *   configuration  the deployment is not set up — a cap, pricing, a provider, the switch
+ *   disabled       set up, but this feature is deliberately switched off (§8.4)
+ *   budget         set up and on, but the month's cap is spent (§8.4)
+ *
+ * Three groups rather than seven codes, because the seven differ in ways only an operator
+ * acts on while these three differ in ways the *screen* acts on. The codes still travel;
+ * this only decides which region renders them.
+ */
+export type CopilotRefusalKind = 'configuration' | 'disabled' | 'budget';
+
+export function copilotRefusalKind(reason: AiRefusalReason | null): CopilotRefusalKind {
+  if (reason === 'BUDGET_EXCEEDED') return 'budget';
+  if (reason === 'FEATURE_SWITCHED_OFF') return 'disabled';
+  /*
+   * Everything else — INTEGRATION_DISABLED, NO_PROVIDER, NO_PRICING, BUDGET_UNCONFIGURED,
+   * and an absent reason — is "not set up". Defaulting here rather than enumerating is
+   * deliberate: a refusal code added later lands in the group that points at the
+   * deployment, instead of falling through to a branch that tells somebody their question
+   * was declined for a reason nobody can name.
+   */
+  return 'configuration';
+}
+
 /** Whether the state carries answer text to display. Nothing else may render as an answer. */
 export function copilotShowsAnswer(state: CopilotViewState): boolean {
   return state === 'answered' || state === 'flagged';
@@ -85,13 +110,16 @@ export function copilotBudgetNotable(state: BudgetState): boolean {
 }
 
 /**
- * Fields on a copilot answer that exist for an operator and must never be rendered as
- * part of the conversation.
+ * Fields on a copilot answer that must never be rendered anywhere in the interface.
  *
- * `message` carries §8.4's clear-message text for whoever is running the deployment, and
- * can quote a classified provider failure; `usage` is the §8.4 log line, including model
- * and cost. Neither is a secret — the security suite proves no credential can reach
- * either — but neither is an answer, and a composer that printed them would be reporting
- * infrastructure to a person who asked about occupancy.
+ * `usage` is §8.4's log line — model id, token counts, computed cost, latency. It is not
+ * a secret (the security suite proves no credential reaches it) but it is infrastructure
+ * reporting, and it has no business on a screen where somebody asked about occupancy.
+ *
+ * **`message` is deliberately NOT on this list.** It was, and that was too strict: §8.4
+ * requires a budget breach to degrade "with a clear message — never a silent overspend",
+ * and `message` is that clear message. Suppressing it would produce exactly the silence
+ * the rule forbids. It belongs in the system region, never inside an answer — which is
+ * the distinction `copilotShowsAnswer` draws.
  */
-export const COPILOT_OPERATOR_ONLY_FIELDS: readonly string[] = ['message', 'usage'];
+export const COPILOT_OPERATOR_ONLY_FIELDS: readonly string[] = ['usage'];
