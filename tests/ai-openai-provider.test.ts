@@ -225,10 +225,19 @@ describe('AI config · when a paid provider may run', () => {
      */
     const config = resolveAiConfig(full(), 'DEMO_');
     expect(aiProviderPermitted(config, 'production', true).reason).toBe('NO_SPEND_SOURCE');
-    // With a durable store it would run — the gate is the absence, not the environment.
-    expect(aiProviderPermitted(config, 'production', true, 'durable').permitted).toBe(true);
     // A process-local total is never enough for production, however complete the rest.
     expect(aiProviderPermitted(config, 'production', true, 'process').reason).toBe('NO_SPEND_SOURCE');
+    /*
+     * Supplying a durable store no longer opens production on its own. §8.4 asks for two
+     * things production has not got, and solving one does not supply the other: with the
+     * spend source in place the next refusal is the missing rate-limit policy. Both have
+     * to be answered, and the gate names whichever is still outstanding rather than
+     * reporting the first one twice.
+     */
+    expect(aiProviderPermitted(config, 'production', true, 'durable').reason)
+      .toBe('NO_RATE_LIMIT_POLICY');
+    expect(aiProviderPermitted(config, 'production', true, 'durable', 'enforced').permitted)
+      .toBe(true);
   });
 
   it('demo runs on the process-local total, and refuses when there is none', () => {

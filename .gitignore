@@ -1,6 +1,10 @@
 node_modules/
-.env
-.env.local
+# Every dotenv file, however Next.js names it — .env, .env.local, .env.production,
+# .env.development.local. Listing two of them left .env.production trackable, which is
+# exactly the file a deployment note would tell someone to create. The example is the one
+# exception: it holds variable NAMES and never a value.
+.env*
+!.env.example
 *.local
 dist/
 .next/

@@ -80,6 +80,7 @@ function aiSources(): Array<{ file: string; text: string }> {
 const AI_MODULES = [
   'config.ts', 'copilot-context.ts', 'copilot.ts', 'dispatch.ts', 'guard.ts',
   'guardrails.ts', 'mock-provider.ts', 'openai-provider.ts', 'provider.ts',
+  'rate-limit.ts',
 ];
 
 /**

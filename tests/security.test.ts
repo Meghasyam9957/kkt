@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { createHarness, USERS, ALL_ROUTES, samplePath, type Harness } from './support/harness';
 import { assertWritable, SheetWriteForbiddenError } from '@/lib/server/sheets/client';
@@ -89,8 +90,23 @@ describe('security · secrets never reach the client', () => {
   });
 
   it('.env files are git-ignored and .env.example holds names only', () => {
-    const ignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
-    expect(ignore).toMatch(/^\.env$/m);
+    /*
+     * Asked of git rather than of the text of .gitignore. The rule used to be pinned as a
+     * literal `.env` line, which passed while `.env.production` — the very file a
+     * deployment note tells someone to create — stayed trackable. What matters is whether
+     * a given path would be ignored, so that is what is asked, one variant at a time.
+     */
+    const ignored = (relative: string) => spawnSync(
+      'git', ['check-ignore', '--quiet', '--no-index', relative], { cwd: ROOT },
+    ).status === 0;
+
+    for (const variant of [
+      '.env', '.env.local', '.env.production', '.env.development', '.env.production.local',
+    ]) {
+      expect(ignored(variant), `${variant} must be git-ignored`).toBe(true);
+    }
+    // And the one exception, which holds names and never values.
+    expect(ignored('.env.example'), '.env.example must stay tracked').toBe(false);
 
     const example = fs.readFileSync(path.join(ROOT, '.env.example'), 'utf8');
     for (const line of example.split('\n')) {

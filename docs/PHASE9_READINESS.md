@@ -21,15 +21,15 @@ reach exactly one host — all asserted by
 | # | Item | Status | Where it is specified | What is missing |
 |---|---|---|---|---|
 | 1 | **Monthly budget cap** | 🔴 **Decision** | §13 Q6, §8.4, §10.2 | The figure. §10.2 *recommends* $25; §13 marks Q6 "Blocks Phase 9". A recommendation is not an answer. `budgetState()` treats an unset cap as `UNCONFIGURED` and refuses every feature, so this is now mechanically enforced. |
-| 2 | **OpenAI credentials** | 🔴 **External** | §1.1 #2, §10.1 | A paid account and a server-side key, per environment (`DEMO_*` / `PRODUCTION_*` namespacing already exists). Not a code task. |
+| 2 | **OpenAI credentials** | 🔴 **External** | §1.1 #2, §10.1 | The exact variable names now exist, are documented in `.env.example` and are read only by `config.ts` — see §9.1. What is missing is outside the repository: an authorised **project-scoped** key set in the deployment's secret configuration by its owner. Not a code task, and deliberately not one this repository can complete. |
 | 3 | **LIVE parity** | 🟠 **Credential** | §11 phase 9, §2 gate | Offline parity passes 212/212. LIVE parity is `PENDING` for want of `PARITY_SHEET_ID` and `PARITY_SERVICE_ACCOUNT_FILE`. §11 makes proven data a precondition for AI, so this must go green first. |
 | 4 | **Isolation boundary** | 🟢 **Built** | §8.1 | Copilot half complete: [`copilot-context.ts`](../lib/server/ai/copilot-context.ts) + 45 tests. Guest half not built — see row 8. |
 | 5 | **Supabase AI logging** | 🟠 **Partial — decision** | §1.3, §8.4 | Field list typed (`AiUsageRecord`), and the `AiUsageSink` seam now exists with an in-memory implementation the dispatcher writes to on every call, refusals included. The **table** does not exist: retention is specified nowhere. See §2. |
 | 6 | **Kill switches** | 🟡 **Contract built** | §8.4 | The four features and the precedence rule are implemented in [`guardrails.ts`](../lib/server/ai/guardrails.ts). Where the switch positions are *stored* is undecided — §8.4 says "admin settings", and this app has no writable settings store. §4.4 establishes that architecture: "Business rules stay editable in the workbook only." §13 Q5 asks the same question of management and remains **open**; §4.4 fixes the current architecture, which is not the same as Q5 being answered. |
 | 7 | **Allowed copilot tools** | 🟢 **Built** | §8.1, §8.3 | Seven tools, each inheriting its route's capability from the registry. §8.1 names five; the two forecast reads are §8.2 rule 4's precondition. The whole path is assembled in [`copilot.ts`](../lib/server/ai/copilot.ts) — see §5. |
 | 8 | **Guest assistant** | 🔴 **Unspecified** | §8.1, §8.3, §11 phase 10 | Not startable. See §3 below. |
-| 9 | **Model / provider** | 🟡 **Seam built — ids undecided** | §8.4, §10.2 | The `AiProvider` interface, the registry and a local mock exist; see §5. Model **ids** are still undecided: §8.4 says only "cheapest capable model … mid-tier for the copilot's analytical questions" and "Model IDs live in config", naming neither the ids nor the config location. No module names a model — it arrives as data on the request. |
-| 10 | **Token / cost accounting** | 🟡 **Built — rates undecided** | §8.4, §10.2 | `AiUsageRecord` pins §8.4's eight fields; `AiTokenPricing` + `computeCost` complete the arithmetic, and a call with no pricing configured is **refused** — an uncostable call cannot be capped. Rates and currency remain undecided (§10.2 lists them as "assumptions to confirm at build time"), and a test asserts no rate literal exists anywhere in the AI layer. |
+| 9 | **Model / provider** | 🟡 **Adapter built — ids undecided** | §8.4, §10.2 | The `AiProvider` interface, the registry, a local mock and the real OpenAI adapter all exist; see §5 and §8. Configuration now rejects an unknown provider id by name (`UNKNOWN_PROVIDER`) rather than resolving it to nothing, and validates the model id's shape. Model **ids** are still undecided: §8.4 says only "cheapest capable model … mid-tier for the copilot's analytical questions" and "Model IDs live in config", naming neither the ids nor the config location. No module names a model — it arrives as data on the request. |
+| 10 | **Token / cost accounting** | 🟡 **Built — rates undecided** | §8.4, §10.2 | `AiUsageRecord` pins §8.4's eight fields; `AiTokenPricing` + `computeCost` complete the arithmetic, and a call with no pricing configured is **refused** — an uncostable call cannot be capped. Published per-million rates are converted to the internal per-token contract in one place, with a test pinning the conversion, and a provider currency that differs from the budget currency is refused rather than converted. Rates and currency remain undecided (§10.2 lists them as "assumptions to confirm at build time"), and a test asserts no rate literal exists anywhere in the AI layer. |
 | 11 | **Retention** | 🔴 **Decision** | §1.3, R11, §13 Q7 | No retention period is specified for **any** Supabase table, AI logs included. §13 Q7 covers *guest* data (Phase 10) and R11 names retention a management/legal decision. This blocks the migration in §2. |
 | 12 | **Error / fallback** | 🟡 **Handled — policy undecided** | §8.2 rule 3, §8.4, §10.3 | "No data → say so" is carried into context; budget-breach degradation is implemented; provider failure is now caught and classified into four kinds (`TIMEOUT`, `RATE_LIMITED`, `UNAVAILABLE`, `INVALID_RESPONSE`), each returned as an outcome with a message and a usage row rather than thrown. **§8 enumerates none of this** — it is a technical taxonomy, not a product one. What the *person* sees, and whether a retryable failure is retried, is still undecided. |
 | 13 | **Authorization / RBAC** | 🟢 **Built** | §4, §7, §8.1 | Every tool inherits its route capability; a role with neither `ai.copilot` nor `ai.operations` is refused before any read. §7's "OPS: ops-scoped" falls out of the existing model — OPERATIONS reaches exactly `getAlerts`. |
@@ -38,6 +38,9 @@ reach exactly one host — all asserted by
 | 16 | **Tests before enabling** | 🟡 **Partly built** | §8.1, §8.2 | See §4 below. |
 | 17 | **`POST /api/ai/copilot`** | 🟢 **Built** | §7, write governance | Declared, guarded by `ai.operations`, wired to the copilot service on the mock provider. The write-governance rule was re-expressed rather than exempted — see §6. |
 | 18 | **§8.4 soft warning surfaced** | 🟡 **TECH — follow-up** | §8.4 | The budget state (`UNCONFIGURED`/`OK`/`WARNING`/`BREACHED`) is now propagated through `AiDispatchResult` and `CopilotAnswer`, so it reaches the HTTP response. **No human-facing surface and no audit destination exist yet**, and the warning stays unreachable in the current production configuration because neither a cap nor a spend source is configured. **No decision is needed for the remaining work** — §8.4 names the threshold and the breach behaviour but no destination for the warning itself, so where it should surface is an engineering choice, not a management one. |
+
+| 19 | **Rate limits** | 🟡 **Interface built — policy undecided** | §8.4 | `AiRateLimiter` and `AiRateLimitState` exist in [`rate-limit.ts`](../lib/server/ai/rate-limit.ts). **No limit value is chosen and no environment variable is declared for one**, because a limit is a number and naming `…_PER_HOUR` would already have picked the window. Demo runs `UnenforcedAiRateLimiter`, which allows everything and reports `state: 'none'`; it throws if constructed in production. Production is refused `NO_RATE_LIMIT_POLICY` — a gate that outlives the retention decision, since a durable spend source does not supply a rate-limit policy. |
+| 20 | **DEMO/UAT activation** | 🟡 **Path built — values external** | §8.4, §13 Q6 | The full configuration contract, its validation rules and every named refusal are in §9. A demo can be switched on once four values exist: credential, model id, pricing, cap. Nothing degrades into a mock, an unlimited budget or an unpriced call. |
 
 🟢 built · 🟡 contract built, feature work remains · 🟠 partial or credential-blocked · 🔴 blocked on a decision
 
@@ -309,8 +312,9 @@ state, no error rendering, no refusal wording.
 6. **Where per-feature kill switches are stored**, given settings are workbook-owned.
 7. **What a refused copilot turn says to the person who asked** — the codes exist, the
    user-facing wording is unspecified.
-8. **Rate limits per user and per role** (§8.4), for which no infrastructure and no values
-   exist.
+8. **Rate limits per user and per role** (§8.4). The *interface* now exists; the numbers
+   and the window do not, and their absence is what refuses production with
+   `NO_RATE_LIMIT_POLICY`. Item 5 asks the same question — they are one decision.
 
 Until 1 and 2 are answered, no AI feature can run: the guardrail refuses an unconfigured
 cap by design, and there is nowhere to log a call that is made.
@@ -343,5 +347,125 @@ provider's own `error.type` through a conservative-looking pattern. A key is let
 digits and hyphens and matches that pattern, so a provider echoing something key-shaped
 would have had it repeated into an operator-facing message. Only literals from an
 allowlist the adapter owns are emitted now, so relaying cannot leak by construction.
+
+---
+
+## 9 · Activation — DEMO/UAT is reachable, PRODUCTION is not
+
+**Phase 9 is not production-ready and nothing below makes it so.** What follows separates
+the part that a person with an authorised credential can switch on this week from the part
+that is waiting on decisions nobody has taken.
+
+### 9.1 The configuration contract
+
+Every name is the environment's own `<PREFIX>` convention — `DEMO_` for demonstration,
+`PRODUCTION_` for production — so a demo credential and a production credential are
+different variables and neither environment has a code path that reads the other's. The
+proposed `DEMO_OPENAI_API_KEY` is exactly what the code reads: `AI_ENV_VARS.apiKey` is
+`OPENAI_API_KEY`, and `readAiApiKey` prefixes it. No new convention was invented.
+
+| Variable (shown with the `DEMO_` prefix) | What it is | Validation | Refusal when absent or wrong |
+|---|---|---|---|
+| `DEMO_AI_ENABLED` | The activation switch | The literal string `true`, trimmed and lowercased. Anything else is off | `NOT_ENABLED` |
+| `DEMO_AI_PROVIDER` | Which adapter | Must be one of `SELECTABLE_AI_PROVIDERS` — `openai` or `mock` | `NO_PROVIDER` / `UNKNOWN_PROVIDER` |
+| `DEMO_OPENAI_API_KEY` | The credential | Presence only. **The value never enters `AiRuntimeConfig`** | `NO_API_KEY` |
+| `DEMO_AI_MODEL_COPILOT` | The model id | Shape check: no whitespace, quotes or control characters. Admits dated snapshots and `ft:…::…` | `NO_MODEL` |
+| `DEMO_AI_PRICE_INPUT_PER_MTOK` | Published input price | A non-negative number, **per million tokens** | `NO_PRICING` |
+| `DEMO_AI_PRICE_OUTPUT_PER_MTOK` | Published output price | Same | `NO_PRICING` |
+| `DEMO_AI_PRICE_CACHED_INPUT_PER_MTOK` | Published cached-input price | Optional. Absent means cached input is charged at the full input rate — an overstatement, which can only trip a cap early | — |
+| `DEMO_AI_PRICE_CURRENCY` | What the provider bills in | Compared case-insensitively with the budget currency | `NO_PRICING` |
+| `DEMO_AI_BUDGET_CURRENCY` | What the cap is expressed in | Must match the price currency | `CURRENCY_MISMATCH` |
+| `DEMO_AI_BUDGET_CAP` | The approved monthly cap | A non-negative number. Absent is `UNCONFIGURED`, **never unlimited** | `NO_BUDGET_CAP` |
+| `PRODUCTION_AI_PRODUCTION_APPROVED` | Production's second lock | The literal string `true`, mirroring `PRODUCTION_WRITES_ENABLED` | `PRODUCTION_NOT_APPROVED` |
+
+Two refusals cannot be configured away at all, and both are production-only:
+`NO_SPEND_SOURCE` and `NO_RATE_LIMIT_POLICY`. See §9.4.
+
+**No rate-limit variable is declared.** §8.4 requires per-user and per-role limits but
+names no number and no window, and naming a variable like `AI_MAX_CALLS_PER_HOUR` would
+already have chosen the window even with the value left blank. The interface exists in
+`lib/server/ai/rate-limit.ts`; the policy does not.
+
+### 9.2 Where the credential is supplied
+
+Never in this repository, never in a commit, never in a document, and never pasted into a
+conversation. Three places, depending on where the code is running:
+
+| Running where | Supplied how |
+|---|---|
+| **Local demo/UAT** | `.env.local` in the project root. `.gitignore` now covers `.env*` with a single exception for `.env.example`, so every dotenv variant Next.js reads — `.env.production` included — is untrackable |
+| **Deployed demo/UAT** | Netlify → Site configuration → Environment variables, scoped to the deploy context. ARCHITECTURE §10.1 names Netlify as the host (Next.js runtime, route handlers as Netlify Functions); that is the existing target and no second one was introduced |
+| **Production** | The same Netlify mechanism under `PRODUCTION_` names, plus `PRODUCTION_AI_PRODUCTION_APPROVED`. Still refused today — §9.4 |
+
+Use a **project-scoped** key (`sk-proj-…`). OpenAI's own production guidance recommends a
+separate project per environment so usage, rate limits and spend are attributable and
+cappable per project rather than pooled across an account. It also means revoking the demo
+key cannot disturb anything else, and that the credential owner can see this project's
+spend without it being mixed into somebody else's.
+
+### 9.3 What each environment does today
+
+| | DEMO / UAT | PRODUCTION | Parity harness |
+|---|---|---|---|
+| Can a real provider run? | Yes, once §9.1 is fully configured | **No** — two refusals stand regardless of configuration | No — it has no AI code path at all |
+| Spend accounting | Process-local accumulator on the usage sink | None | — |
+| Rate limiting | `UnenforcedAiRateLimiter` — allows everything and reports `state: 'none'` | No limiter; `aiRateLimiterFor('production')` returns `null` | — |
+| Durable usage log | None. The in-process array holds no question text, writes nothing to disk, and is gone on restart | Blocked on retention | — |
+| The switch | `DEMO_AI_ENABLED=true` | `PRODUCTION_AI_ENABLED=true` **and** `PRODUCTION_AI_PRODUCTION_APPROVED=true`, and still refused | — |
+
+The parity harness reads only `PARITY_*` variables and imports nothing from
+`lib/server/ai/`. A `PARITY_OPENAI_API_KEY` would be read by nothing — asserted, not
+assumed, in `tests/ai-activation.test.ts`.
+
+**The demo spend source is process-local, and that is not production-safe accounting.** It
+is correct for one instance and wrong for several: a restart resets the total, and two
+instances each count only their own. For a demonstration — a handful of invited people, a
+small explicit cap, someone watching — that is a known and bounded gap. For production it
+is the silent overspend §8.4's hard cap exists to prevent, which is why production is
+refused rather than approximated.
+
+### 9.4 What is still blocking
+
+**DEMO/UAT needs four values**, all management decisions, none of them inventable here:
+
+1. An authorised project-scoped credential, set in the environment by its owner.
+2. An approved model id (§8.4 fixes the *policy* — cheapest capable model for routine work,
+   mid-tier for the copilot's analytical questions; the *identifiers* are not fixed).
+3. Published pricing for that model, per million tokens.
+4. An approved monthly cap (§13 Q6), in the same currency as the pricing.
+
+**PRODUCTION needs all of the above and three more**, and only the first two are gates the
+code can see:
+
+5. A **durable spend source** — a shared store that survives a restart and is visible to
+   every instance. Blocked on the retention decision, because that is what the `ai_usage`
+   table in §2 is waiting for. Until then: `NO_SPEND_SOURCE`.
+6. A **rate-limit policy** — actual per-user and per-role numbers, and a limiter enforcing
+   them. Until then: `NO_RATE_LIMIT_POLICY`. Note that solving (5) does not supply this;
+   with a durable store in place the gate simply names this one instead.
+7. A **retention and privacy decision** for what is logged: whether question text is
+   stored at all, for how long, and under whose access. §1.3 permits Supabase to hold AI
+   usage logs; it fixes no period, so the table stays proposed rather than created.
+
+### 9.5 The interface is still not connected
+
+`app/admin/ai/page.tsx` is unchanged and remains inert: a server component with no client
+state, no `fetch`, no reference to `/api/ai/copilot`, and a disabled composer. Its
+precondition for connection — a credential, a model, a budget and pricing configured in
+DEMO/UAT — is not met, so connecting it would mean building a conversation surface with
+nothing behind it.
+
+What *was* settled is the part that does not require connecting anything:
+`lib/shared/ai-copilot-view.ts` fixes the states a composer must handle — `idle`,
+`loading`, `answered`, `flagged`, `refused`, `unavailable`, `failed` — mapped exhaustively
+from the server contract. `refused` and `unavailable` are deliberately distinct: one is
+"not this turn", the other is "no AI on this deployment", and collapsing them is how an
+unconfigured demo comes to look like a broken feature.
+
+It contains **no user-facing wording**, asserted by a test that rejects any string literal
+with a space in it. Refusal copy is an open decision, and a placeholder sentence written
+here would quietly answer it. Its imports from `lib/server` are type-only and erased at
+compile time, so a client component can use it without any path existing by which a
+credential, a provider error body or a usage row could reach a browser.
 
 ---

@@ -49,6 +49,49 @@ export const AI_ENV_VARS = {
 /** Tokens per unit of published pricing. Named so the arithmetic cannot be misread. */
 export const TOKENS_PER_MTOK = 1_000_000;
 
+/**
+ * The provider ids configuration may name, and which of them is a real, paid backend.
+ *
+ * The vocabulary lives here rather than with the factories because it is *configuration*,
+ * and because an id nobody implements has to be rejected while the configuration is being
+ * read — not later, by a dispatcher quietly finding no provider and refusing a question
+ * that looked like it should have worked.
+ *
+ * `mock` is a genuine choice, not a fallback: it is the deterministic local provider, and
+ * it is reachable only by naming it. Nothing degrades into it. A deployment that asks for
+ * `openai` and cannot have it is refused, because an assistant that silently answers from
+ * a stub is indistinguishable from one that is working.
+ */
+export const SELECTABLE_AI_PROVIDERS = Object.freeze({
+  openai: { real: true },
+  mock: { real: false },
+} as const);
+
+export type AiProviderId = keyof typeof SELECTABLE_AI_PROVIDERS;
+
+export function isSelectableAiProvider(id: string | null): id is AiProviderId {
+  return id !== null && Object.hasOwn(SELECTABLE_AI_PROVIDERS, id);
+}
+
+/** Whether the named provider spends money against a real account. */
+export function aiProviderIsReal(id: string | null): boolean {
+  return isSelectableAiProvider(id) && SELECTABLE_AI_PROVIDERS[id].real;
+}
+
+/**
+ * What a model id may look like.
+ *
+ * Deliberately permissive — it admits every published id, every dated snapshot and the
+ * `ft:...::...` shape a fine-tune carries. What it excludes is whitespace, quotation marks
+ * and control characters, which mean somebody pasted a sentence, a comment, or two ids
+ * into one variable. That is not a model id in any naming scheme, so it is treated as
+ * unconfigured here rather than sent to the provider to be rejected at our expense.
+ *
+ * It is a shape check, not an allowlist. Which model is approved is a management
+ * decision, and a list of ids in source would go stale the first time OpenAI ships one.
+ */
+const MODEL_ID = /^[\w.:\-/]{1,128}$/;
+
 export interface AiRuntimeConfig {
   /** `<PREFIX>AI_ENABLED` is the literal string 'true'. Never defaulted on. */
   enabled: boolean;
@@ -113,7 +156,13 @@ export function resolveAiConfig(env: EnvLike = process.env, prefix = ''): AiRunt
   const providerId = required(AI_ENV_VARS.provider);
   const apiKeyPresent = read(env, prefix, AI_ENV_VARS.apiKey) !== undefined;
   if (!apiKeyPresent) missing.push(`${prefix}${AI_ENV_VARS.apiKey}`);
-  const model = required(AI_ENV_VARS.model);
+  const rawModel = required(AI_ENV_VARS.model);
+  const trimmedModel = rawModel?.trim() ?? null;
+  const model = trimmedModel !== null && MODEL_ID.test(trimmedModel) ? trimmedModel : null;
+  // Present but unusable is reported the same way as absent: by name, in `missing`. A
+  // deployment reading "DEMO_AI_MODEL_COPILOT" in that list can see what to fix without
+  // the value — which may be wrong but is still nobody's business to print.
+  if (rawModel !== null && model === null) missing.push(`${prefix}${AI_ENV_VARS.model}`);
 
   const inputPerMTok = readNumber(env, prefix, AI_ENV_VARS.priceInputPerMTok);
   const outputPerMTok = readNumber(env, prefix, AI_ENV_VARS.priceOutputPerMTok);
@@ -187,6 +236,19 @@ export function aiProductionApproved(env: EnvLike = process.env, prefix = ''): b
   return (env[`${prefix}AI_PRODUCTION_APPROVED`] ?? '').trim().toLowerCase() === 'true';
 }
 
+/**
+ * Whether a rate-limit policy is actually being enforced for AI (§8.4).
+ *
+ *   none      no policy exists; nothing is counted and nothing is refused
+ *   enforced  a limiter is in place and is applying an approved policy
+ *
+ * Like `AiSpendSource`, this states what exists rather than choosing it. §8.4 requires
+ * per-user and per-role limits but names no numbers and no window, and a limit is a
+ * number — so no default is written here and none is read from the environment. See
+ * lib/server/ai/rate-limit.ts.
+ */
+export type AiRateLimitState = 'none' | 'enforced';
+
 /** Why a configured AI integration is nonetheless not permitted to run. */
 export type AiNotPermittedReason =
   | 'NOT_ENABLED'
@@ -197,7 +259,11 @@ export type AiNotPermittedReason =
   | 'NO_BUDGET_CAP'
   | 'CURRENCY_MISMATCH'
   | 'PRODUCTION_NOT_APPROVED'
-  | 'NO_SPEND_SOURCE';
+  | 'NO_SPEND_SOURCE'
+  /** The configured id names no provider this application has. Never a fallback. */
+  | 'UNKNOWN_PROVIDER'
+  /** §8.4 requires rate limits; none is specified, so production may not run. */
+  | 'NO_RATE_LIMIT_POLICY';
 
 /**
  * Whether a real, paid provider may run in this environment — and if not, precisely why.
@@ -212,11 +278,19 @@ export function aiProviderPermitted(
   appEnv: AppEnv,
   productionApproved: boolean,
   spendSource: AiSpendSource = availableSpendSource(appEnv),
+  rateLimit: AiRateLimitState = 'none',
 ): { permitted: boolean; reason: AiNotPermittedReason | null } {
   const no = (reason: AiNotPermittedReason) => ({ permitted: false, reason });
   if (!config.enabled) return no('NOT_ENABLED');
   if (appEnv === 'production' && !productionApproved) return no('PRODUCTION_NOT_APPROVED');
   if (!config.providerId) return no('NO_PROVIDER');
+  /*
+   * A misspelt id is refused here, while the configuration is being read, rather than
+   * resolving to nothing and surfacing later as NO_PROVIDER from the dispatcher. The
+   * difference matters: `aiEnabled()` would otherwise answer `true` for a deployment whose
+   * every question refuses, which is the sort of thing that gets diagnosed at a demo.
+   */
+  if (!isSelectableAiProvider(config.providerId)) return no('UNKNOWN_PROVIDER');
   if (!config.apiKeyPresent) return no('NO_API_KEY');
   if (!config.model) return no('NO_MODEL');
   if (!config.pricing) return no('NO_PRICING');
@@ -230,5 +304,12 @@ export function aiProviderPermitted(
    */
   if (spendSource === 'none') return no('NO_SPEND_SOURCE');
   if (appEnv === 'production' && spendSource !== 'durable') return no('NO_SPEND_SOURCE');
+  /*
+   * And §8.4's other unmet requirement. Rate limits exist to stop one account emptying a
+   * month's budget in an afternoon; a demonstration with a handful of invited users and a
+   * small explicit cap can be watched instead, which is why this clause is production-only
+   * and why the demo state is called `none` rather than dressed up as a limiter.
+   */
+  if (appEnv === 'production' && rateLimit !== 'enforced') return no('NO_RATE_LIMIT_POLICY');
   return { permitted: true, reason: null };
 }

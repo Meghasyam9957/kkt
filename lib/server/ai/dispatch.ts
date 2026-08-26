@@ -58,7 +58,15 @@ const PROVIDER_FACTORIES: Readonly<Record<string, () => AiProvider>> = Object.fr
   mock: () => new MockAiProvider(),
 });
 
-/** The ids configuration may name. */
+/**
+ * The ids this module can construct.
+ *
+ * A subset of `SELECTABLE_AI_PROVIDERS`, which is the configuration vocabulary: `openai`
+ * is selectable but is built by the composition root, because it is the only provider
+ * that needs a credential and the credential is read exactly once, there. A test asserts
+ * the subset relationship so the two lists cannot drift into a state where configuration
+ * accepts an id nothing can build.
+ */
 export const AI_PROVIDER_IDS: readonly string[] = Object.keys(PROVIDER_FACTORIES);
 
 /**

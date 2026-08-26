@@ -42,6 +42,7 @@ import { OpenAiProvider } from '@/lib/server/ai/openai-provider';
 import {
   resolveAiConfig, readAiApiKey, aiProviderPermitted, aiProductionApproved,
 } from '@/lib/server/ai/config';
+import { aiRateLimiterFor, aiRateLimitState } from '@/lib/server/ai/rate-limit';
 import type { AiProvider } from '@/lib/server/ai/provider';
 import type { CopilotRuntime } from '@/lib/server/ai/copilot';
 import { getSharedDemoClient } from '@/lib/server/demo/live-store';
@@ -171,8 +172,15 @@ function aiUsageSink(permitted: boolean): AiUsageSink {
 function copilotRuntime(): CopilotRuntime {
   const resolved = resolveEnvironment();
   const config = resolveAiConfig(process.env, resolved.prefix);
+  /*
+   * §8.4's rate limits, in the only honest form available: demo runs unenforced and says
+   * so, production has no limiter at all and is refused for that reason among others. No
+   * limit value is chosen here because none has been approved — see rate-limit.ts.
+   */
+  const limiter = aiRateLimiterFor(resolved.env);
   const { permitted } = aiProviderPermitted(
     config, resolved.env, aiProductionApproved(process.env, resolved.prefix),
+    undefined, aiRateLimitState(limiter),
   );
 
   const sink = aiUsageSink(permitted);
