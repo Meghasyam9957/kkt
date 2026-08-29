@@ -6,20 +6,69 @@
  * visual language (no default palettes, no gradients, no 3D), real accessibility (each
  * chart exposes an equivalent data table to assistive technology), and a small bundle.
  *
- * Every chart is responsive via viewBox, keyboard-reachable, and pairs colour with a
- * legend label so colour is never the only channel.
+ * FOUNDATION (§15): the viewBox width is MEASURED from the container, not fixed — so a
+ * phone renders a 360-unit chart, not a 720-unit chart scaled to half size with ~5px
+ * text. Tick text is therefore always its real CSS size (the 11px floor applies inside
+ * charts too). Narrow widths simplify — fewer gridlines, sparser labels — rather than
+ * shrink. Series colours are the chart tokens (brand-derived, dark-theme aware); status
+ * colours are never chart colours. Points are keyboard-reachable: focus mirrors hover.
+ * Lines draw and bars grow once on first paint, and not at all under reduced motion.
  */
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { formatCurrencyCompact, formatCurrency, formatPercent } from '@/lib/shared/format';
 
-const PALETTE = {
-  revenue: '#4F5F2C',
-  expenses: '#B5651D',
-  profit: '#C9A227',
-  occupancy: '#4F5F2C',
-  grid: 'var(--border-subtle)',
-  axis: 'var(--text-muted)',
+const SERIES = {
+  revenue: 'var(--chart-1)',
+  expenses: 'var(--chart-3)',
+  profit: 'var(--chart-2)',
+  occupancy: 'var(--chart-1)',
+  grid: 'var(--chart-grid)',
 };
+
+const DEFAULT_W = 720;
+
+/**
+ * The container's live width, via ResizeObserver. Before the first measurement (SSR,
+ * first client frame, or a test DOM with no layout) the default holds — the chart is
+ * correct immediately after hydration and never depends on measurement to render.
+ */
+function useMeasuredWidth(ref: RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(DEFAULT_W);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const apply = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w >= 200) setWidth(Math.min(Math.round(w), 960));
+    };
+    apply();
+    /*
+     * ResizeObserver catches container-driven changes (a sidebar collapsing, a grid
+     * reflowing). The window listener is a deliberate second channel: embedded and
+     * background contexts can throttle observer delivery, and a viewport change must
+     * never leave a chart drawn for the previous width.
+     */
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(apply)
+      : null;
+    observer?.observe(el);
+    window.addEventListener('resize', apply);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', apply);
+    };
+  }, [ref]);
+  return width;
+}
+
+/** Narrow charts simplify (§15): fewer gridlines, sparser x labels — never smaller text. */
+function densityFor(width: number, pointCount: number) {
+  const narrow = width < 480;
+  const gridFractions = narrow ? [0, 0.5, 1] : [0, 0.25, 0.5, 0.75, 1];
+  const maxLabels = narrow ? 4 : 6;
+  const labelStride = Math.max(1, Math.ceil(pointCount / maxLabels));
+  return { gridFractions, labelStride };
+}
 
 interface Point { label: string; value: number }
 
@@ -74,8 +123,11 @@ function niceMax(value: number): number {
 
 export function RevenueTrendChart({ points, title }: { points: Point[]; title: string }) {
   const id = useId();
+  const figure = useRef<HTMLElement>(null);
   const [hover, setHover] = useState<number | null>(null);
-  const W = 720, H = 260, PAD_L = 64, PAD_R = 16, PAD_T = 16, PAD_B = 36;
+  const W = useMeasuredWidth(figure);
+  const H = 260, PAD_L = W < 480 ? 52 : 64, PAD_R = 16, PAD_T = 16, PAD_B = 36;
+  const { gridFractions, labelStride } = densityFor(W, points.length);
 
   const max = niceMax(Math.max(...points.map((p) => p.value), 1));
   const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
@@ -84,33 +136,38 @@ export function RevenueTrendChart({ points, title }: { points: Point[]; title: s
 
   const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
   const area = `${line} L${x(points.length - 1).toFixed(1)},${(PAD_T + innerH).toFixed(1)} L${x(0).toFixed(1)},${(PAD_T + innerH).toFixed(1)} Z`;
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
 
   if (points.length === 0) return null;
 
   return (
-    <figure className="sv-chart">
+    <figure className="sv-chart" ref={figure}>
       <svg viewBox={`0 0 ${W} ${H}`} className="sv-chart__svg" role="img"
         aria-label={`${title}. Line chart of ${points.length} months.`}>
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} stroke={PALETTE.grid} strokeWidth="1" />
-            <text x={PAD_L - 8} y={y(t) + 4} textAnchor="end" className="sv-chart__tick">
-              {formatCurrencyCompact(t)}
-            </text>
-          </g>
-        ))}
-        <path d={area} fill={PALETTE.revenue} opacity="0.10" />
-        <path d={line} fill="none" stroke={PALETTE.revenue} strokeWidth="2.5"
-          strokeLinejoin="round" strokeLinecap="round" />
+        {gridFractions.map((f) => {
+          const t = f * max;
+          return (
+            <g key={f}>
+              <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} stroke={SERIES.grid} strokeWidth="1" />
+              <text x={PAD_L - 8} y={y(t) + 4} textAnchor="end" className="sv-chart__tick">
+                {formatCurrencyCompact(t)}
+              </text>
+            </g>
+          );
+        })}
+        <path d={area} fill={SERIES.revenue} opacity="0.10" />
+        <path d={line} fill="none" stroke={SERIES.revenue} strokeWidth="2.5"
+          strokeLinejoin="round" strokeLinecap="round" pathLength={1} className="m-chart-line" />
         {points.map((p, i) => (
           <g key={p.label}>
             <circle cx={x(i)} cy={y(p.value)} r={hover === i ? 5 : 3.5}
-              fill="var(--surface-card)" stroke={PALETTE.revenue} strokeWidth="2" />
-            {/* Generous invisible hit area — small dots are hard to hit on a trackpad. */}
+              fill="var(--surface-card)" stroke={SERIES.revenue} strokeWidth="2" />
+            {/* Generous invisible hit area — small dots are hard to hit on a trackpad.
+                Focusable, so the keyboard reaches the same readout hover does. */}
             <rect x={x(i) - 18} y={PAD_T} width={36} height={innerH} fill="transparent"
-              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
-            {i % Math.ceil(points.length / 6) === 0 || i === points.length - 1 ? (
+              tabIndex={0} aria-label={`${p.label}: ${formatCurrency(p.value)}`}
+              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(i)} onBlur={() => setHover(null)} />
+            {i % labelStride === 0 || i === points.length - 1 ? (
               <text x={x(i)} y={H - 12} textAnchor="middle" className="sv-chart__tick">{p.label}</text>
             ) : null}
           </g>
@@ -118,7 +175,7 @@ export function RevenueTrendChart({ points, title }: { points: Point[]; title: s
         {hover !== null && points[hover] ? (
           <g>
             <line x1={x(hover)} x2={x(hover)} y1={PAD_T} y2={PAD_T + innerH}
-              stroke={PALETTE.revenue} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+              stroke={SERIES.revenue} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
             <text x={Math.min(x(hover) + 8, W - PAD_R - 90)} y={y(points[hover]!.value) - 12}
               className="sv-chart__tooltip-text">
               {points[hover]!.label}: {formatCurrency(points[hover]!.value)}
@@ -138,8 +195,11 @@ export function RevenueTrendChart({ points, title }: { points: Point[]; title: s
  * ================================================================== */
 
 export function OccupancyTrendChart({ points, title }: { points: Point[]; title: string }) {
+  const figure = useRef<HTMLElement>(null);
   const [hover, setHover] = useState<number | null>(null);
-  const W = 720, H = 240, PAD_L = 52, PAD_R = 16, PAD_T = 16, PAD_B = 36;
+  const W = useMeasuredWidth(figure);
+  const H = 240, PAD_L = W < 480 ? 44 : 52, PAD_R = 16, PAD_T = 16, PAD_B = 36;
+  const { gridFractions, labelStride } = densityFor(W, points.length);
   const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
   const barW = Math.max(8, (innerW / Math.max(points.length, 1)) * 0.55);
   const x = (i: number) => PAD_L + (i + 0.5) * (innerW / Math.max(points.length, 1));
@@ -148,23 +208,27 @@ export function OccupancyTrendChart({ points, title }: { points: Point[]; title:
   if (points.length === 0) return null;
 
   return (
-    <figure className="sv-chart">
+    <figure className="sv-chart" ref={figure}>
       <svg viewBox={`0 0 ${W} ${H}`} className="sv-chart__svg" role="img"
         aria-label={`${title}. Bar chart of occupancy across ${points.length} months.`}>
-        {[0, 0.25, 0.5, 0.75, 1].map((t) => (
+        {gridFractions.map((t) => (
           <g key={t}>
-            <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} stroke={PALETTE.grid} strokeWidth="1" />
+            <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} stroke={SERIES.grid} strokeWidth="1" />
             <text x={PAD_L - 8} y={y(t) + 4} textAnchor="end" className="sv-chart__tick">
               {Math.round(t * 100)}%
             </text>
           </g>
         ))}
         {points.map((p, i) => (
-          <g key={p.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+          <g key={p.label}
+            onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
             <rect x={x(i) - barW / 2} y={y(p.value)} width={barW}
               height={Math.max(1, PAD_T + innerH - y(p.value))}
-              fill={PALETTE.occupancy} opacity={hover === null || hover === i ? 0.9 : 0.45} rx="2" />
-            {i % Math.ceil(points.length / 6) === 0 || i === points.length - 1 ? (
+              fill={SERIES.occupancy} opacity={hover === null || hover === i ? 0.9 : 0.45} rx="2"
+              className="m-chart-bar" tabIndex={0}
+              aria-label={`${p.label}: ${formatPercent(p.value, 0)} occupancy`}
+              onFocus={() => setHover(i)} onBlur={() => setHover(null)} />
+            {i % labelStride === 0 || i === points.length - 1 ? (
               <text x={x(i)} y={H - 12} textAnchor="middle" className="sv-chart__tick">{p.label}</text>
             ) : null}
             {hover === i ? (
@@ -188,8 +252,11 @@ export function OccupancyTrendChart({ points, title }: { points: Point[]; title:
 export interface TriplePoint { label: string; revenue: number; expenses: number; profit: number }
 
 export function RevenueExpenseProfitChart({ points, title }: { points: TriplePoint[]; title: string }) {
+  const figure = useRef<HTMLElement>(null);
   const [hover, setHover] = useState<number | null>(null);
-  const W = 720, H = 280, PAD_L = 64, PAD_R = 16, PAD_T = 16, PAD_B = 40;
+  const W = useMeasuredWidth(figure);
+  const H = 280, PAD_L = W < 480 ? 52 : 64, PAD_R = 16, PAD_T = 16, PAD_B = 40;
+  const { gridFractions, labelStride } = densityFor(W, points.length);
   const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
 
   const maxValue = Math.max(...points.flatMap((p) => [p.revenue, p.expenses, Math.max(p.profit, 0)]), 1);
@@ -199,28 +266,28 @@ export function RevenueExpenseProfitChart({ points, title }: { points: TriplePoi
   const span = max - min;
 
   const groupW = innerW / Math.max(points.length, 1);
-  const barW = Math.max(5, (groupW * 0.72) / 3);
+  const barW = Math.max(4, (groupW * 0.72) / 3);
   const y = (v: number) => PAD_T + innerH - ((v - min) / span) * innerH;
   const zeroY = y(0);
 
   if (points.length === 0) return null;
 
   const series = [
-    { key: 'revenue' as const, label: 'Net revenue', color: PALETTE.revenue },
-    { key: 'expenses' as const, label: 'Operating expenses', color: PALETTE.expenses },
-    { key: 'profit' as const, label: 'Operating profit', color: PALETTE.profit },
+    { key: 'revenue' as const, label: 'Net revenue', color: SERIES.revenue },
+    { key: 'expenses' as const, label: 'Operating expenses', color: SERIES.expenses },
+    { key: 'profit' as const, label: 'Operating profit', color: SERIES.profit },
   ];
 
   return (
-    <figure className="sv-chart">
+    <figure className="sv-chart" ref={figure}>
       <svg viewBox={`0 0 ${W} ${H}`} className="sv-chart__svg" role="img"
         aria-label={`${title}. Grouped bar chart comparing revenue, expenses and profit.`}>
-        {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+        {gridFractions.map((f) => {
           const value = min + f * span;
           return (
             <g key={f}>
               <line x1={PAD_L} x2={W - PAD_R} y1={y(value)} y2={y(value)}
-                stroke={PALETTE.grid} strokeWidth="1" />
+                stroke={SERIES.grid} strokeWidth="1" />
               <text x={PAD_L - 8} y={y(value) + 4} textAnchor="end" className="sv-chart__tick">
                 {formatCurrencyCompact(value)}
               </text>
@@ -228,23 +295,27 @@ export function RevenueExpenseProfitChart({ points, title }: { points: TriplePoi
           );
         })}
         {min < 0 ? <line x1={PAD_L} x2={W - PAD_R} y1={zeroY} y2={zeroY}
-          stroke="var(--text-muted)" strokeWidth="1.5" /> : null}
+          stroke="var(--chart-ref)" strokeWidth="1.5" /> : null}
 
         {points.map((p, i) => {
           const groupX = PAD_L + i * groupW + groupW / 2;
           return (
-            <g key={p.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+            <g key={p.label} tabIndex={0}
+              aria-label={`${p.label}: revenue ${formatCurrency(p.revenue)}, expenses ${formatCurrency(p.expenses)}, profit ${formatCurrency(p.profit)}`}
+              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(i)} onBlur={() => setHover(null)}>
               {series.map((s, si) => {
                 const value = p[s.key];
                 const barX = groupX - (barW * 3) / 2 + si * barW;
                 const top = value >= 0 ? y(value) : zeroY;
                 const height = Math.max(1, Math.abs(y(value) - zeroY));
                 return (
-                  <rect key={s.key} x={barX + 1} y={top} width={barW - 2} height={height}
-                    fill={s.color} opacity={hover === null || hover === i ? 0.92 : 0.4} rx="1.5" />
+                  <rect key={s.key} x={barX + 1} y={top} width={Math.max(barW - 2, 2)} height={height}
+                    fill={s.color} opacity={hover === null || hover === i ? 0.92 : 0.4} rx="1.5"
+                    className="m-chart-bar" />
                 );
               })}
-              {i % Math.ceil(points.length / 6) === 0 || i === points.length - 1 ? (
+              {i % labelStride === 0 || i === points.length - 1 ? (
                 <text x={groupX} y={H - 14} textAnchor="middle" className="sv-chart__tick">{p.label}</text>
               ) : null}
             </g>
@@ -305,8 +376,8 @@ export function PropertyPerformanceChart({ bars, title }: { bars: PropertyBar[];
         })}
       </div>
       <Legend items={[
-        { label: 'Net revenue', color: PALETTE.revenue },
-        { label: 'Operating profit', color: PALETTE.profit },
+        { label: 'Net revenue', color: SERIES.revenue },
+        { label: 'Operating profit', color: SERIES.profit },
       ]} />
       <ChartTable caption={title} columns={['Property', 'Net revenue', 'Operating profit', 'Occupancy']}
         rows={bars.map((b) => [b.propertyId, formatCurrency(b.revenue), formatCurrency(b.profit), formatPercent(b.occupancyPct)])} />

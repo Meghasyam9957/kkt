@@ -32,7 +32,9 @@ const ROOT = process.cwd();
 /** What the server resolves and hands the client. Never computed in the browser. */
 const DEMO_ENVIRONMENT: PublicEnvironmentInfo = {
   ...ENVIRONMENT_DESCRIPTORS.demo,
-  dataSourceLabel: 'Demo Workbook (fixtures)',
+  // The client-facing label carries no machinery vocabulary — "(fixtures)" was
+  // developer language in every header. The boolean still travels for code.
+  dataSourceLabel: 'Demo Workbook',
   fixtures: true,
 };
 const PRODUCTION_ENVIRONMENT: PublicEnvironmentInfo = {
@@ -223,7 +225,9 @@ describe('5 · demo mode is unmistakable', () => {
     expect(screen.getByText('Environment')).toBeDefined();
     expect(screen.getByText('DEMO')).toBeDefined();
     expect(screen.getByText('Data source')).toBeDefined();
-    expect(screen.getByText('Demo Workbook (fixtures)')).toBeDefined();
+    expect(screen.getByText('Demo Workbook')).toBeDefined();
+    // No machinery vocabulary in the header a client reads all day.
+    expect(screen.queryByText(/fixture/i)).toBeNull();
     expect(screen.getByText('Last synced')).toBeDefined();
   });
 

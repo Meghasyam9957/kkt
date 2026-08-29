@@ -16,13 +16,17 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html, body {
+/* The rem base is 16px — the documented type scale (§3.3) is calibrated to it, and the
+   11px floor is only truly 11px against it. The old 15px root silently shrank every rem
+   token by ~7%, the floor included. Body copy stays 15px via the --t-body role. */
+html { font-size: 100%; }
+body {
   margin: 0;
   padding: 0;
   background: var(--surface-page);
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 15px;
+  font-size: var(--t-body);
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
 }
@@ -33,9 +37,17 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 a { color: inherit; text-decoration: none; }
 
 :focus-visible {
-  outline: 2px solid var(--brand-green);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 2px;
+}
+/* §21 — the ring must be visible on WHATEVER it sits on. An olive ring on the olive
+   rail (1.45:1) was invisible exactly where keyboard users need it most; on olive
+   surfaces the ring is gold-light instead. */
+.sv-sidebar :focus-visible,
+.sv-skip-link:focus-visible,
+.sv-btn--primary:focus-visible {
+  outline-color: var(--focus-ring-inverse);
 }
 
 .numeric { font-variant-numeric: tabular-nums lining-nums; }
@@ -51,7 +63,7 @@ a { color: inherit; text-decoration: none; }
 table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-skip-link {
-  position: absolute; top: -100px; left: var(--space-4); z-index: 100;
+  position: absolute; top: -100px; left: var(--space-4); z-index: var(--z-skip);
   background: var(--brand-green); color: var(--brand-cream);
   padding: var(--space-2) var(--space-4); border-radius: var(--radius-sm);
 }
@@ -88,7 +100,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   color: var(--brand-cream);
 }
 .sv-logo__tagline {
-  font-size: 0.625rem; letter-spacing: 0.22em; text-transform: uppercase;
+  font-size: var(--text-label); letter-spacing: 0.22em; text-transform: uppercase;
   color: var(--brand-gold-light);
 }
 .sv-mark { flex: none; }
@@ -108,7 +120,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-nav { flex: 1; padding: var(--space-4) var(--space-2); }
 .sv-nav__section { margin-bottom: var(--space-5); }
 .sv-nav__section-title {
-  font-size: 0.625rem; letter-spacing: 0.16em; text-transform: uppercase;
+  font-size: var(--text-label); letter-spacing: 0.16em; text-transform: uppercase;
   color: rgba(250, 246, 236, 0.45);
   padding: 0 var(--space-3); margin-bottom: var(--space-2);
 }
@@ -129,7 +141,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-weight: 500;
 }
 .sv-nav__badge {
-  font-size: 0.5625rem; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: var(--text-label); letter-spacing: 0.06em; text-transform: uppercase;
   padding: 2px 6px; border-radius: var(--radius-full);
   background: rgba(250, 246, 236, 0.12); color: rgba(250, 246, 236, 0.7);
 }
@@ -152,7 +164,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   padding: 0 var(--space-5);
   background: var(--surface-card);
   border-bottom: 1px solid var(--border-subtle);
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: 0; z-index: var(--z-topbar);
 }
 .sv-topbar__menu {
   display: none; align-items: center; gap: var(--space-2);
@@ -167,10 +179,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-topbar__icon:hover { background: var(--surface-sunken); }
 .sv-topbar__count {
-  position: absolute; top: 2px; right: 2px;
-  min-width: 16px; height: 16px; padding: 0 4px;
+  position: absolute; top: 0; right: 0;
+  min-width: 18px; height: 18px; padding: 0 4px;
   background: var(--bad-fg); color: #fff;
-  font-size: 0.625rem; line-height: 16px; text-align: center;
+  font-size: var(--text-label); line-height: 18px; text-align: center;
   border-radius: var(--radius-full);
 }
 
@@ -201,15 +213,15 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-envstatus__facts { display: flex; align-items: center; gap: var(--space-4); margin: 0; }
 .sv-envstatus__fact { display: flex; flex-direction: column; line-height: 1.25; }
 .sv-envstatus__fact dt {
-  font-size: 0.5625rem; letter-spacing: 0.14em; text-transform: uppercase;
-  color: var(--text-muted); opacity: 0.8;
+  font-size: var(--text-label); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--text-muted);
 }
 .sv-envstatus__fact dd { margin: 0; font-size: 0.75rem; color: var(--text-primary); }
 .sv-envstatus__env { font-weight: 600; letter-spacing: 0.06em; }
 .sv-envstatus__env--demo { color: var(--warn-fg); }
 .sv-envstatus__env--production { color: var(--good-fg); }
 .sv-demo-badge {
-  font-size: 0.625rem; font-weight: 700; letter-spacing: 0.12em;
+  font-size: var(--text-label); font-weight: 700; letter-spacing: 0.12em;
   padding: 3px 8px; border-radius: var(--radius-sm);
   background: var(--warn-bg); color: var(--warn-fg);
   border: 1px solid currentColor;
@@ -226,12 +238,12 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* A counter the source cannot supply. Muted and dashed, so it cannot read as a zero. */
 .sv-today__count--none { color: var(--text-muted); opacity: 0.6; }
 .sv-today__note {
-  font-size: 0.625rem; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: var(--text-label); letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--text-muted);
 }
 
 .sv-scrim {
-  position: fixed; inset: 0; z-index: 25;
+  position: fixed; inset: 0; z-index: var(--z-scrim);
   background: rgba(23, 25, 15, 0.45); border: none; cursor: pointer;
 }
 
@@ -256,6 +268,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-section { margin-bottom: var(--space-6); }
 .sv-section > * + * { margin-top: var(--space-4); }
 
+/* ---- Composition primitives (§4): rhythm by declared gap, never by spacer divs. ---- */
+.sv-stack { display: flex; flex-direction: column; gap: var(--stack-gap, var(--s-4)); }
+.sv-cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--cluster-gap, var(--s-3)); }
+.sv-grid {
+  display: grid; gap: var(--grid-gap, var(--s-4));
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 16rem), 100%), 1fr));
+}
+
 /* ---- Cards ---- */
 
 .sv-card {
@@ -272,6 +292,40 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-card__subtitle { font-size: 0.8125rem; color: var(--text-muted); margin-top: 2px; max-width: 68ch; }
 .sv-card__body { padding: var(--space-5); }
 .sv-card__body--flush { padding: 0; }
+
+/* ---- Surface system (§11) — three deliberate patterns, not one card recipe.
+   `object` is the default .sv-card look: a raised white card for things that are
+   genuinely entities. `ledger` is the product's default data surface: no background,
+   hairline above and below, label-cased heading. `plate` is a sunken region for
+   notices, attention strips and designed empty states. ---- */
+
+.sv-card--object:hover { border-color: var(--border-strong); }
+
+.sv-card--ledger {
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.sv-card--ledger > .sv-card__header {
+  padding-left: 0; padding-right: 0;
+  border-bottom: 1px solid var(--line);
+}
+.sv-card--ledger > .sv-card__header .sv-card__title {
+  font-family: var(--font-body);
+  font-size: var(--t-label); font-weight: 600;
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  color: var(--text-muted);
+}
+.sv-card--ledger > .sv-card__body { padding-left: 0; padding-right: 0; }
+
+.sv-card--plate {
+  background: var(--surface-sunken);
+  border: none;
+  border-radius: var(--r-2);
+}
+.sv-card--plate > .sv-card__header { border-bottom: none; padding-bottom: 0; }
 
 /* ---- KPI ---- */
 
@@ -330,17 +384,30 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-pill--warn { background: var(--warn-bg); color: var(--warn-fg); }
 .sv-pill--bad { background: var(--bad-bg); color: var(--bad-fg); }
 .sv-pill--info { background: var(--info-bg); color: var(--info-fg); }
-.sv-pill--brand { background: rgba(79, 95, 44, 0.12); color: var(--brand-green); }
 
 .sv-badge {
-  font-size: 0.625rem; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+  font-size: var(--text-label); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
   padding: 2px 7px; border-radius: var(--radius-sm);
   background: var(--surface-sunken); color: var(--text-muted);
 }
 .sv-badge--good { background: var(--good-bg); color: var(--good-fg); }
 .sv-badge--warn { background: var(--warn-bg); color: var(--warn-fg); }
 .sv-badge--bad { background: var(--bad-bg); color: var(--bad-fg); }
-.sv-badge--brand { background: rgba(201, 162, 39, 0.16); color: #8a6f14; }
+
+/* Interactive chip (§16): a real button — filter values, suggested prompts. */
+.sv-chip {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  font: inherit; font-size: 0.75rem; font-weight: 500;
+  padding: 4px 10px; border-radius: var(--radius-full);
+  background: var(--surface-sunken); color: var(--text-brand);
+  border: 1px solid var(--line); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard);
+}
+.sv-chip:hover { background: var(--surface-card); border-color: var(--border-strong); }
+.sv-chip[aria-pressed='true'] { background: var(--surface-card); border-color: var(--brand-green); font-weight: 600; }
+.sv-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (pointer: coarse) { .sv-chip { min-height: 44px; } }
 
 /* THE button — one system everywhere. Variants: primary (the one main action),
    secondary, ghost, link, danger (always behind a confirmation). Sizes sm/md/lg;
@@ -373,6 +440,32 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   .sv-btn, .sv-btn--sm { min-height: 44px; }
 }
 
+/* ---- Button state matrix (§10). Rest and hover above; the rest of the states here.
+   Pressed darkens one step with no transform — no press animation. Loading keeps the
+   label AND the width; the spinner is functional feedback, announced via aria-busy,
+   and holds still under reduced motion. Success/error ride the mutation phases the
+   write pipeline already reports (data-phase on SubmitButton). ---- */
+.sv-btn:active:not(:disabled) { background: var(--surface-sunken); }
+.sv-btn--primary:active:not(:disabled) { background: var(--brand-green-dark); }
+.sv-btn--ghost:active:not(:disabled) { background: var(--surface-sunken); }
+.sv-btn--danger:active:not(:disabled) { background: var(--bad-bg); }
+
+.sv-btn[aria-busy='true'] { cursor: progress; }
+.sv-btn__spinner {
+  width: 14px; height: 14px; flex: none;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: var(--radius-full);
+  animation: sv-spin 0.8s linear infinite;
+}
+@keyframes sv-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  /* The state stays visible (ring + label + aria-busy); only the rotation goes. */
+  .sv-btn__spinner { animation: none; border-top-color: currentColor; opacity: 0.5; }
+}
+
+.sv-btn[data-phase='verified'] { border-color: var(--good-fg); color: var(--good-fg); background: var(--good-bg); }
+.sv-btn[data-phase='failed'] { border-color: var(--bad-fg); color: var(--bad-fg); }
+
 /* ---- States ---- */
 
 .sv-state { padding: var(--space-6) var(--space-5); text-align: center; }
@@ -390,7 +483,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-skeleton::after {
   content: ''; position: absolute; inset: 0;
   background: linear-gradient(90deg, transparent, rgba(0,0,0,0.045), transparent);
-  animation: sv-shimmer 1.4s infinite;
+  /* §19.3 — nothing is perpetual: the shimmer runs once per 1.6s and stops after ~8s.
+     A load still pending by then is communicated by the block itself, not by motion. */
+  animation: sv-shimmer 1.6s 5;
 }
 @keyframes sv-shimmer { 100% { transform: translateX(100%); } }
 @media (prefers-reduced-motion: reduce) { .sv-skeleton::after { animation: none; } }
@@ -402,7 +497,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-config-required--compact { padding: var(--space-3) var(--space-4); }
 .sv-config-required__label {
-  font-size: 0.625rem; letter-spacing: 0.12em; text-transform: uppercase;
+  font-size: var(--text-label); letter-spacing: 0.12em; text-transform: uppercase;
   font-weight: 700; color: var(--warn-fg);
 }
 .sv-config-required__message { font-size: 0.8125rem; color: var(--text-primary); margin-top: 4px; }
@@ -437,7 +532,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-table-scroller { overflow-x: auto; }
 .sv-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
 .sv-table th, .sv-table td {
-  padding: 10px var(--space-4); text-align: left;
+  /* Comfortable density (§13): ~44px rows by default; ledgers opt into compact. */
+  padding: 12px var(--space-4); text-align: left;
   border-bottom: 1px solid var(--border-subtle); white-space: nowrap;
 }
 .sv-table thead th {
@@ -452,6 +548,60 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-table tfoot td {
   font-weight: 600; background: var(--surface-sunken);
   border-top: 2px solid var(--border-strong);
+}
+
+/* ---- Table foundation (§13) ---- */
+
+/* Density: comfortable is the admin default above; compact is for ledgers. */
+.sv-table--compact th, .sv-table--compact td { padding: 6px var(--space-3); }
+
+/* Sticky first column for wide registers scrolled sideways: the row label stays. */
+.sv-table--sticky-first th:first-child,
+.sv-table--sticky-first td:first-child {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--surface-card);
+  box-shadow: 1px 0 0 var(--line);
+}
+.sv-table--sticky-first thead th:first-child { background: var(--surface-sunken); z-index: 3; }
+.sv-table--sticky-first tbody tr:hover td:first-child { background: var(--surface-sunken); }
+
+/* Statement rows (§13): a P&L or waterfall carries its arithmetic in its rules —
+   an ink rule above a subtotal, a double rule above a total. Never inline styles. */
+.sv-table tr.sv-table__row--section td { font-weight: 600; background: var(--surface-sunken); }
+.sv-table tr.sv-table__row--subtotal td { font-weight: 600; border-top: 1px solid var(--brand-green); }
+.sv-table tr.sv-table__row--total td { font-weight: 700; border-top: 3px double var(--brand-green); }
+
+/* Mobile record layout: below 640px an opted-in table stops being a grid and becomes a
+   stack of small ledger blocks — every cell keeps its column label via data-label. The
+   caller chooses this only where records read better than rows (never for statements,
+   where horizontal comparison IS the content). */
+@media (max-width: 640px) {
+  .sv-table--stack, .sv-table--stack tbody, .sv-table--stack tr, .sv-table--stack td { display: block; }
+  .sv-table--stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .sv-table--stack tr {
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .sv-table--stack tr:last-child { border-bottom: none; }
+  .sv-table--stack td {
+    display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4);
+    padding: 3px var(--space-3);
+    border-bottom: none;
+    white-space: normal;
+    text-align: right;
+  }
+  .sv-table--stack td::before {
+    content: attr(data-label);
+    font-size: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase;
+    color: var(--text-muted); font-weight: 500;
+    text-align: left; flex: none;
+  }
+  .sv-table--stack td:empty { display: none; }
+  .sv-table--stack tbody tr:hover { background: transparent; }
+  .sv-table--stack tfoot { display: block; }
+  .sv-table--stack tfoot tr { display: block; border-top: 2px solid var(--border-strong); }
+  .sv-table--stack tfoot td { display: flex; justify-content: space-between; background: transparent; border-top: none; }
+  .sv-table--stack tfoot td:empty { display: none; }
 }
 
 /* ---- Property board ---- */
@@ -477,9 +627,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   border-top: 1px solid var(--border-subtle);
 }
 .sv-board__metric { display: flex; flex-direction: column; }
-.sv-board__metric-label { font-size: 0.625rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
+.sv-board__metric-label { font-size: var(--text-label); letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
 .sv-board__metric-value { font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.sv-board__flag { font-size: 0.625rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.sv-board__flag { font-size: var(--text-label); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .sv-board__flag--best { color: var(--good-fg); }
 .sv-board__flag--weak { color: var(--warn-fg); }
 
@@ -501,7 +651,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-chart { margin: 0; }
 .sv-chart__svg { width: 100%; height: auto; display: block; }
-.sv-chart__tick { font-size: 10px; fill: var(--text-muted); font-family: var(--font-body); }
+/* Real pixels: the SVG viewBox is measured (§15), never scaled down, so this IS the
+   rendered size — the 11px floor applies inside charts too. */
+.sv-chart__tick { font-size: var(--chart-label-size); fill: var(--text-muted); font-family: var(--font-body); }
 .sv-chart__tooltip-text { font-size: 11px; font-weight: 600; fill: var(--text-primary); font-family: var(--font-body); }
 .sv-chart__legend { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-3); font-size: 0.75rem; color: var(--text-muted); }
 .sv-chart__legend li { display: flex; align-items: center; gap: 6px; }
@@ -519,8 +671,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-bar-row__meta { font-size: 0.6875rem; color: var(--text-muted); }
 .sv-bar-row__track { position: relative; height: 26px; background: var(--surface-sunken); border-radius: 3px; overflow: hidden; }
 .sv-bar-row__bar { position: absolute; top: 0; height: 100%; border-radius: 3px; }
-.sv-bar-row__bar--revenue { background: var(--brand-green); opacity: 0.28; }
-.sv-bar-row__bar--profit { background: var(--brand-gold); opacity: 0.95; height: 100%; }
+/* Chart series tokens (§15): brand-derived, dark-theme aware — and never gold, which
+   is rule/ornament only. */
+.sv-bar-row__bar--revenue { background: var(--chart-1); opacity: 0.28; }
+.sv-bar-row__bar--profit { background: var(--chart-2); opacity: 0.95; height: 100%; }
 .sv-bar-row__values { display: flex; flex-direction: column; align-items: flex-end; font-size: 0.8125rem; }
 .sv-bar-row__values .sv-muted, .sv-bar-row__values .sv-negative { font-size: 0.6875rem; }
 
@@ -614,7 +768,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 @media (max-width: 860px) {
   .sv-sidebar {
-    position: fixed; z-index: 30; left: 0; top: 0;
+    position: fixed; z-index: var(--z-nav); left: 0; top: 0;
     transform: translateX(-100%);
     transition: transform var(--motion-base) var(--ease-standard);
   }
@@ -694,7 +848,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-signin__identity:hover { border-color: var(--brand-green); background: var(--surface-sunken); }
 .sv-signin__identity-name { font-weight: 600; }
 .sv-signin__identity-role {
-  font-size: 0.625rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-brand);
+  font-size: var(--text-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-brand);
 }
 .sv-signin__identity-purpose { font-size: 0.8125rem; color: var(--text-muted); }
 .sv-signin__note, .sv-signin__foot { font-size: 0.75rem; color: var(--text-muted); }
@@ -720,7 +874,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-demo__scenario-title { font-weight: 600; }
 .sv-demo__scenario-summary { font-size: 0.8125rem; color: var(--text-muted); }
 .sv-demo__scenario-flag {
-  font-size: 0.625rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-brand);
+  font-size: var(--text-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-brand);
 }
 .sv-demo__year { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .sv-demo__year li {
@@ -730,7 +884,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-demo__month--empty { background: var(--surface-sunken); color: var(--text-muted); }
 .sv-demo__month-index {
-  font-size: 0.625rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
+  font-size: var(--text-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
 }
 .sv-demo__month-state { font-size: 0.8125rem; }
 
@@ -753,7 +907,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-family: var(--font-display); font-size: 1.1rem; color: var(--text-brand);
 }
 .sv-journey__actor {
-  font-size: 0.625rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
+  font-size: var(--text-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
 }
 .sv-journey__title { font-weight: 600; }
 .sv-journey__detail { margin: var(--space-1) 0 0; font-size: 0.875rem; }
@@ -763,7 +917,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
 }
 .sv-journey__response-label {
-  display: block; font-size: 0.5625rem; letter-spacing: 0.14em;
+  display: block; font-size: var(--text-label); letter-spacing: 0.14em;
   text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px;
 }
 .sv-journey__watch { margin: var(--space-2) 0 0; font-size: 0.75rem; color: var(--text-brand); }
@@ -856,7 +1010,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-scenario-chip:hover { border-color: var(--brand-green); }
 .sv-scenario-chip__label {
-  font-size: 0.5625rem; letter-spacing: 0.14em; text-transform: uppercase;
+  font-size: var(--text-label); letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--text-muted);
 }
 .sv-scenario-chip__value { font-size: 0.75rem; font-weight: 600; }
@@ -885,6 +1039,15 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-input:focus { outline: 2px solid var(--brand-green); outline-offset: 1px; border-color: var(--brand-green); }
 .sv-input--textarea { height: auto; padding: var(--space-2) var(--space-3); resize: vertical; }
 .sv-field--invalid .sv-input { border-color: var(--bad-fg); }
+.sv-input:disabled {
+  opacity: 0.55; cursor: not-allowed;
+  background: var(--surface-card); border-color: var(--line);
+}
+/* §14/§20 — critical touch targets: controls reach 44px on coarse pointers. */
+@media (pointer: coarse) {
+  .sv-input, .sv-filter__select { min-height: 44px; }
+  .sv-input--textarea { min-height: 66px; }
+}
 .sv-field__required { color: var(--bad-fg); }
 .sv-field__error {
   display: inline-flex; align-items: center; gap: var(--space-1);
@@ -920,7 +1083,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Overlays (components/ui/overlay.tsx) ---- */
 
-.sv-overlay { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; }
+.sv-overlay { position: fixed; inset: 0; z-index: var(--z-overlay); display: grid; place-items: center; }
 .sv-overlay .sv-scrim { z-index: 0; }
 .sv-overlay__close {
   background: none; border: none; cursor: pointer; color: var(--text-muted);
@@ -965,10 +1128,24 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   padding: var(--space-4) var(--space-5); border-top: 1px solid var(--line);
 }
 
+/* §18/§20 — on phones a side drawer becomes a bottom sheet: full width, rising from
+   the bottom, capped below full height so the scrim stays visible and tappable. The
+   focus trap, Escape and scroll lock are the same code path. */
+@media (max-width: 640px) {
+  .sv-drawer, .sv-drawer--wide {
+    top: auto; left: 0; right: 0; bottom: 0;
+    width: 100%; max-height: 88dvh;
+    border-left: none; border-top: 1px solid var(--line);
+    border-radius: var(--r-2) var(--r-2) 0 0;
+    box-shadow: 0 -12px 40px rgba(43, 43, 38, 0.14);
+  }
+  .sv-drawer.m-drawer-enter { animation-name: m-sheet; }
+}
+
 /* ---- Toast (components/ui/toast.tsx) ---- */
 
 .sv-toasts {
-  position: fixed; bottom: var(--space-5); right: var(--space-5); z-index: 60;
+  position: fixed; bottom: var(--space-5); right: var(--space-5); z-index: var(--z-toast);
   display: flex; flex-direction: column; gap: var(--space-3);
   width: min(380px, calc(100vw - 2 * var(--space-4)));
 }
@@ -985,6 +1162,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-toast--error .sv-toast__icon { color: var(--bad-fg); }
 .sv-toast--info { border-left-color: var(--info-fg); }
 .sv-toast--info .sv-toast__icon { color: var(--info-fg); }
+.sv-toast--warning { border-left-color: var(--warn-fg); }
+.sv-toast--warning .sv-toast__icon { color: var(--warn-fg); }
 .sv-toast__icon { display: inline-flex; margin-top: 2px; }
 .sv-toast__text { flex: 1; min-width: 0; }
 .sv-toast__title { font-size: 0.8125rem; font-weight: 600; }
@@ -1053,7 +1232,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    bar itself clips anything that still tries. */
 .sv-topbar { min-width: 0; }
 .sv-topbar__right { min-width: 0; flex-wrap: nowrap; }
-@media (max-width: 900px) {
+.sv-user { min-width: 0; }
+/* The 16px rem base widened every topbar label; the facts now step back at 1100 (the
+   stylesheet's existing tablet rung) so the cluster can never widen the page. */
+@media (max-width: 1100px) {
   .sv-envstatus__facts .sv-envstatus__fact:not(.sv-envstatus__fact--env) { display: none; }
   .sv-topbar__right { gap: var(--space-2); }
 }

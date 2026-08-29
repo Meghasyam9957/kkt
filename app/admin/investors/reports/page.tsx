@@ -1,5 +1,5 @@
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
-import { Card, CardHeader, CardBody, EmptyState, ConfigurationRequired, Badge } from '@/components/ui/primitives';
+import { Card, CardHeader, CardBody, EmptyState, ConfigurationRequired } from '@/components/ui/primitives';
 import { formatMonthLong } from '@/lib/shared/format';
 import type { InvestorPreviewView } from '@/lib/data/providers/types';
 
@@ -35,10 +35,9 @@ function ReportsList({ preview, period }: { preview: InvestorPreviewView; period
       ) : null}
 
       <Card>
-        <CardHeader
-          title={`Statements — ${formatMonthLong(period)}`}
-          action={<Badge tone="warn">Release workflow: Phase 7</Badge>}
-        />
+        {/* No roadmap badge (§16): internal phase names are not client vocabulary. The
+            empty state below already states the real condition for release. */}
+        <CardHeader title={`Statements — ${formatMonthLong(period)}`} />
         <CardBody>
           <EmptyState
             title="No statements released for this period"

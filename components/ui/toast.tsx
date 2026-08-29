@@ -17,7 +17,7 @@ import {
 import { Icon } from './icons';
 
 export interface ToastInput {
-  tone: 'success' | 'error' | 'info';
+  tone: 'success' | 'error' | 'info' | 'warning';
   title: string;
   detail?: string;
   /** Shown on failures so support can find the attempt in the audit log. */
@@ -65,7 +65,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role={toast.tone === 'error' ? 'alert' : 'status'}
           >
             <span className="sv-toast__icon">
-              <Icon name={toast.tone === 'success' ? 'check' : toast.tone === 'error' ? 'warning' : 'info'} size={16} />
+              <Icon
+                name={toast.tone === 'success' ? 'check' : toast.tone === 'info' ? 'info' : 'warning'}
+                size={16}
+              />
             </span>
             <div className="sv-toast__text">
               <p className="sv-toast__title">{toast.title}</p>

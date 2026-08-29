@@ -14,8 +14,24 @@ import type { ReactNode, HTMLAttributes, ButtonHTMLAttributes } from 'react';
  * Surface
  * ------------------------------------------------------------------ */
 
-export function Card({ children, className = '', ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={`sv-card ${className}`} {...rest}>{children}</div>;
+/**
+ * The surface system (§11). Three deliberate patterns instead of one recipe:
+ *   `object` — raised white card; only for things that are genuinely entities.
+ *   `ledger` — the product's default data surface: hairlines, no background.
+ *   `plate`  — sunken region for notices, attention strips, designed empty states.
+ * Omitting `variant` keeps the pre-foundation look (equivalent to `object`), so no
+ * existing screen changes until it opts in.
+ */
+export type SurfaceVariant = 'object' | 'ledger' | 'plate';
+
+export function Card({ children, className = '', variant, ...rest }: HTMLAttributes<HTMLDivElement> & {
+  variant?: SurfaceVariant;
+}) {
+  return (
+    <div className={`sv-card ${variant ? `sv-card--${variant}` : ''} ${className}`} {...rest}>
+      {children}
+    </div>
+  );
 }
 
 export function CardHeader({
@@ -43,7 +59,10 @@ export function CardBody({ children, className = '' }: { children: ReactNode; cl
  * Status
  * ------------------------------------------------------------------ */
 
-export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info' | 'brand';
+/* §2.4 — one meaning per hue, and the brand palette never carries status. There is
+   deliberately no 'brand' tone: a pill that wants olive is a pill saying "selected",
+   "profit" or "ours" with a status vocabulary, which is exactly the confusion banned. */
+export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info';
 
 /**
  * A status pill. The dot is decorative (aria-hidden) — the text carries the meaning, so
@@ -64,6 +83,32 @@ export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: R
   return <span className={`sv-badge sv-badge--${tone}`}>{children}</span>;
 }
 
+/**
+ * Non-status metadata (§16): BHK, platform, period. Always neutral — a Tag that needs a
+ * colour is a StatusPill wearing the wrong clothes.
+ */
+export function Tag({ children }: { children: ReactNode }) {
+  return <span className="sv-badge">{children}</span>;
+}
+
+/**
+ * An interactive chip (§16): filter values, suggested prompts. A real <button>, so it is
+ * keyboard- and screen-reader-real; `pressed` renders aria-pressed for toggles.
+ */
+export function Chip({ children, pressed, className = '', type = 'button', ...rest }:
+  ButtonHTMLAttributes<HTMLButtonElement> & { pressed?: boolean }) {
+  return (
+    <button
+      type={type}
+      className={`sv-chip ${className}`}
+      {...(pressed !== undefined ? { 'aria-pressed': pressed } : {})}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Controls
  * ------------------------------------------------------------------ */
@@ -74,17 +119,26 @@ export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: R
  * paired with a ConfirmationDialog by its caller; `link` is inline.
  */
 export function Button({
-  variant = 'secondary', size = 'md', children, className = '', type = 'button', ...rest
+  variant = 'secondary', size = 'md', children, className = '', type = 'button',
+  loading = false, disabled, ...rest
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'secondary' | 'ghost' | 'link' | 'danger';
   size?: 'sm' | 'md' | 'lg';
+  /**
+   * §10 — loading keeps the label and the width; the spinner is added beside it and the
+   * state is announced via aria-busy. A loading button cannot be pressed again.
+   */
+  loading?: boolean;
 }) {
   return (
     <button
       type={type}
       className={`sv-btn sv-btn--${variant} ${size !== 'md' ? `sv-btn--${size}` : ''} ${className}`}
+      disabled={loading || disabled}
+      {...(loading ? { 'aria-busy': true as const } : {})}
       {...rest}
     >
+      {loading ? <span className="sv-btn__spinner" aria-hidden="true" /> : null}
       {children}
     </button>
   );

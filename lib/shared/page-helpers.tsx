@@ -88,12 +88,15 @@ export async function ReadOnlyPage<T>({
     const envelope = await fetcher(provider, filters);
     body = children(envelope.data, envelope, access.session);
   } catch (error) {
+    /*
+     * The person sees a human sentence; the diagnostic goes to the server log. A raw
+     * Error.message here surfaced connector strings, sheet names and stack fragments to
+     * whoever happened to be signed in — technical language is the operator's, not the
+     * screen's (§14 of the foundation brief).
+     */
+    console.error(`[page] ${title} failed to load:`, error);
     body = (
-      <ErrorState message={
-        error instanceof Error
-          ? `${error.message} Retry, or check that the data source is configured.`
-          : 'Unable to load this page.'
-      } />
+      <ErrorState message="We couldn't load this screen's data. Try again in a moment, or contact the administrator if this continues." />
     );
   }
 

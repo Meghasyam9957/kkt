@@ -94,11 +94,69 @@
   --text-label: 0.6875rem;
   --tracking-label: 0.08em;
 
+  /* ---- Type roles (design system §3.3, product scale). Components use ROLES, not raw
+     sizes: the role carries face, size and rhythm together, so a screen cannot invent a
+     tier. --t-label is the floor — nothing readable sits below it. ---- */
+  --t-hero: clamp(2.25rem, 1.6rem + 1.8vw, 3rem);
+  --t-h1: 1.875rem;
+  --t-h2: 1.25rem;
+  --t-kpi: 1.75rem;
+  --t-body: 0.9375rem;
+  --t-small: 0.8125rem;      /* metadata, table cells, captions */
+  --t-label: var(--text-label);
+  --t-num-secondary: 1.125rem;
+
+  /* ---- Spacing roles (§4). Same 4px base as --space-*; these are the documented
+     names new surfaces compose with. ---- */
+  --s-1: 4px;  --s-2: 8px;   --s-3: 12px; --s-4: 16px; --s-5: 24px;
+  --s-6: 32px; --s-7: 48px;  --s-8: 64px; --s-9: 96px; --s-10: 160px;
+
+  /* ---- Radii roles (§5) ---- */
+  --r-1: 3px; --r-2: 6px; --r-3: 12px; --r-pill: 999px;
+
+  /* ---- Motion roles (§19). Aliases of the base motion tokens, so the reduced-motion
+     zeroing below covers them automatically. ---- */
+  --m-fast: var(--motion-fast);
+  --m-medium: var(--motion-medium);
+  --m-slow: var(--motion-slow);
+  --m-cinematic: var(--motion-cinematic);
+  --e-standard: var(--ease-standard);
+  --e-enter: var(--ease-enter);
+  --e-exit: var(--ease-exit);
+  --e-editorial: var(--ease-editorial);
+
+  /* ---- Z-index scale. One ladder, so a new layer picks a rung instead of a number. ---- */
+  --z-topbar: 20;
+  --z-scrim: 25;
+  --z-nav: 30;
+  --z-overlay: 40;
+  --z-toast: 60;
+  --z-skip: 100;
+
+  /* ---- Focus rings (§21): olive on light surfaces, gold-light on olive surfaces —
+     the ring must be visible on WHATEVER it sits on. ---- */
+  --focus-ring: var(--brand-green);
+  --focus-ring-inverse: var(--brand-gold-light);
+
+  /* ---- Chart series (§15): brand-derived, never status colours. Order: primary,
+     secondary, warm tertiary, reference. Labels never render below 11px. ---- */
+  --chart-1: #4F5F2C;
+  --chart-2: #6E8140;
+  --chart-3: #8F4E14;
+  --chart-ref: #6B6B60;
+  --chart-grid: var(--border-subtle);
+  --chart-label-size: 11px;
+
   /* ---- Layout ---- */
   --nav-width: 248px;
   --nav-width-collapsed: 64px;
   --topbar-height: 56px;
-  --content-max: 1440px;
+  /* §20: content column max 1360, centred, margins grow on wide screens. */
+  --content-max: 1360px;
+
+  /* ---- Breakpoints (§20) — for reference; media queries cannot read custom
+     properties, so these widths are the ONLY ones app styles may use:
+     phone <640 · tablet 640–1023 · desktop 1024–1439 · wide ≥1440. ---- */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -115,6 +173,7 @@
     --good-fg: #7BD69B; --warn-fg: #E9B75A; --bad-fg: #F09B94; --info-fg: #93BAF5;
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-raised: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --chart-1: #A8BC72; --chart-2: #7E9450; --chart-3: #D08A4A; --chart-ref: #A5A493;
   }
 }
 
@@ -129,6 +188,7 @@
   --text-brand: #A8BC72;
   --good-bg: #14301C; --warn-bg: #3A2A08; --bad-bg: #3A1512; --info-bg: #14243F;
   --good-fg: #7BD69B; --warn-fg: #E9B75A; --bad-fg: #F09B94; --info-fg: #93BAF5;
+  --chart-1: #A8BC72; --chart-2: #7E9450; --chart-3: #D08A4A; --chart-ref: #A5A493;
 }
 
 /* Respect a user's reduced-motion preference from the very first component. */

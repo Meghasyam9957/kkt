@@ -239,9 +239,13 @@ export function publicEnvironmentInfo(
     env: resolved.env,
     name: resolved.descriptor.name,
     banner: resolved.descriptor.banner,
-    dataSourceLabel: fixtures && resolved.env === 'demo'
-      ? 'Demo Workbook (fixtures)'
-      : resolved.descriptor.dataSourceLabel,
+    /*
+     * The client-facing label is the descriptor's ("Demo Workbook"), full stop. The
+     * "(fixtures)" suffix was developer vocabulary leaking into every header; whether
+     * fixtures back the demo is still carried — as the `fixtures` boolean below, for
+     * code — and the DEMO / UAT badge already tells the person which system they are in.
+     */
+    dataSourceLabel: resolved.descriptor.dataSourceLabel,
     demoControls: resolved.demoControlsPermitted,
     fixtures,
   };
