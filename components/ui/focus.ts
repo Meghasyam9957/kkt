@@ -92,14 +92,29 @@ export function useFocusTrap(
 export function useInertOutside(
   ref: RefObject<HTMLElement | null>,
   active: boolean,
+  /**
+   * Elements that must stay interactive even though they sit outside the surface — the
+   * scrim above all. Marking the scrim inert makes a labelled "Close navigation" control
+   * that swallows every tap, which leaves a touch user with no way out of the drawer at
+   * all (Escape needs a hardware keyboard). Anything carrying `data-inert-exempt` is
+   * skipped too, so a caller can opt an element out without threading a ref.
+   */
+  exempt: ReadonlyArray<RefObject<HTMLElement | null>> = [],
 ): void {
   useEffect(() => {
     if (!active) return;
     const keep = ref.current;
     if (!keep || !keep.parentElement) return;
+    const spared = new Set(exempt.map((r) => r.current).filter(Boolean));
     const siblings = Array.from(keep.parentElement.children)
-      .filter((el): el is HTMLElement => el instanceof HTMLElement && el !== keep);
+      .filter((el): el is HTMLElement => el instanceof HTMLElement
+        && el !== keep
+        && !spared.has(el)
+        && !el.hasAttribute('data-inert-exempt'));
     for (const el of siblings) el.setAttribute('inert', '');
     return () => { for (const el of siblings) el.removeAttribute('inert'); };
+    // `exempt` is a fresh array each render; its CONTENTS are refs with stable identity,
+    // so depending on the array would re-run this effect forever. active/ref is the gate.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref, active]);
 }

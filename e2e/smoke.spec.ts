@@ -413,3 +413,66 @@ test('the property filter names units in human terms, ID second', async ({ page 
   expect(options).toContain('5th Floor — 2 BHK · HYD-501');
   expect(options).not.toContain('HYD-501');
 });
+
+/* ------------------------------------------------------------------ *
+ * Audit fixes — defects found by adversarial review of the foundation
+ * ------------------------------------------------------------------ */
+test('a touch user can dismiss the mobile navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInAs(page, 'Demo Administrator');
+
+  // The scrim was swept into the inert region, so every tap on it was swallowed.
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await expect(page.locator('.sv-sidebar--open')).toBeVisible();
+  await expect(page.locator('.sv-scrim')).not.toHaveAttribute('inert', /.*/);
+  // Tap the exposed strip beside the 248px drawer — where a thumb actually lands.
+  // (The scrim's centre sits under the open drawer, so a default click hits the nav.)
+  await page.locator('.sv-scrim').click({ position: { x: 340, y: 500 } });
+  await expect(page.locator('.sv-sidebar--open')).toHaveCount(0);
+
+  // …and the drawer carries its own exit, at a real touch size.
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  const close = page.getByRole('button', { name: 'Close menu' });
+  const box = (await close.boundingBox())!;
+  expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+  await close.click();
+  await expect(page.locator('.sv-sidebar--open')).toHaveCount(0);
+});
+
+test('the off-screen rail does not hold the keyboard', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signInAs(page, 'Demo Administrator');
+  // ~29 links used to sit off-canvas and fully focusable.
+  const reachable = await page.evaluate(() => {
+    const rail = document.querySelector('.sv-sidebar')!;
+    let n = 0;
+    rail.querySelectorAll('a,button').forEach((el) => {
+      (el as HTMLElement).focus();
+      if (document.activeElement === el) n += 1;
+    });
+    return n;
+  });
+  expect(reachable, 'the closed rail must be out of the tab order').toBe(0);
+});
+
+test('no screen scrolls sideways on the operations board at 375px', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/today');
+  await page.waitForSelector('.sv-split');
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test('the content column is centred on a wide screen', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await signInAs(page, 'Demo Administrator');
+  const gaps = await page.evaluate(() => {
+    const c = document.querySelector('.sv-content')!.getBoundingClientRect();
+    const m = document.querySelector('.sv-main')!.getBoundingClientRect();
+    return { left: Math.round(c.left - m.left), right: Math.round(m.right - c.right) };
+  });
+  expect(Math.abs(gaps.left - gaps.right)).toBeLessThanOrEqual(2);
+  expect(gaps.left).toBeGreaterThan(0);
+});

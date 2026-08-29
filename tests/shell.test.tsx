@@ -248,6 +248,34 @@ describe('rendered shells', () => {
     expect(nav).toContain('Bookings');
   });
 
+  it('opening the mobile drawer leaves the scrim tappable, and inerts everything else', async () => {
+    /*
+     * The regression this pins: useInertOutside swept EVERY sibling of the rail, which
+     * included the scrim — a control labelled "Close navigation" that swallowed every
+     * tap. On a phone that left Escape as the only exit, and phones have no Escape.
+     */
+    const user = userEvent.setup();
+    const { container } = renderShell(
+      <AppShell
+        user={{ name: 'Demo Administrator', email: 'admin@srivillu.test', role: 'ADMIN' }}
+        meta={META} environment={DEMO_ENVIRONMENT} alertCount={0}
+      ><p>content</p></AppShell>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+
+    const scrim = container.querySelector('.sv-scrim')!;
+    expect(scrim, 'the scrim must exist while the drawer is open').not.toBeNull();
+    expect(scrim.hasAttribute('inert'), 'the scrim must stay interactive').toBe(false);
+    // …while the page behind genuinely is inert.
+    expect(container.querySelector('.sv-main')?.hasAttribute('inert')).toBe(true);
+
+    // And the drawer carries its own labelled exit inside the trapped subtree,
+    // under a name distinct from the scrim's.
+    const close = screen.getByRole('button', { name: 'Close menu' });
+    expect(container.querySelector('.sv-sidebar')?.contains(close)).toBe(true);
+    expect(screen.getAllByRole('button', { name: 'Close navigation' })).toHaveLength(1);
+  });
+
   it('the rail collapse toggles, announces its state, and keeps tooltips', async () => {
     const user = userEvent.setup();
     const { container } = renderShell(

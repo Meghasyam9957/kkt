@@ -95,12 +95,54 @@ function ChartTable({ caption, columns, rows }: {
   );
 }
 
-function Legend({ items }: { items: Array<{ label: string; color: string }> }) {
+/**
+ * The spoken half of the chart.
+ *
+ * An `<svg role="img">` is Children Presentational: everything inside it is pruned from
+ * the accessibility tree, so a focusable bar's own `aria-label` announces nothing. The
+ * shapes stay focusable (a sighted keyboard user gets the visual readout), and this live
+ * region — OUTSIDE the img subtree, so it is never pruned — speaks the same figure.
+ */
+function ChartReadout({ text }: { text: string | null }) {
+  return (
+    <p className="sv-visually-hidden" aria-live="polite">{text ?? ''}</p>
+  );
+}
+
+/**
+ * A transparent full-height hit area, one per index, spanning the whole category pitch.
+ * The painted bar can be 6px wide on a phone; the target must not be. Pointer events
+ * cover mouse, pen and TOUCH in one handler, so tapping a month works.
+ */
+function HitArea({
+  x, width, top, height, label, onActivate, onClear,
+}: {
+  x: number; width: number; top: number; height: number; label: string;
+  onActivate: () => void; onClear: () => void;
+}) {
+  return (
+    <rect
+      x={x} y={top} width={Math.max(width, 1)} height={height}
+      fill="transparent" tabIndex={0} aria-label={label}
+      onPointerDown={onActivate}
+      onMouseEnter={onActivate} onMouseLeave={onClear}
+      onFocus={onActivate} onBlur={onClear}
+    />
+  );
+}
+
+function Legend({ items }: { items: Array<{ label: string; color: string; opacity?: number }> }) {
   return (
     <ul className="sv-chart__legend">
       {items.map((item) => (
         <li key={item.label}>
-          <span className="sv-chart__swatch" style={{ background: item.color }} aria-hidden="true" />
+          {/* The swatch carries the mark's OWN treatment, opacity included — a solid
+              swatch beside a 28%-opacity band reads as a different series. */}
+          <span
+            className="sv-chart__swatch"
+            style={{ background: item.color, opacity: item.opacity ?? 1 }}
+            aria-hidden="true"
+          />
           {item.label}
         </li>
       ))}
@@ -134,6 +176,7 @@ export function RevenueTrendChart({ points, title }: { points: Point[]; title: s
   const x = (i: number) => PAD_L + (points.length <= 1 ? innerW / 2 : (i / (points.length - 1)) * innerW);
   const y = (v: number) => PAD_T + innerH - (v / max) * innerH;
 
+  const pitch = Math.max(innerW / Math.max(points.length, 1), 36);
   const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
   const area = `${line} L${x(points.length - 1).toFixed(1)},${(PAD_T + innerH).toFixed(1)} L${x(0).toFixed(1)},${(PAD_T + innerH).toFixed(1)} Z`;
 
@@ -161,12 +204,11 @@ export function RevenueTrendChart({ points, title }: { points: Point[]; title: s
           <g key={p.label}>
             <circle cx={x(i)} cy={y(p.value)} r={hover === i ? 5 : 3.5}
               fill="var(--surface-card)" stroke={SERIES.revenue} strokeWidth="2" />
-            {/* Generous invisible hit area — small dots are hard to hit on a trackpad.
-                Focusable, so the keyboard reaches the same readout hover does. */}
-            <rect x={x(i) - 18} y={PAD_T} width={36} height={innerH} fill="transparent"
-              tabIndex={0} aria-label={`${p.label}: ${formatCurrency(p.value)}`}
-              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(i)} onBlur={() => setHover(null)} />
+            {/* Full-pitch hit area: reachable by trackpad, finger and keyboard alike. */}
+            <HitArea
+              x={x(i) - pitch / 2} width={pitch} top={PAD_T} height={innerH}
+              label={`${p.label}: ${formatCurrency(p.value)}`}
+              onActivate={() => setHover(i)} onClear={() => setHover(null)} />
             {i % labelStride === 0 || i === points.length - 1 ? (
               <text x={x(i)} y={H - 12} textAnchor="middle" className="sv-chart__tick">{p.label}</text>
             ) : null}
@@ -183,6 +225,8 @@ export function RevenueTrendChart({ points, title }: { points: Point[]; title: s
           </g>
         ) : null}
       </svg>
+      <ChartReadout text={hover !== null && points[hover]
+        ? `${points[hover]!.label}: ${formatCurrency(points[hover]!.value)}` : null} />
       <ChartTable caption={title} columns={['Month', 'Net revenue']}
         rows={points.map((p) => [p.label, formatCurrency(p.value)])} />
       <figcaption className="sv-visually-hidden" id={id}>{title}</figcaption>
@@ -201,8 +245,9 @@ export function OccupancyTrendChart({ points, title }: { points: Point[]; title:
   const H = 240, PAD_L = W < 480 ? 44 : 52, PAD_R = 16, PAD_T = 16, PAD_B = 36;
   const { gridFractions, labelStride } = densityFor(W, points.length);
   const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
-  const barW = Math.max(8, (innerW / Math.max(points.length, 1)) * 0.55);
-  const x = (i: number) => PAD_L + (i + 0.5) * (innerW / Math.max(points.length, 1));
+  const pitch = innerW / Math.max(points.length, 1);
+  const barW = Math.max(8, pitch * 0.55);
+  const x = (i: number) => PAD_L + (i + 0.5) * pitch;
   const y = (v: number) => PAD_T + innerH - Math.min(v, 1) * innerH;
 
   if (points.length === 0) return null;
@@ -220,14 +265,17 @@ export function OccupancyTrendChart({ points, title }: { points: Point[]; title:
           </g>
         ))}
         {points.map((p, i) => (
-          <g key={p.label}
-            onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+          <g key={p.label}>
             <rect x={x(i) - barW / 2} y={y(p.value)} width={barW}
               height={Math.max(1, PAD_T + innerH - y(p.value))}
               fill={SERIES.occupancy} opacity={hover === null || hover === i ? 0.9 : 0.45} rx="2"
-              className="m-chart-bar" tabIndex={0}
-              aria-label={`${p.label}: ${formatPercent(p.value, 0)} occupancy`}
-              onFocus={() => setHover(i)} onBlur={() => setHover(null)} />
+              className="m-chart-bar" />
+            {/* The target is the whole column, not the painted bar — which is ~14px wide
+                on a phone, well under any usable tap size. */}
+            <HitArea
+              x={x(i) - pitch / 2} width={pitch} top={PAD_T} height={innerH}
+              label={`${p.label}: ${formatPercent(p.value, 0)} occupancy`}
+              onActivate={() => setHover(i)} onClear={() => setHover(null)} />
             {i % labelStride === 0 || i === points.length - 1 ? (
               <text x={x(i)} y={H - 12} textAnchor="middle" className="sv-chart__tick">{p.label}</text>
             ) : null}
@@ -239,6 +287,8 @@ export function OccupancyTrendChart({ points, title }: { points: Point[]; title:
           </g>
         ))}
       </svg>
+      <ChartReadout text={hover !== null && points[hover]
+        ? `${points[hover]!.label}: ${formatPercent(points[hover]!.value, 0)} occupancy` : null} />
       <ChartTable caption={title} columns={['Month', 'Occupancy']}
         rows={points.map((p) => [p.label, formatPercent(p.value)])} />
     </figure>
@@ -300,10 +350,13 @@ export function RevenueExpenseProfitChart({ points, title }: { points: TriplePoi
         {points.map((p, i) => {
           const groupX = PAD_L + i * groupW + groupW / 2;
           return (
-            <g key={p.label} tabIndex={0}
-              aria-label={`${p.label}: revenue ${formatCurrency(p.revenue)}, expenses ${formatCurrency(p.expenses)}, profit ${formatCurrency(p.profit)}`}
-              onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(i)} onBlur={() => setHover(null)}>
+            <g key={p.label}>
+              {/* One full-height target per month: the three painted bars are ~6px each
+                  on a phone, so the group's own geometry is a comb of gaps. */}
+              <HitArea
+                x={groupX - groupW / 2} width={groupW} top={PAD_T} height={innerH}
+                label={`${p.label}: revenue ${formatCurrency(p.revenue)}, expenses ${formatCurrency(p.expenses)}, profit ${formatCurrency(p.profit)}`}
+                onActivate={() => setHover(i)} onClear={() => setHover(null)} />
               {series.map((s, si) => {
                 const value = p[s.key];
                 const barX = groupX - (barW * 3) / 2 + si * barW;
@@ -323,8 +376,11 @@ export function RevenueExpenseProfitChart({ points, title }: { points: TriplePoi
         })}
       </svg>
       <Legend items={series.map((s) => ({ label: s.label, color: s.color }))} />
+      <ChartReadout text={hover !== null && points[hover]
+        ? `${points[hover]!.label}: revenue ${formatCurrency(points[hover]!.revenue)}, expenses ${formatCurrency(points[hover]!.expenses)}, profit ${formatCurrency(points[hover]!.profit)}`
+        : null} />
       {hover !== null && points[hover] ? (
-        <p className="sv-chart__readout">
+        <p className="sv-chart__readout" aria-hidden="true">
           <strong>{points[hover]!.label}</strong>
           {` · revenue ${formatCurrency(points[hover]!.revenue)}`}
           {` · expenses ${formatCurrency(points[hover]!.expenses)}`}
@@ -375,9 +431,11 @@ export function PropertyPerformanceChart({ bars, title }: { bars: PropertyBar[];
           );
         })}
       </div>
+      {/* Opacities mirror .sv-bar-row__bar--revenue / --profit: the revenue extent is a
+          pale band the solid profit bar sits on top of. */}
       <Legend items={[
-        { label: 'Net revenue', color: SERIES.revenue },
-        { label: 'Operating profit', color: SERIES.profit },
+        { label: 'Net revenue', color: SERIES.revenue, opacity: 0.28 },
+        { label: 'Operating profit', color: SERIES.profit, opacity: 0.95 },
       ]} />
       <ChartTable caption={title} columns={['Property', 'Net revenue', 'Operating profit', 'Occupancy']}
         rows={bars.map((b) => [b.propertyId, formatCurrency(b.revenue), formatCurrency(b.profit), formatPercent(b.occupancyPct)])} />

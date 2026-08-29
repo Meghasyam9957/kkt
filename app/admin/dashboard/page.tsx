@@ -47,12 +47,14 @@ export default async function DashboardPage({
     period = meta.period;
     content = <DashboardContent view={data} meta={meta} urgent={ops?.data?.urgent ?? []} />;
   } catch (error) {
+    /*
+     * Same rule as ReadOnlyPage: the person sees a human sentence, the diagnostic goes to
+     * the server log. Interpolating Error.message here printed connector strings, sheet
+     * ranges and missing env-var names onto the first screen after sign-in.
+     */
+    console.error('[page] Dashboard failed to load:', error);
     content = (
-      <ErrorState message={
-        error instanceof Error
-          ? `Unable to load dashboard data. ${error.message}`
-          : 'Unable to load dashboard data.'
-      } />
+      <ErrorState message="We couldn't load this screen's data. Try again in a moment, or contact the administrator if this continues." />
     );
   }
 

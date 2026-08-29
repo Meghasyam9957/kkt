@@ -43,10 +43,14 @@ a { color: inherit; text-decoration: none; }
 }
 /* §21 — the ring must be visible on WHATEVER it sits on. The remaining olive surfaces
    (skip link, primary buttons) take the gold-light inverse ring; the rail is light now
-   (M-UI-2), so the standard olive ring is correct there. */
+   (M-UI-2), so the standard olive ring is correct there.
+   The NEGATIVE offset is the load-bearing half: a positive offset draws the ring outside
+   the olive fill, i.e. on the cream page, where gold-light is 1.6:1 and effectively
+   invisible. Inside the fill it is 4.1:1 against the olive. */
 .sv-skip-link:focus-visible,
 .sv-btn--primary:focus-visible {
   outline-color: var(--focus-ring-inverse);
+  outline-offset: -3px;
 }
 
 .numeric { font-variant-numeric: tabular-nums lining-nums; }
@@ -90,10 +94,19 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 
 .sv-sidebar__brand {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
   padding: var(--space-5) var(--space-4) var(--space-4);
   background: var(--surface-page);
   border-bottom: 1px solid var(--line);
 }
+.sv-sidebar__close {
+  display: none;               /* shown only in the drawer, below 1024 */
+  align-items: center; justify-content: center;
+  flex: none; min-width: 44px; min-height: 44px;
+  background: none; border: none; cursor: pointer; color: var(--text-muted);
+  border-radius: var(--radius-sm);
+}
+.sv-sidebar__close:hover { background: var(--surface-sunken); color: var(--text-primary); }
 
 .sv-logo { display: inline-flex; align-items: center; gap: var(--space-3); }
 .sv-logo__text { display: flex; flex-direction: column; line-height: 1.1; }
@@ -160,7 +173,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   border-top: 1px solid var(--line);
   font-size: 0.75rem;
 }
-.sv-sidebar__foot-name { font-family: var(--font-display); font-size: 0.9375rem; }
+/* §3.4: serif is never set below 18px. At 15px Cormorant is thin and blurry, so the
+   rail's business name is set in the body face instead of shrinking the display face. */
+.sv-sidebar__foot-name { font-size: var(--t-body); font-weight: 600; }
 .sv-sidebar__foot-meta { color: var(--text-muted); font-size: var(--text-label); }
 
 /* ---- Rail collapse (§17.1): 64px, icons only, tooltips via title. Desktop only —
@@ -221,7 +236,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-topbar__count {
   position: absolute; top: 0; right: 0;
   min-width: 18px; height: 18px; padding: 0 4px;
-  background: var(--bad-fg); color: #fff;
+  /* Tokens, not #fff: in dark theme --bad-fg is a light salmon, and white on it fell to
+     ~2.1:1. The badge now uses the theme's own page ink-inverse pairing. */
+  background: var(--bad-fg); color: var(--surface-page);
   font-size: var(--text-label); line-height: 18px; text-align: center;
   border-radius: var(--radius-full);
 }
@@ -316,14 +333,18 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-content {
   flex: 1; padding: var(--space-6) var(--space-5) var(--space-10);
-  max-width: var(--content-max); width: 100%;
+  /* §20's wide rung: capped at 1360 and CENTRED, so margins grow past it instead of
+     leaving a 300px band of dead cream down one side at 1920. */
+  max-width: var(--content-max); width: 100%; margin-inline: auto;
 }
 
 .sv-page-header { margin-bottom: var(--space-5); }
 .sv-page-header__row { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 .sv-page-header__title {
   font-family: var(--font-display);
-  font-size: var(--text-3xl); font-weight: 600; letter-spacing: -0.01em;
+  /* The page-title ROLE, not a raw tier — tokens.css declares --t-h1 for exactly this
+     and the screen was rendering 36px against a declared 30px. */
+  font-size: var(--t-h1); font-weight: 600; letter-spacing: -0.01em;
 }
 .sv-page-header__description { color: var(--text-muted); font-size: 0.875rem; margin-top: var(--space-1); max-width: 62ch; }
 .sv-page-header__actions { display: flex; gap: var(--space-2); }
@@ -351,8 +372,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border-subtle);
 }
-.sv-card__title { font-size: var(--text-lg); font-family: var(--font-display); font-weight: 600; }
-.sv-card__subtitle { font-size: 0.8125rem; color: var(--text-muted); margin-top: 2px; max-width: 68ch; }
+.sv-card__title { font-size: var(--t-h2); font-family: var(--font-display); font-weight: 600; }
+.sv-card__subtitle { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; max-width: 68ch; }
 .sv-card__body { padding: var(--space-5); }
 .sv-card__body--flush { padding: 0; }
 
@@ -410,7 +431,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-kpi__value {
   font-family: var(--font-display);
-  font-size: 1.75rem; font-weight: 600; letter-spacing: -0.015em;
+  font-size: var(--t-kpi); font-weight: 600; letter-spacing: -0.015em;
   color: var(--text-primary); margin-top: var(--space-2);
   line-height: 1.15;
 }
@@ -447,6 +468,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-pill--warn { background: var(--warn-bg); color: var(--warn-fg); }
 .sv-pill--bad { background: var(--bad-bg); color: var(--bad-fg); }
 .sv-pill--info { background: var(--info-bg); color: var(--info-fg); }
+/* NEUTRAL is a real member of the vocabulary (§2.4: "blocked, not tracked, n/a"), and
+   the default tone for both StatusPill and Badge — it needs its own pair, not the
+   generic surface, or "blocked" and "unstyled" look identical. */
+.sv-pill--neutral { background: var(--neutral-bg); color: var(--neutral-fg); }
 
 .sv-badge {
   font-size: var(--text-label); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
@@ -456,6 +481,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-badge--good { background: var(--good-bg); color: var(--good-fg); }
 .sv-badge--warn { background: var(--warn-bg); color: var(--warn-fg); }
 .sv-badge--bad { background: var(--bad-bg); color: var(--bad-fg); }
+.sv-badge--info { background: var(--info-bg); color: var(--info-fg); }
+.sv-badge--neutral { background: var(--neutral-bg); color: var(--neutral-fg); }
 
 /* Interactive chip (§16): a real button — filter values, suggested prompts. */
 .sv-chip {
@@ -485,7 +512,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
               border-color var(--motion-fast) var(--ease-standard);
 }
 .sv-btn:hover { background: var(--surface-sunken); }
-.sv-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+/* A verified write is locked, not unavailable — dimming it to 50% collapsed the one
+   shipped success state into the disabled treatment and hid the confirmation. */
+.sv-btn:disabled:not([data-phase='verified']) { cursor: not-allowed; opacity: 0.5; }
+.sv-btn:disabled[data-phase='verified'] { cursor: default; }
 .sv-btn--sm { height: 32px; padding: 0 var(--space-3); font-size: 0.75rem; }
 .sv-btn--lg { height: 48px; padding: 0 var(--space-5); font-size: 0.9375rem; }
 .sv-btn--primary { background: var(--brand-green); border-color: var(--brand-green); color: var(--brand-cream); }
@@ -501,6 +531,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-btn--danger:hover { background: var(--bad-bg); }
 @media (pointer: coarse) {
   .sv-btn, .sv-btn--sm { min-height: 44px; }
+  /* The icon-only controls a finger reaches for most: the hamburger, the alert bell, the
+     overlay close (a drawer's only in-surface exit), the toast dismiss and the filter
+     reset — none of which inherit a floor from .sv-btn. */
+  .sv-topbar__menu, .sv-topbar__icon, .sv-overlay__close, .sv-toast__dismiss, .sv-filter__reset {
+    min-height: 44px; min-width: 44px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
 }
 
 /* ---- Button state matrix (§10). Rest and hover above; the rest of the states here.
@@ -632,9 +669,11 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* Statement rows (§13): a P&L or waterfall carries its arithmetic in its rules —
    an ink rule above a subtotal, a double rule above a total. Never inline styles. */
+/* --text-brand, not --brand-green: the raw brand hex is never retuned for dark, where an
+   olive rule falls to ~2.3:1 on the dark card and the statement loses its arithmetic. */
 .sv-table tr.sv-table__row--section td { font-weight: 600; background: var(--surface-sunken); }
-.sv-table tr.sv-table__row--subtotal td { font-weight: 600; border-top: 1px solid var(--brand-green); }
-.sv-table tr.sv-table__row--total td { font-weight: 700; border-top: 3px double var(--brand-green); }
+.sv-table tr.sv-table__row--subtotal td { font-weight: 600; border-top: 1px solid var(--text-brand); }
+.sv-table tr.sv-table__row--total td { font-weight: 700; border-top: 3px double var(--text-brand); }
 
 /* Mobile record layout: below 640px an opted-in table stops being a grid and becomes a
    stack of small ledger blocks — every cell keeps its column label via data-label. The
@@ -837,10 +876,24 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   .sv-sidebar {
     position: fixed; z-index: var(--z-nav); left: 0; top: 0;
     transform: translateX(-100%);
-    transition: transform var(--motion-base) var(--ease-standard);
+    /* `transform` alone hides the rail visually but leaves ~29 links in the tab order:
+       a keyboard user tabbing off the skip link loses the focus ring for two dozen
+       presses walking an off-screen menu. `visibility: hidden` removes it from the tab
+       order and the accessibility tree; the delayed transition lets the slide-out still
+       animate before it disappears (§21 "inert on hidden rail"). */
+    visibility: hidden;
+    transition: transform var(--motion-base) var(--ease-standard),
+                visibility 0s linear var(--motion-base);
     border-right: none;
   }
-  .sv-sidebar--open { transform: translateX(0); box-shadow: var(--shadow-raised); }
+  .sv-sidebar--open {
+    transform: translateX(0);
+    visibility: visible;
+    transition-delay: 0s;
+    box-shadow: var(--shadow-raised);
+  }
+  /* The drawer's own close control — irrelevant on desktop, where there is no drawer. */
+  .sv-sidebar__close { display: inline-flex; }
   .sv-topbar__menu { display: inline-flex; }
   .sv-content { padding: var(--space-5) var(--space-4) var(--space-8); }
   .sv-page-header__title { font-size: var(--text-2xl); }
@@ -972,7 +1025,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-journey__head { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: wrap; }
 .sv-journey__order {
-  font-family: var(--font-display); font-size: 1.1rem; color: var(--text-brand);
+  /* Was 1.1rem — an orphan tier, and serif under the 18px floor. */
+  font-family: var(--font-display); font-size: var(--t-num-secondary); color: var(--text-brand);
 }
 .sv-journey__actor {
   font-size: var(--text-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
@@ -1016,7 +1070,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
  * ==================================================================== */
 
 .sv-stack-gap { height: var(--space-4); }
-.sv-split { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+/* min(…, 100%) so a 352px track cannot exceed a 343px column — the Today board scrolled
+   sideways at 375px without it. Same guard the shared .sv-grid primitive carries. */
+.sv-split { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); }
 
 /* What needs a person, most pressing first. Severity is carried by a label as well as a
    colour — an operations board is read in a hurry and often on a phone. */
@@ -1170,7 +1226,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line);
 }
-.sv-modal__title { font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; }
+.sv-modal__title { font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600; }
 .sv-modal__body { padding: var(--space-5); overflow-y: auto; font-size: 0.875rem; }
 .sv-modal__footer {
   display: flex; justify-content: flex-end; gap: var(--space-3);
@@ -1189,7 +1245,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   display: flex; align-items: center; justify-content: space-between;
   padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line);
 }
-.sv-drawer__title { font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; }
+.sv-drawer__title { font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600; }
 .sv-drawer__body { padding: var(--space-5); overflow-y: auto; flex: 1; font-size: 0.875rem; }
 .sv-drawer__footer {
   display: flex; justify-content: flex-end; gap: var(--space-3);
@@ -1340,11 +1396,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   min-width: 0;              /* grid items must be allowed to shrink below content width */
 }
 /* A figure must NEVER break mid-number: the cell scales the type down instead. */
-.sv-kpi-row .sv-kpi__value { white-space: nowrap; font-size: clamp(1.0625rem, 0.35rem + 1.1vw, 1.625rem); }
+/* The clamp floor is 1.25rem, not 1.0625rem: at 17px a PRIMARY figure rendered smaller
+   than the 18px secondary tier below ~1036px, inverting the hierarchy exactly where the
+   screen is tightest — and putting serif under the 18px floor. */
+.sv-kpi-row .sv-kpi__value { white-space: nowrap; font-size: clamp(1.25rem, 0.35rem + 1.1vw, 1.625rem); }
 .sv-kpi-row .sv-kpi--hero .sv-kpi__value { font-size: clamp(1.5rem, 0.5rem + 1.9vw, 2.75rem); }
 .sv-kpi-row .sv-kpi:first-child { border-left: none; }
 .sv-kpi--hero .sv-kpi__value { font-size: clamp(2rem, 1.5rem + 1.5vw, 2.75rem); }
-.sv-kpi--secondary .sv-kpi__value { font-size: 1.125rem; }
+.sv-kpi--secondary .sv-kpi__value { font-size: var(--t-num-secondary); }
 .sv-kpi--secondary { padding: var(--space-3) var(--space-4); }
 .sv-kpi__source { font-size: var(--text-label); color: var(--text-muted); margin-top: var(--space-1); }
 .sv-kpi-grid--secondary { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }

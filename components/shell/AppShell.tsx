@@ -66,12 +66,15 @@ export function AppShell({
   // Desktop rail collapse (§17.1): 64px, icons with tooltips. Session-local by intent.
   const [collapsed, setCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  const scrimRef = useRef<HTMLButtonElement>(null);
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
   // The drawer is modal only when it IS a drawer (below the desktop breakpoint it is
   // opened explicitly; at desktop widths mobileOpen stays false and none of this runs).
+  // The scrim is EXEMPT from inert: it is the drawer's dismissal control, and a scrim
+  // that cannot be tapped strands a touch user inside the navigation.
   useFocusTrap(sidebarRef, mobileOpen, { onClose: closeMobile });
-  useInertOutside(sidebarRef, mobileOpen);
+  useInertOutside(sidebarRef, mobileOpen, [scrimRef]);
 
   const granted = new Set<Capability>(capabilitiesFor(user.role));
   const sections = visibleNavigation(
@@ -137,6 +140,19 @@ export function AppShell({
       >
         <div className="sv-sidebar__brand">
           <SrivilluLogo assets={brandAssets} />
+          {/* The drawer's own exit, inside the trapped subtree — so dismissal never
+              depends on the scrim or on a hardware Escape key. Drawer-only by CSS. */}
+          {mobileOpen ? (
+            <button
+              type="button"
+              className="sv-sidebar__close"
+              onClick={closeMobile}
+            >
+              {/* A distinct name from the scrim's: two controls announcing "Close
+                  navigation" in one view is a list a screen-reader user cannot choose from. */}
+              <Icon name="close" size={18} label="Close menu" />
+            </button>
+          ) : null}
         </div>
 
         <nav className="sv-nav">
@@ -188,6 +204,7 @@ export function AppShell({
 
       {mobileOpen ? (
         <button
+          ref={scrimRef}
           type="button"
           className="sv-scrim m-scrim-enter"
           aria-label="Close navigation"
