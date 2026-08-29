@@ -16,7 +16,11 @@ import { AccessDenied } from '@/components/shell/AccessDenied';
 import { DemoAssumptionsNotice } from '@/components/demo/DemoAssumptionsNotice';
 import type { Capability } from '@/lib/shared/roles';
 
-export interface SearchParams { month?: string; property?: string; platform?: string }
+export interface SearchParams {
+  month?: string; property?: string; platform?: string;
+  /** 'YYYY-MM-DD' for the Today board. Validated by the view, never trusted here. */
+  date?: string;
+}
 
 /** Resolve URL params into the filter shape the provider expects. */
 export async function resolveFilters(params: SearchParams): Promise<ReportFilters> {
@@ -25,7 +29,12 @@ export async function resolveFilters(params: SearchParams): Promise<ReportFilter
   const month = params.month && months.includes(params.month)
     ? params.month
     : months[months.length - 1] ?? '';
-  return { month, propertyId: params.property ?? null, platform: params.platform ?? null };
+  return {
+    month,
+    propertyId: params.property ?? null,
+    platform: params.platform ?? null,
+    date: params.date ?? null,
+  };
 }
 
 /**

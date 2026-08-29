@@ -60,6 +60,12 @@ export interface ReportFilters {
   propertyId?: string | null;
   /** Platform name, or null for all. */
   platform?: string | null;
+  /**
+   * 'YYYY-MM-DD' — the operational DAY being looked at, for the Today board. Null (the
+   * default) means the source's own operational day. Validated server-side; a malformed
+   * value falls back rather than reaching a query.
+   */
+  date?: string | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -157,6 +163,13 @@ export interface ArrivalRow {
   guests: number;
   platform: string;
   status: string;
+  /**
+   * The stay's span, so a front-office drawer can say "3 nights, 19–22 Feb" without a
+   * second lookup. Dates only: the workbook carries no SCHEDULED arrival time — a time
+   * is recorded AT check-in, through the mutation, and nowhere else.
+   */
+  checkIn: string | null;
+  checkOut: string | null;
 }
 
 export interface CleaningRow {
@@ -196,7 +209,20 @@ export interface GuestRequestRow {
 }
 
 export interface OperationsBoardView {
+  /** The day being looked at. Equals `operationalDate` unless the reader browsed. */
   date: string;
+  /**
+   * The source's own operational day, and whether the board is showing it.
+   *
+   * This distinction is not cosmetic. Arrivals and departures are genuinely addressable
+   * by date — they come from booking dates. The queues (turnovers, tickets, stock,
+   * requests) and unit status are LIVE state: the workbook keeps no historical snapshot
+   * of what was open on some past morning. So when the reader browses off the
+   * operational day, the board must say which half moved and which half did not, rather
+   * than presenting today's cleaning list as if it were last Tuesday's.
+   */
+  operationalDate: string;
+  isOperationalDay: boolean;
   counters: OperationsToday;
   urgent: UrgentItem[];
   arrivals: ArrivalRow[];

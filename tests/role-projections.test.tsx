@@ -218,18 +218,25 @@ describe('rendered columns · reservations', () => {
  * ================================================================== */
 
 describe('page wiring · a revert to the unprojected render fails here', () => {
-  it('/admin/properties branches on the role gate and projects', () => {
+  /*
+   * These pin the ORDER of the ternary, not merely the presence of its three tokens.
+   * Swapping the branches — handing the financial table to the money-blind role and the
+   * projection to management — leaves every token in the file and would otherwise pass.
+   */
+  it('/admin/properties gives the financial table to the gate\'s TRUE branch only', () => {
     const source = pageSource('app/admin/properties/page.tsx');
     expect(source).toContain('roleSeesFinancialFigures');
-    expect(source).toContain('operationalPropertyRows');
-    expect(source).toContain('OperationalPropertyTable');
+    expect(source).toMatch(
+      /roleSeesFinancialFigures\(viewer\.role\)[\s\S]{0,80}\?\s*<FinancialPropertyTable[\s\S]{0,160}:\s*<OperationalPropertyTable/);
+    expect(source).toContain('operationalPropertyRows(rows)');
   });
 
-  it('/admin/reservations branches on the role gate and projects', () => {
+  it('/admin/reservations gives the financial table to the gate\'s TRUE branch only', () => {
     const source = pageSource('app/admin/reservations/page.tsx');
     expect(source).toContain('roleSeesFinancialFigures');
-    expect(source).toContain('operationalReservationRows');
-    expect(source).toContain('OpsReservationsTable');
+    expect(source).toMatch(
+      /roleSeesFinancialFigures\(viewer\.role\)[\s\S]{0,80}\?\s*<FinancialReservationsTable[\s\S]{0,160}:\s*<OpsReservationsTable/);
+    expect(source).toContain('operationalReservationRows(rows)');
   });
 
   it('the operations reservations screen projects for every role', () => {

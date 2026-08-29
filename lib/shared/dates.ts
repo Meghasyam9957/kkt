@@ -116,3 +116,27 @@ export function daysInMonth(serial: Serial): number {
   const ms = monthStart(serial);
   return edate(ms, 1) - ms;
 }
+
+/**
+ * A calendar day the Today board may be asked for, or the fallback.
+ *
+ * The value arrives from a query string, so it is untrusted twice over: it may be
+ * malformed, and it may be a date that does not exist ("2027-02-31"). Round-tripping
+ * through the serial arithmetic rejects both — an input that does not survive the trip
+ * is not a day, and the caller gets the operational day instead of a bad query.
+ */
+export function resolveBoardDate(input: string | null | undefined, fallbackIso: string): string {
+  if (typeof input !== 'string') return fallbackIso;
+  const trimmed = input.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return fallbackIso;
+  try {
+    return serialToIso(isoToSerial(trimmed)) === trimmed ? trimmed : fallbackIso;
+  } catch {
+    return fallbackIso;
+  }
+}
+
+/** The day `offset` days from an ISO day, as ISO. The date control's only arithmetic. */
+export function shiftIsoDay(iso: string, offset: number): string {
+  return serialToIso(isoToSerial(iso) + offset);
+}

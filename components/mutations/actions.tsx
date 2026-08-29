@@ -73,7 +73,7 @@ export function NewRecordButton({
 
 export function RowActionButton({
   label, endpoint, method = 'POST', successTemplate, idField, fields, confirmTitle,
-  variant = 'secondary', size = 'sm',
+  variant = 'secondary', size = 'sm', surface = 'modal', context,
 }: {
   label: string;
   endpoint: string;
@@ -88,6 +88,18 @@ export function RowActionButton({
   confirmTitle?: string;
   variant?: 'secondary' | 'ghost' | 'danger' | 'primary';
   size?: 'sm' | 'md';
+  /**
+   * Where the fields are asked for. A centred dialog suits a one-line confirmation; a
+   * side drawer (bottom sheet on a phone) suits a front-office action that needs the
+   * booking in front of the person before they commit. Same mutation path either way.
+   */
+  surface?: 'modal' | 'drawer';
+  /**
+   * Read-only detail shown ABOVE the fields — who is arriving, which unit, how long.
+   * Context only: nothing here is submitted, and it never carries a financial figure on
+   * an operational surface (the caller passes a role-projected row).
+   */
+  context?: ReactNode;
 }) {
   const { phase, failure, submit, reset } = useMutation(endpoint, method);
   const toast = useToast();
@@ -124,12 +136,14 @@ export function RowActionButton({
     );
   }
 
+  const Surface = surface === 'drawer' ? Drawer : Modal;
   return (
     <>
       <Button variant={variant} size={size} onClick={() => { setIntent((n) => n + 1); setOpen(true); }}>
         {label}
       </Button>
-      <Modal open={open} onClose={() => setOpen(false)} title={confirmTitle ?? label}>
+      <Surface open={open} onClose={() => setOpen(false)} title={confirmTitle ?? label}>
+        {context ? <div className="sv-action-context">{context}</div> : null}
         <MutationForm
           key={intent}
           endpoint={endpoint}
@@ -140,7 +154,7 @@ export function RowActionButton({
           idField={idField}
           onVerified={() => setOpen(false)}
         />
-      </Modal>
+      </Surface>
     </>
   );
   void failure;

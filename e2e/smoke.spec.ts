@@ -476,3 +476,114 @@ test('the content column is centred on a wide screen', async ({ page }) => {
   expect(Math.abs(gaps.left - gaps.right)).toBeLessThanOrEqual(2);
   expect(gaps.left).toBeGreaterThan(0);
 });
+
+/* ------------------------------------------------------------------ *
+ * M-UI-3 — TODAY, the front-office command desk
+ * ------------------------------------------------------------------ */
+test('today opens on the operational day and answers what is happening', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.waitForSelector('.sv-summary');
+
+  await expect(page.locator('.sv-daynav__label')).toContainText('Today');
+  // Every summary tile is a real count, not a decorative card.
+  const tiles = await page.locator('.sv-summary__tile').count();
+  expect(tiles).toBe(7);
+  // An operations board never shows money.
+  await expect(page.locator('main')).not.toContainText('₹');
+  const text = (await page.locator('main').innerText()).toLowerCase();
+  for (const word of ['revenue', 'payout', 'profit', 'expense', 'revpar']) {
+    expect(text, `operations must not see ${word}`).not.toContain(word);
+  }
+});
+
+test('the day control steps through days and comes back, server-side', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.waitForSelector('.sv-daynav');
+  const shown = await page.locator('.sv-daynav__date').innerText();
+
+  await page.getByRole('button', { name: /Next day/ }).click();
+  await expect(page).toHaveURL(/date=\d{4}-\d{2}-\d{2}/);
+  await expect(page.locator('.sv-daynav__date')).not.toHaveText(shown);
+  // Browsing off today says so, rather than passing live queues off as history.
+  await expect(page.locator('.sv-daynote')).toContainText('right now');
+
+  await page.getByRole('button', { name: 'Back to today' }).click();
+  await expect(page).not.toHaveURL(/date=/);
+  await expect(page.locator('.sv-daynav__date')).toHaveText(shown);
+});
+
+test('an impossible date in the URL falls back instead of querying with it', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/today?date=2027-02-31');
+  await page.waitForSelector('.sv-daynav');
+  // Resolved server-side to the operational day: no error, no empty board.
+  await expect(page.locator('.sv-daynav__label')).toContainText('Today');
+  await expect(page.locator('.sv-summary')).toBeVisible();
+});
+
+test('a check-in runs the verified write path and the board re-reads', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.waitForSelector('.sv-summary');
+
+  const checkIn = page.getByRole('button', { name: 'Check in' }).first();
+  if (await checkIn.count() === 0) test.skip(true, 'no actionable arrival in the current demo state');
+
+  const inHouseBefore = Number(await page.locator('.sv-summary__tile')
+    .filter({ hasText: 'In house' }).locator('.sv-summary__value').innerText());
+
+  await checkIn.click();
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toHaveAttribute('aria-modal', 'true');
+  // The booking is in front of the person before they commit — and carries no figure.
+  await expect(drawer.locator('.sv-facts')).toContainText('Guest');
+  await expect(drawer).not.toContainText('₹');
+
+  await drawer.getByRole('button', { name: /Check in/ }).click();
+  // Success is reported only after the server verified, and the count moves with it.
+  await expect(page.locator('.sv-toast')).toContainText('checked in');
+  await expect(drawer).toHaveCount(0);
+  await expect.poll(async () => Number(await page.locator('.sv-summary__tile')
+    .filter({ hasText: 'In house' }).locator('.sv-summary__value').innerText()))
+    .toBe(inHouseBefore + 1);
+});
+
+test('today is keyboard-operable with a visible focus ring', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.waitForSelector('.sv-oprow');
+
+  const action = page.locator('.sv-oprow__action .sv-btn').first();
+  if (await action.count() === 0) test.skip(true, 'no actionable row in the current demo state');
+  // Real keyboard focus, so :focus-visible genuinely applies.
+  await action.focus();
+  await page.keyboard.press('Tab');
+  await action.focus();
+  const ring = await action.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { visible: el.matches(':focus-visible'), width: cs.outlineWidth, style: cs.outlineStyle };
+  });
+  expect(ring.visible).toBe(true);
+  expect(ring.style).not.toBe('none');
+  expect(parseFloat(ring.width)).toBeGreaterThanOrEqual(2);
+});
+
+test('an investor cannot open today, and sees no operational data', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await page.goto('/admin/operations/today');
+  await expect(page.locator('h1')).toContainText('Not available');
+  await expect(page.locator('.sv-summary')).toHaveCount(0);
+  await expect(page.locator('.sv-oprow')).toHaveCount(0);
+  // No guest name or booking reference reaches the response at all.
+  expect(await page.content()).not.toMatch(/BK-20\d{2}-\d{4}/);
+});
+
+for (const width of [375, 390, 768, 1024, 1440] as const) {
+  test(`today does not scroll sideways at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signInAs(page, 'Demo Operations Manager');
+    await page.waitForSelector('.sv-summary');
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `Today must not scroll sideways at ${width}px`).toBeLessThanOrEqual(0);
+  });
+}

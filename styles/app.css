@@ -1486,3 +1486,132 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Row actions ---- */
 .sv-row-actions { display: inline-flex; gap: var(--space-2); flex-wrap: wrap; }
+
+/* ==================================================================== *
+ * M-UI-3 — TODAY: the front-office command desk.
+ *
+ * Mobile-first: every row is a stacked operational card with its action
+ * reachable by one thumb, and becomes a three-column line once there is
+ * room. Nothing here carries a figure — this is an operations surface.
+ * ==================================================================== */
+
+/* ---- The day control ---- */
+.sv-daynav {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: var(--s-4);
+}
+.sv-daynav__current {
+  display: flex; flex-direction: column; line-height: 1.2;
+  margin-inline: var(--s-2); min-width: 0; flex: 1;
+}
+.sv-daynav__label {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+.sv-daynav__date {
+  font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600;
+  color: var(--text-primary);
+}
+.sv-daynav__icon--back { transform: rotate(180deg); }
+.sv-daynav__reset { flex: none; }
+@media (max-width: 560px) {
+  /* Thumb order on a phone: the day reads first, the steps sit under it. */
+  .sv-daynav { gap: var(--s-2); }
+  .sv-daynav__current { order: -1; flex-basis: 100%; margin-inline: 0; }
+  .sv-daynav__step-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .sv-daynav .sv-btn { flex: 1; }
+}
+
+/* A browsed day is not a historical snapshot, and the board says so. */
+.sv-daynote {
+  padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-4);
+  background: var(--surface-sunken);
+  border-left: 3px solid var(--warn-fg);
+  border-radius: 0 var(--r-2) var(--r-2) 0;
+  font-size: var(--t-small); color: var(--text-primary);
+  max-width: 78ch;
+}
+
+/* ---- Summary: the shape of the day, figures leading ---- */
+.sv-summary {
+  display: grid; gap: 1px;
+  grid-template-columns: repeat(auto-fit, minmax(min(7rem, 100%), 1fr));
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+  overflow: hidden;
+  margin-bottom: var(--s-5);
+}
+.sv-summary__tile {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--s-4) var(--s-3);
+  background: var(--surface-card);
+  min-width: 0;
+}
+.sv-summary__tile--attention { background: var(--warn-bg); }
+.sv-summary__tile--urgent { background: var(--bad-bg); }
+.sv-summary__value {
+  font-family: var(--font-display);
+  font-size: var(--t-kpi); font-weight: 600; line-height: 1.05;
+  color: var(--text-primary);
+}
+.sv-summary__label {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+
+/* ---- Operational rows: WHAT · WHERE · ACTION ---- */
+.sv-oplist { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.sv-oprow {
+  display: grid; gap: var(--s-2) var(--s-4);
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'what state' 'action action';
+  align-items: center;
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+.sv-oprow:last-child { border-bottom: none; }
+.sv-oprow__what { grid-area: what; min-width: 0; }
+.sv-oprow__state { grid-area: state; }
+.sv-oprow__action { grid-area: action; }
+/* One thumb, full width, on a phone. */
+.sv-oprow__action .sv-btn { width: 100%; }
+
+.sv-oprow__name { font-size: var(--t-body); font-weight: 600; color: var(--text-primary); }
+.sv-oprow__where { font-weight: 600; }
+.sv-oprow__meta { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; }
+.sv-oprow__stay { font-size: var(--text-label); color: var(--text-muted); margin-top: 2px; }
+.sv-oprow__done { font-size: var(--t-small); color: var(--text-muted); }
+
+@media (min-width: 640px) {
+  /* Room for the line: what, where it stands, and the action, left to right. */
+  .sv-oprow {
+    grid-template-columns: 1fr auto minmax(9rem, auto);
+    grid-template-areas: 'what state action';
+  }
+  .sv-oprow__action { justify-self: end; }
+  .sv-oprow__action .sv-btn { width: auto; }
+}
+
+/* ---- Facts inside an action drawer: the booking, before committing ---- */
+.sv-action-context {
+  padding: var(--s-4);
+  margin-bottom: var(--s-4);
+  background: var(--surface-sunken);
+  border-radius: var(--r-2);
+}
+.sv-facts {
+  display: grid; gap: var(--s-2) var(--s-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr));
+  margin: 0;
+}
+.sv-facts dt {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+.sv-facts dd { margin: 0; font-size: var(--t-small); color: var(--text-primary); }

@@ -170,6 +170,33 @@ export function cancelReservationFields(): FieldSpec[] {
   ];
 }
 
+/**
+ * Check-in and check-out ask for one thing: the time it happened.
+ *
+ * Both are OPTIONAL, because the server's schemas make them optional and the workbook
+ * carries no scheduled arrival time to check against — the time enters the system here
+ * or not at all. Neither action collects payment, a deposit or any figure: no such rule
+ * exists in this product, and inventing one on a front-office screen would be inventing
+ * a commercial term.
+ */
+export function checkInFields(): FieldSpec[] {
+  return [
+    {
+      name: 'checkInTime', label: 'Arrival time', type: 'time',
+      help: 'Optional. Leave blank if it is not being recorded.',
+    },
+  ];
+}
+
+export function checkOutFields(): FieldSpec[] {
+  return [
+    {
+      name: 'checkOutTime', label: 'Departure time', type: 'time',
+      help: 'Optional. Leave blank if it is not being recorded.',
+    },
+  ];
+}
+
 export function markCleanFields(): FieldSpec[] {
   return [
     { name: 'cleaner', label: 'Cleaned by', type: 'text', required: true },

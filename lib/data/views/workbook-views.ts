@@ -19,7 +19,9 @@ import {
   revenueNet, expenseTotal, capexLineTotal, pendingReceivables, pendingPayables, fyMonthKeysFor,
   activeUnitCount,
 } from '@/lib/server/analytics/kpi';
-import { serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial, edate } from '@/lib/shared/dates';
+import {
+  serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial, edate, resolveBoardDate,
+} from '@/lib/shared/dates';
 import {
   forecastOccupancy, forecastRevenue, forecastCashFlow, forecastVsActual, usableHistory,
   MINIMUM_USABLE_MONTHS,
@@ -424,14 +426,19 @@ export class WorkbookViews {
    * genuinely cannot supply is listed in `unavailable` so the UI shows "not tracked"
    * rather than a zero that reads like a real business outcome.
    */
-  private buildToday(): OperationsToday {
-    const today = isoToSerial(this.ops.today);
+  /**
+   * @param dateIso the day the MOVEMENT counts describe. Defaults to the operational day,
+   *   which is what the dashboard asks for. The remaining counters are live queues and do
+   *   not move with it — see OperationsBoardView.isOperationalDay.
+   */
+  private buildToday(dateIso: string = this.ops.today): OperationsToday {
+    const today = isoToSerial(dateIso);
     const arrivals = this.workbook.reservations.filter((b) => b.CheckInDate === today
       && (b.BookingStatus === 'Confirmed' || b.BookingStatus === 'Checked In')).length;
     const departures = this.workbook.reservations.filter((b) => b.CheckOutDate === today
       && (b.BookingStatus === 'Checked In' || b.BookingStatus === 'Checked Out')).length;
     return {
-      date: this.ops.today,
+      date: dateIso,
       checkIns: arrivals,
       checkOuts: departures,
       pendingCleaning: this.ops.housekeeping.filter((t) => OPEN_HOUSEKEEPING_STATUSES.includes(t.status)).length,
@@ -535,7 +542,15 @@ export class WorkbookViews {
    * the wrong decision at the wrong moment.
    */
   operations(filters: ReportFilters): OperationsBoardView {
-    const today = isoToSerial(this.ops.today);
+    /*
+     * Two dates, deliberately distinct. `operational` is the source's own day and governs
+     * everything that is LIVE (ticket age, the queues, unit status). `selected` is the day
+     * the reader asked for and governs the MOVEMENTS, which are genuinely addressable by
+     * booking date. Conflating them would present today's cleaning list as history.
+     */
+    const operational = isoToSerial(this.ops.today);
+    const selectedIso = resolveBoardDate(filters.date, this.ops.today);
+    const selected = isoToSerial(selectedIso);
     const property = filters.propertyId ?? null;
     const matches = (id: string) => !property || id === property;
 
@@ -547,15 +562,17 @@ export class WorkbookViews {
       guests: booking.Adults + booking.Children,
       platform: booking.Platform,
       status: booking.BookingStatus,
+      checkIn: booking.CheckInDate === null ? null : serialToIso(booking.CheckInDate),
+      checkOut: booking.CheckOutDate === null ? null : serialToIso(booking.CheckOutDate),
     });
 
     const arrivals = this.workbook.reservations
-      .filter((b) => b.CheckInDate === today && matches(b.PropertyID))
+      .filter((b) => b.CheckInDate === selected && matches(b.PropertyID))
       .filter((b) => b.BookingStatus === 'Confirmed' || b.BookingStatus === 'Checked In')
       .map(stay);
 
     const departures = this.workbook.reservations
-      .filter((b) => b.CheckOutDate === today && matches(b.PropertyID))
+      .filter((b) => b.CheckOutDate === selected && matches(b.PropertyID))
       .filter((b) => b.BookingStatus === 'Checked In' || b.BookingStatus === 'Checked Out')
       .map(stay);
 
@@ -571,7 +588,8 @@ export class WorkbookViews {
         ticketId: t.ticketId, propertyId: t.propertyId, category: t.category,
         description: t.description, priority: t.priority, status: t.status,
         reportedOn: t.reportedOn,
-        ageDays: t.reportedOn ? Math.max(0, today - isoToSerial(t.reportedOn)) : 0,
+        // Age is measured from the real day, never from a browsed one.
+        ageDays: t.reportedOn ? Math.max(0, operational - isoToSerial(t.reportedOn)) : 0,
       }))
       .sort((a, b) => PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority)
         || b.ageDays - a.ageDays);
@@ -603,8 +621,10 @@ export class WorkbookViews {
       }));
 
     return {
-      date: this.ops.today,
-      counters: this.buildToday(),
+      date: selectedIso,
+      operationalDate: this.ops.today,
+      isOperationalDay: selectedIso === this.ops.today,
+      counters: this.buildToday(selectedIso),
       urgent: this.buildUrgent(maintenance, cleaning, lowStock, guestRequests, arrivals),
       arrivals,
       departures,
