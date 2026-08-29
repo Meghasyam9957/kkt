@@ -1,5 +1,6 @@
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { OpsReservationsTable } from '@/components/pages/OpsTables';
+import { operationalReservationRows } from '@/lib/data/views/role-projections';
 import { NewRecordButton } from '@/components/mutations/actions';
 import { reservationFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
@@ -37,7 +38,9 @@ export default async function OpsReservationsPage({ searchParams }: { searchPara
       fetcher={(provider, f) => provider.getReservations(f)}
       actions={<NewReservationAction />}
     >
-      {(rows) => <OpsReservationsTable rows={rows} />}
+      {/* Projected for EVERY role: this screen is operational by design, so booking
+          values and payout fields are stripped server-side before anything renders. */}
+      {(rows) => <OpsReservationsTable rows={operationalReservationRows(rows)} />}
     </ReadOnlyPage>
   );
 }

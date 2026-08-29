@@ -11,6 +11,7 @@ import { FilterBar } from '@/components/shell/FilterBar';
 import { getDataProvider } from '@/lib/data/providers';
 import type { Envelope, ReportFilters, DashboardDataProvider } from '@/lib/data/providers/types';
 import { checkPageAccess } from '@/lib/server/auth/page-guard';
+import type { ShellSession } from '@/lib/server/auth/shell-session';
 import { AccessDenied } from '@/components/shell/AccessDenied';
 import { DemoAssumptionsNotice } from '@/components/demo/DemoAssumptionsNotice';
 import type { Capability } from '@/lib/shared/roles';
@@ -46,7 +47,12 @@ export async function ReadOnlyPage<T>({
   actions?: ReactNode;
 } & {
   title: string;
-  description: string;
+  /**
+   * A function form exists for the registers whose columns depend on the viewer's role:
+   * a description that promises figures the projection withholds would contradict the
+   * screen. Resolved only after the capability check passes.
+   */
+  description: string | ((viewer: ShellSession) => string);
   /**
    * Set on any screen whose figures depend on the commercial terms. In demo it renders the
    * assumptions notice; in production it renders nothing, because the notice does not exist
@@ -60,7 +66,12 @@ export async function ReadOnlyPage<T>({
   capability: Capability;
   searchParams: SearchParams;
   fetcher: (provider: DashboardDataProvider, filters: ReportFilters) => Promise<Envelope<T>>;
-  children: (data: T, envelope: Envelope<T>) => ReactNode;
+  /**
+   * `viewer` is the resolved session, so a page can choose a role-scoped projection
+   * before anything renders. This is where the operations financial boundary is applied —
+   * on the server, before the data reaches any component.
+   */
+  children: (data: T, envelope: Envelope<T>, viewer: ShellSession) => ReactNode;
   filters?: Array<'month' | 'property' | 'platform'>;
   showFilters?: boolean;
 }) {
@@ -75,7 +86,7 @@ export async function ReadOnlyPage<T>({
   let body: ReactNode;
   try {
     const envelope = await fetcher(provider, filters);
-    body = children(envelope.data, envelope);
+    body = children(envelope.data, envelope, access.session);
   } catch (error) {
     body = (
       <ErrorState message={
@@ -86,9 +97,12 @@ export async function ReadOnlyPage<T>({
     );
   }
 
+  const resolvedDescription =
+    typeof description === 'function' ? description(access.session) : description;
+
   return (
     <>
-      <PageHeader title={title} description={description} actions={actions} />
+      <PageHeader title={title} description={resolvedDescription} actions={actions} />
       {financial ? <Section><DemoAssumptionsNotice scope={financial} /></Section> : null}
       {showFilters ? (
         <Section>

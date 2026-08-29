@@ -18,8 +18,11 @@ import {
   resolveMaintenanceFields, markCleanFields, cancelReservationFields,
 } from '@/lib/server/api/form-fields';
 import type {
-  ReservationRow, ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow,
+  ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow,
 } from '@/lib/data/providers/types';
+// The PROJECTED row type, not the full one: payout figures do not exist on these props,
+// so this table cannot render one even by mistake (lib/data/views/role-projections.ts).
+import type { OperationalReservationRow } from '@/lib/data/views/role-projections';
 
 const BOOKING_TONE: Record<string, Tone> = {
   Confirmed: 'info', 'Checked In': 'good', 'Checked Out': 'neutral',
@@ -41,8 +44,8 @@ const PRIORITY_TONE: Record<string, Tone> = {
  * Reservations (operational columns only — no payout figures here)
  * ------------------------------------------------------------------ */
 
-export function OpsReservationsTable({ rows }: { rows: ReservationRow[] }) {
-  const columns: Column<ReservationRow>[] = [
+export function OpsReservationsTable({ rows }: { rows: OperationalReservationRow[] }) {
+  const columns: Column<OperationalReservationRow>[] = [
     { key: 'id', header: 'Booking', render: (r) => <code className="numeric">{r.bookingId}</code> },
     { key: 'property', header: 'Property', render: (r) => r.propertyId },
     { key: 'guest', header: 'Guest', render: (r) => r.guestDisplayName },
@@ -79,7 +82,7 @@ export function OpsReservationsTable({ rows }: { rows: ReservationRow[] }) {
 
 /** Which lifecycle actions a booking legally offers. The SERVER re-checks on submit —
  *  this only keeps dead buttons off the board. */
-function ReservationActions({ row }: { row: ReservationRow }) {
+function ReservationActions({ row }: { row: OperationalReservationRow }) {
   const base = `/api/reservations/${row.bookingId}`;
   return (
     <span className="sv-row-actions">

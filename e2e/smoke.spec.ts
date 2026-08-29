@@ -283,3 +283,61 @@ test('an investor cannot open the copilot', async ({ page }) => {
   await expect(page.locator('main')).toContainText(/[Nn]ot available/);
   await expect(page.getByLabel(/ask the copilot/i)).toHaveCount(0);
 });
+
+/* ------------------------------------------------------------------ *
+ * M-UI-0 — the operations financial boundary, proven in the real response
+ * ------------------------------------------------------------------ */
+test('operations opens the unit register without financial columns or values', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/properties?month=2027-01');
+  await page.waitForSelector('.sv-table');
+
+  const main = page.locator('main');
+  await expect(main).not.toContainText('Net revenue');
+  await expect(main).not.toContainText('Profit');
+  await expect(main).not.toContainText('₹');
+  await expect(main).toContainText('Status');
+  await expect(main).toContainText('HYD-501');
+
+  // Not merely undisplayed: the field names must be absent from the whole response —
+  // HTML and any serialized payload alike. A value never projected cannot appear here.
+  const content = await page.content();
+  expect(content).not.toMatch(/netRevenue|directOperatingExpenses|revPar/);
+});
+
+test('operations opens reservations without money — and the API serves figures to nobody', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/reservations?month=2027-01');
+  await page.waitForSelector('.sv-table');
+
+  const main = page.locator('main');
+  await expect(main).not.toContainText('Gross value');
+  await expect(main).not.toContainText('Expected payout');
+  await expect(main).not.toContainText('₹');
+
+  const content = await page.content();
+  expect(content).not.toMatch(/grossValue|expectedPayout|actualPayout|payoutStatus/);
+
+  // The register read routes are unimplemented over HTTP, for every role — a direct
+  // request cannot fetch what the page projection withheld.
+  for (const apiPath of ['/api/properties', '/api/reservations']) {
+    const res = await page.request.get(apiPath);
+    expect(res.status(), apiPath).toBe(501);
+  }
+});
+
+test('admin keeps the financial registers intact', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+
+  await page.goto('/admin/properties?month=2027-01');
+  await page.waitForSelector('.sv-table');
+  await expect(page.locator('main')).toContainText('Net revenue');
+  await expect(page.locator('main')).toContainText('Profit');
+  await expect(page.locator('main')).toContainText('₹');
+
+  await page.goto('/admin/reservations?month=2027-01');
+  await page.waitForSelector('.sv-table');
+  await expect(page.locator('main')).toContainText('Gross value');
+  await expect(page.locator('main')).toContainText('Expected payout');
+  await expect(page.locator('main')).toContainText('₹');
+});

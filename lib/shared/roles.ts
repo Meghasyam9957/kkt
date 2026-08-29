@@ -126,6 +126,17 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
   'investors.write', 'distributions.write',
 ];
 
+/**
+ * True when the role holds ANY financial capability — the column gate for the shared
+ * registers (/admin/properties, /admin/reservations), which OPERATIONS may open for their
+ * operational columns while the financial columns stay with the roles the money screens
+ * belong to. Derived from the grants table at call time, so it can never disagree with
+ * FINANCIAL_CAPABILITIES or with a future change to a role's grants.
+ */
+export function roleSeesFinancialFigures(role: Role): boolean {
+  return FINANCIAL_CAPABILITIES.some((capability) => roleHasCapability(role, capability));
+}
+
 /** Every mutation capability. INVESTOR must hold none of these — asserted in tests. */
 export const WRITE_CAPABILITIES: readonly Capability[] = [
   'reservations.write', 'revenue.write', 'expenses.write', 'capex.write',
