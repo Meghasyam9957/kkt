@@ -226,7 +226,11 @@ describe('focus visibility', () => {
     expect(tokens()).toContain('--focus-ring-inverse: var(--brand-gold-light)');
     const source = app();
     expect(source).toMatch(/:focus-visible\s*{\s*outline:\s*2px solid var\(--focus-ring\)/);
-    expect(source).toMatch(/\.sv-sidebar :focus-visible[^{]*{\s*outline-color:\s*var\(--focus-ring-inverse\)/);
+    // The rail is LIGHT since M-UI-2, so the olive ring is correct there; the surfaces
+    // that stayed olive (skip link, primary buttons) take the gold-light inverse ring.
+    expect(source).toMatch(/\.sv-skip-link:focus-visible[^{]*{\s*outline-color:\s*var\(--focus-ring-inverse\)/);
+    expect(source).not.toMatch(/\.sv-sidebar :focus-visible/);
+    expect(source).toMatch(/\.sv-sidebar\s*{[^}]*background:\s*var\(--surface-sunken\)/);
   });
 });
 

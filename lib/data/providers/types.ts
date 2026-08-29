@@ -89,6 +89,13 @@ export interface KpiValue {
 
 export type UnitStatus = 'Occupied' | 'Available' | 'Cleaning' | 'Maintenance' | 'Blocked';
 
+/** A unit as a person refers to it: the name leads, the internal ID identifies. */
+export interface PropertyOption {
+  id: string;
+  /** The Unit name from the property master (e.g. "5th Floor — 2 BHK"); never invented. */
+  name: string;
+}
+
 /** A property row for the status board: performance plus its live operational state. */
 export interface PropertyBoardRow extends PropertyPerformance {
   bhkType: string;
@@ -352,6 +359,11 @@ export interface DashboardDataProvider {
   getPlatforms(): Promise<string[]>;
   /** Property IDs for the filter bar. Comes from the source, never from a fixture list. */
   getPropertyIds(): Promise<string[]>;
+  /**
+   * Identity for humans: each unit's ID with its name from the property master. Carries
+   * NO performance or financial fields by construction, so any role's shell may hold it.
+   */
+  getPropertyDirectory(): Promise<PropertyOption[]>;
   /**
    * Provenance and freshness for the app shell, without fetching a view. Must never
    * throw: the header has to be able to say "source unavailable" rather than taking the

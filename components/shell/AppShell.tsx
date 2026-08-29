@@ -63,6 +63,8 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Desktop rail collapse (§17.1): 64px, icons with tooltips. Session-local by intent.
+  const [collapsed, setCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
@@ -94,9 +96,36 @@ export function AppShell({
 
   const showBell = granted.has('operations.view');
 
+  /*
+   * INVESTOR SHELL (§17.3) — not "admin with the menu emptied". No rail, no breadcrumb,
+   * no operational chrome: a masthead with the lockup and the person's name, their
+   * environment facts, and their content. Server-side isolation is untouched — this is
+   * presentation; every read stays scoped by the session on the server.
+   */
+  if (user.role === 'INVESTOR') {
+    return (
+      <ToastProvider>
+        <div className="sv-shell sv-shell--investor">
+          <a className="sv-skip-link" href="#main">Skip to main content</a>
+          <header className="sv-invmast">
+            <div className="sv-invmast__brand">
+              <SrivilluLogo assets={brandAssets} />
+              <span className="sv-invmast__audience">Investor</span>
+            </div>
+            <div className="sv-invmast__context">
+              <EnvironmentStatus environment={environment} meta={meta} />
+              <UserCluster user={user} />
+            </div>
+          </header>
+          <main id="main" className="sv-content sv-content--investor">{children}</main>
+        </div>
+      </ToastProvider>
+    );
+  }
+
   return (
     <ToastProvider>
-    <div className="sv-shell">
+    <div className={`sv-shell ${collapsed ? 'sv-shell--railmin' : ''}`}>
       <a className="sv-skip-link" href="#main">Skip to main content</a>
 
       {/* ---------- Sidebar ---------- */}
@@ -125,6 +154,7 @@ export function AppShell({
                         className={`sv-nav__link ${active ? 'sv-nav__link--active' : ''}`}
                         aria-current={active ? 'page' : undefined}
                         onClick={closeMobile}
+                        {...(collapsed ? { title: item.label } : {})}
                       >
                         {icon ? <span className="sv-nav__icon"><Icon name={icon} size={18} /></span> : null}
                         <span className="sv-nav__label">{item.label}</span>
@@ -141,6 +171,19 @@ export function AppShell({
           <p className="sv-sidebar__foot-name">{BRAND.name}</p>
           <p className="sv-sidebar__foot-meta">{BRAND.city} · 4 units</p>
         </div>
+
+        {/* Desktop only (CSS hides it below 1024, where the rail is a drawer). */}
+        <button
+          type="button"
+          className="sv-sidebar__collapse"
+          aria-pressed={collapsed}
+          aria-label={collapsed ? 'Expand the navigation rail' : 'Collapse the navigation rail'}
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          <span className={`sv-sidebar__collapse-icon ${collapsed ? 'sv-sidebar__collapse-icon--flipped' : ''}`}>
+            <Icon name="chevronRight" size={16} />
+          </span>
+        </button>
       </aside>
 
       {mobileOpen ? (
@@ -202,24 +245,7 @@ export function AppShell({
               </Link>
             ) : null}
 
-            <div className="sv-user">
-              <span className="sv-user__text">
-                <span className="sv-user__name">{user.name}</span>
-                <span className="sv-user__role">{user.role.replace('_', ' ').toLowerCase()}</span>
-              </span>
-              {/* The avatar IS the switch-account control, so the affordance survives the
-                  smallest screens where the "Switch" text is hidden. */}
-              <a
-                className="sv-user__signout"
-                href="/signin"
-                aria-label={`Signed in as ${user.name} — switch account`}
-              >
-                <span className="sv-user__avatar" aria-hidden="true">
-                  {user.name.split(' ').map((p) => p[0]).slice(0, 2).join('')}
-                </span>
-                <span className="sv-user__switch">Switch</span>
-              </a>
-            </div>
+            <UserCluster user={user} />
           </div>
         </header>
 
@@ -227,5 +253,29 @@ export function AppShell({
       </div>
     </div>
     </ToastProvider>
+  );
+}
+
+/** Name, role and the switch-account control — shared by the admin and investor shells. */
+function UserCluster({ user }: { user: SessionUser }) {
+  return (
+    <div className="sv-user">
+      <span className="sv-user__text">
+        <span className="sv-user__name">{user.name}</span>
+        <span className="sv-user__role">{user.role.replace('_', ' ').toLowerCase()}</span>
+      </span>
+      {/* The avatar IS the switch-account control, so the affordance survives the
+          smallest screens where the "Switch" text is hidden. */}
+      <a
+        className="sv-user__signout"
+        href="/signin"
+        aria-label={`Signed in as ${user.name} — switch account`}
+      >
+        <span className="sv-user__avatar" aria-hidden="true">
+          {user.name.split(' ').map((p) => p[0]).slice(0, 2).join('')}
+        </span>
+        <span className="sv-user__switch">Switch</span>
+      </a>
+    </div>
   );
 }

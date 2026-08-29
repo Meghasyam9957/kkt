@@ -72,6 +72,7 @@ export class DemoGridProvider implements DashboardDataProvider {
   async getAvailableMonths() { return (await this.ensure()).getAvailableMonths(); }
   async getPlatforms() { return (await this.ensure()).getPlatforms(); }
   async getPropertyIds() { return (await this.ensure()).getPropertyIds(); }
+  async getPropertyDirectory() { return (await this.ensure()).getPropertyDirectory(); }
   async getSourceMeta(): Promise<DataMeta> { return (await this.ensure()).getSourceMeta(); }
 }
 

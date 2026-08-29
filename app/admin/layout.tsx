@@ -57,7 +57,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const [availableMonths, availablePlatforms, availableProperties, meta] = await Promise.all([
     provider.getAvailableMonths(),
     provider.getPlatforms(),
-    provider.getPropertyIds(),
+    // Identity, not bare IDs: the filter shows "5th Floor — 2 BHK · HYD-501". Names come
+    // from the property master's Unit column — real data, never invented.
+    provider.getPropertyDirectory(),
     // Provenance comes FROM the provider rather than being assumed here. Asserting
     // "GOOD" in the layout would let the header claim live data was current when the
     // last fetch had actually failed.

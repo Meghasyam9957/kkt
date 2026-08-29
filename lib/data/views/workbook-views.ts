@@ -301,6 +301,11 @@ export class WorkbookViews {
     return this.workbook.properties.map((p) => p.PropertyID);
   }
 
+  /** Identity only — ID and Unit name from the master, no performance fields. */
+  propertyDirectory(): Array<{ id: string; name: string }> {
+    return this.workbook.properties.map((p) => ({ id: p.PropertyID, name: p.Unit }));
+  }
+
   /* ---------------- dashboard ---------------- */
 
   dashboard(filters: ReportFilters): DashboardView {

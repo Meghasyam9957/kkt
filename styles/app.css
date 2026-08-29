@@ -41,10 +41,9 @@ a { color: inherit; text-decoration: none; }
   outline-offset: 2px;
   border-radius: 2px;
 }
-/* §21 — the ring must be visible on WHATEVER it sits on. An olive ring on the olive
-   rail (1.45:1) was invisible exactly where keyboard users need it most; on olive
-   surfaces the ring is gold-light instead. */
-.sv-sidebar :focus-visible,
+/* §21 — the ring must be visible on WHATEVER it sits on. The remaining olive surfaces
+   (skip link, primary buttons) take the gold-light inverse ring; the rail is light now
+   (M-UI-2), so the standard olive ring is correct there. */
 .sv-skip-link:focus-visible,
 .sv-btn--primary:focus-visible {
   outline-color: var(--focus-ring-inverse);
@@ -78,18 +77,22 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-shell { display: flex; min-height: 100vh; }
 
+/* §17.1 — the LIGHT rail: cream-deep, hairline on the right, olive ink. The dark olive
+   slab read as a heavy admin tool; the verandah ledger's chrome is paper, not panel. */
 .sv-sidebar {
   width: var(--nav-width);
   flex: 0 0 var(--nav-width);
-  background: var(--surface-inverse);
-  color: var(--brand-cream);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  border-right: 1px solid var(--line);
   display: flex; flex-direction: column;
   position: sticky; top: 0; height: 100vh; overflow-y: auto;
 }
 
 .sv-sidebar__brand {
   padding: var(--space-5) var(--space-4) var(--space-4);
-  border-bottom: 1px solid rgba(250, 246, 236, 0.12);
+  background: var(--surface-page);
+  border-bottom: 1px solid var(--line);
 }
 
 .sv-logo { display: inline-flex; align-items: center; gap: var(--space-3); }
@@ -121,49 +124,86 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-nav__section { margin-bottom: var(--space-5); }
 .sv-nav__section-title {
   font-size: var(--text-label); letter-spacing: 0.16em; text-transform: uppercase;
-  color: rgba(250, 246, 236, 0.45);
+  color: var(--text-muted);
   padding: 0 var(--space-3); margin-bottom: var(--space-2);
 }
 .sv-nav__list { display: flex; flex-direction: column; gap: 1px; }
 .sv-nav__link {
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
-  padding: 7px var(--space-3);
-  font-size: 0.875rem; color: rgba(250, 246, 236, 0.82);
+  min-height: 36px; padding: 7px var(--space-3);
+  font-size: 0.875rem; color: var(--text-brand);
   border-radius: var(--radius-sm);
+  /* Active is a 2px olive rule on the left edge — position carries state, weight
+     confirms it, and colour never has to do the job alone. */
   border-left: 2px solid transparent;
   transition: background var(--motion-fast) var(--ease-standard);
 }
-.sv-nav__link:hover { background: rgba(250, 246, 236, 0.07); color: var(--brand-cream); }
+.sv-nav__link:hover { background: var(--surface-page); color: var(--brand-green-dark); }
+/* 36px is the pointer height (§17.1); fingers get the 44px floor. */
+@media (pointer: coarse) { .sv-nav__link { min-height: 44px; } }
 .sv-nav__link--active {
-  background: rgba(201, 162, 39, 0.14);
-  color: var(--brand-cream);
-  border-left-color: var(--brand-gold);
-  font-weight: 500;
+  background: var(--surface-page);
+  color: var(--brand-green-dark);
+  border-left-color: var(--brand-green);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-weight: 600;
 }
 .sv-nav__badge {
   font-size: var(--text-label); letter-spacing: 0.06em; text-transform: uppercase;
   padding: 2px 6px; border-radius: var(--radius-full);
-  background: rgba(250, 246, 236, 0.12); color: rgba(250, 246, 236, 0.7);
+  background: var(--surface-page); color: var(--text-muted);
+  border: 1px solid var(--line);
 }
 
 .sv-sidebar__foot {
   padding: var(--space-4);
-  border-top: 1px solid rgba(250, 246, 236, 0.12);
+  border-top: 1px solid var(--line);
   font-size: 0.75rem;
 }
 .sv-sidebar__foot-name { font-family: var(--font-display); font-size: 0.9375rem; }
-.sv-sidebar__foot-meta { color: rgba(250, 246, 236, 0.5); font-size: 0.6875rem; }
+.sv-sidebar__foot-meta { color: var(--text-muted); font-size: var(--text-label); }
+
+/* ---- Rail collapse (§17.1): 64px, icons only, tooltips via title. Desktop only —
+   below 1024 the rail is an off-canvas drawer and collapsing it is meaningless. ---- */
+.sv-sidebar__collapse {
+  display: none;
+  align-items: center; justify-content: center;
+  margin: 0 var(--space-2) var(--space-3);
+  padding: var(--space-2);
+  background: none; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  color: var(--text-muted); cursor: pointer;
+}
+.sv-sidebar__collapse:hover { background: var(--surface-page); color: var(--text-primary); }
+.sv-sidebar__collapse-icon { display: inline-flex; transform: rotate(180deg); }
+.sv-sidebar__collapse-icon--flipped { transform: rotate(0deg); }
+@media (min-width: 1024px) {
+  .sv-sidebar__collapse { display: inline-flex; }
+  .sv-shell--railmin .sv-sidebar {
+    width: var(--nav-width-collapsed);
+    flex-basis: var(--nav-width-collapsed);
+  }
+  .sv-shell--railmin .sv-nav { padding-inline: 6px; }
+  .sv-shell--railmin .sv-nav__label,
+  .sv-shell--railmin .sv-nav__section-title,
+  .sv-shell--railmin .sv-nav__badge,
+  .sv-shell--railmin .sv-sidebar__foot,
+  .sv-shell--railmin .sv-logo__text { display: none; }
+  .sv-shell--railmin .sv-nav__link { justify-content: center; padding-inline: 0; }
+  .sv-shell--railmin .sv-sidebar__brand { padding-inline: var(--space-2); text-align: center; }
+}
 
 .sv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
 /* ---- Top bar ---- */
 
+/* §17.1 — the masthead strip: on the page itself, separated by a hairline, not a white
+   app bar. Breadcrumb left, context cluster right; the page's serif title sits below. */
 .sv-topbar {
   height: var(--topbar-height);
   display: flex; align-items: center; gap: var(--space-4);
   padding: 0 var(--space-5);
-  background: var(--surface-card);
-  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-page);
+  border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: var(--z-topbar);
 }
 .sv-topbar__menu {
@@ -246,6 +286,29 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   position: fixed; inset: 0; z-index: var(--z-scrim);
   background: rgba(23, 25, 15, 0.45); border: none; cursor: pointer;
 }
+
+/* ---- Investor shell (§17.3): no rail, no operational chrome. A masthead with the
+   lockup and the person's name; their statements read like a document, not a console. ---- */
+.sv-shell--investor { display: block; }
+.sv-invmast {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3) var(--space-4); flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-page);
+  border-bottom: 1px solid var(--line);
+}
+.sv-invmast__brand { display: flex; align-items: baseline; gap: var(--space-3); min-width: 0; }
+.sv-invmast__audience {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase;
+  color: var(--gold-deep); font-weight: 600;
+}
+.sv-invmast__context {
+  display: flex; align-items: center; gap: var(--space-4);
+  margin-left: auto; min-width: 0; flex-wrap: nowrap;
+}
+/* Scoped selector so it outranks .sv-content's 1360 cap regardless of source order:
+   an investor statement reads as a document, not a console — 960 max, centred. */
+.sv-shell--investor .sv-content--investor { max-width: 960px; margin-inline: auto; }
 
 /* ------------------------------------------------------------------ *
  * Content
@@ -504,11 +567,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Filters ---- */
 
+/* §14 — the filter bar is a ledger row, not a floating white card: hairlines above and
+   below, controls on the page itself. */
 .sv-filters {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 .sv-filter { display: flex; flex-direction: column; gap: 4px; }
 .sv-filter__label {
@@ -766,11 +831,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   .sv-copilot { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 860px) {
+/* §20 — below the desktop rung the rail is an off-canvas drawer. 1023 aligns the shell
+   with the documented breakpoints (phone <640 · tablet 640–1023 · desktop ≥1024). */
+@media (max-width: 1023px) {
   .sv-sidebar {
     position: fixed; z-index: var(--z-nav); left: 0; top: 0;
     transform: translateX(-100%);
     transition: transform var(--motion-base) var(--ease-standard);
+    border-right: none;
   }
   .sv-sidebar--open { transform: translateX(0); box-shadow: var(--shadow-raised); }
   .sv-topbar__menu { display: inline-flex; }
@@ -1220,12 +1288,11 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- DEFECT FIXES ---- */
 
-/* #3 — the lockup was only ever styled for the green sidebar; on light surfaces the
-   cream wordmark vanished. Scope: dark lockup inside the sidebar, ink lockup elsewhere. */
+/* #3 — one lockup treatment everywhere now that the rail is light (M-UI-2): olive
+   wordmark, gold-deep tagline, on every surface. The cream-on-dark variant died with
+   the dark sidebar. */
 .sv-logo__word { color: var(--brand-green); }
 .sv-logo__tagline { color: var(--gold-deep); }
-.sv-sidebar .sv-logo__word { color: var(--brand-cream); }
-.sv-sidebar .sv-logo__tagline { color: var(--brand-gold-light); }
 
 /* #4 — at phone widths the top bar's right cluster overflowed the viewport (scrollWidth
    541 at 390). The cluster may never widen the page: facts collapse, text hides, and the

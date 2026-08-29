@@ -114,3 +114,13 @@ export function freshnessFromTimestamp(iso: string, now: Date = new Date()): 'GO
   const minutes = (now.getTime() - then) / 60000;
   return minutes < 15 ? 'GOOD' : 'STALE';
 }
+
+/**
+ * Human-first unit identity: the name leads, the internal ID identifies. Falls back to
+ * the bare ID when the master carries no name — never to an invented one.
+ */
+export function propertyOptionLabel(option: { id: string; name: string }): string {
+  const name = option.name?.trim();
+  if (!name || name === option.id) return option.id;
+  return `${name} · ${option.id}`;
+}

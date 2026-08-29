@@ -242,6 +242,11 @@ export class GoogleSheetsDashboardDataProvider implements DashboardDataProvider 
     return views.propertyIds();
   }
 
+  async getPropertyDirectory() {
+    const { views } = await this.views();
+    return views.propertyDirectory();
+  }
+
   /**
    * Header metadata. Never throws: if the workbook cannot be read and nothing is cached,
    * the shell must still render and say the source is unavailable — a failed header is

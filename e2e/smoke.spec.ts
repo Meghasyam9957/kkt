@@ -13,10 +13,10 @@ async function signInAs(page: Page, label: string): Promise<void> {
   await page.goto('/signin');
   await page.getByRole('button', { name: new RegExp(label) }).click();
   // `/admin` is a redirect hop to the role's landing screen; waiting for the URL alone
-  // resolves mid-redirect and later steps race the second navigation. The shell's
-  // sidebar only exists once the landing page has actually rendered.
+  // resolves mid-redirect and later steps race the second navigation. `main#main` exists
+  // in every shell variant (the investor shell has no sidebar) once the page rendered.
   await page.waitForURL(/\/admin\/(dashboard|portfolio|operations)/);
-  await page.waitForSelector('.sv-sidebar');
+  await page.waitForSelector('main#main');
 }
 
 /* ------------------------------------------------------------------ *
@@ -51,11 +51,12 @@ test('the wordmark is legible on the sign-in card (not cream on white)', async (
   expect(color, 'wordmark must be olive ink on light surfaces').toBe('rgb(79, 95, 44)');
 });
 
-test('the wordmark stays cream inside the green sidebar', async ({ page }) => {
+test('the wordmark is olive on the light rail (M-UI-2 shell)', async ({ page }) => {
   await signInAs(page, 'Demo Administrator');
   const word = page.locator('.sv-sidebar .sv-logo__word').first();
   await expect(word).toBeVisible();
-  expect(await word.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(250, 246, 236)');
+  // One lockup treatment everywhere: the cream-on-dark variant died with the dark rail.
+  expect(await word.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(79, 95, 44)');
 });
 
 /* ------------------------------------------------------------------ *
@@ -278,7 +279,9 @@ test('the copilot page does not overflow sideways on a phone', async ({ page }) 
 
 test('an investor cannot open the copilot', async ({ page }) => {
   await signInAs(page, 'Investor Demo A');
-  await expect(page.locator('.sv-sidebar')).not.toContainText('Copilot');
+  // Since M-UI-2 the investor shell has NO rail at all — stronger than "no Copilot link".
+  await expect(page.locator('.sv-sidebar')).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('Copilot');
   await page.goto('/admin/ai');
   await expect(page.locator('main')).toContainText(/[Nn]ot available/);
   await expect(page.getByLabel(/ask the copilot/i)).toHaveCount(0);
@@ -340,4 +343,73 @@ test('admin keeps the financial registers intact', async ({ page }) => {
   await expect(page.locator('main')).toContainText('Gross value');
   await expect(page.locator('main')).toContainText('Expected payout');
   await expect(page.locator('main')).toContainText('₹');
+});
+
+/* ------------------------------------------------------------------ *
+ * M-UI-2 — shell, navigation IA, role-aware entry
+ * ------------------------------------------------------------------ */
+test('the front door lands every signed-in role on its own home', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/admin\/operations\/today/);
+
+  await page.goto('/signin');
+  await signInAs(page, 'Investor Demo A');
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/admin\/portfolio/);
+  await expect(page.locator('body')).not.toContainText('Not available for your role');
+});
+
+test('the investor shell is not the admin shell', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await expect(page.locator('.sv-sidebar')).toHaveCount(0);
+  await expect(page.locator('.sv-breadcrumb')).toHaveCount(0);
+  await expect(page.locator('.sv-invmast')).toBeVisible();
+  await expect(page.locator('.sv-invmast__audience')).toContainText('Investor');
+  await expect(page.locator('h1')).toContainText('Portfolio');
+  // Nothing operational or financial-management in their chrome.
+  await expect(page.locator('.sv-invmast')).not.toContainText('Dashboard');
+  await expect(page.locator('a.sv-topbar__icon')).toHaveCount(0);
+});
+
+test('operations navigation says Bookings once and never shows the booking ledger', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  const labels = await page.locator('.sv-nav__label').allInnerTexts();
+  expect(labels.filter((l) => l === 'Bookings')).toHaveLength(1);
+  expect(labels).not.toContain('Booking Ledger');
+  expect(labels).not.toContain('Reservations');
+  expect(labels.join(' ')).not.toMatch(/Revenue|Expenses|P&L|Investors|Settings/);
+});
+
+test('admin navigation is honest: one Settings, a Booking Ledger under Finance, no aliases', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+  const labels = await page.locator('.sv-nav__label').allInnerTexts();
+  expect(labels.filter((l) => l === 'Settings')).toHaveLength(1);
+  expect(labels).not.toContain('Compliance');
+  expect(labels).not.toContain('Audit');
+  expect(labels).toContain('Booking Ledger');
+  // The Finance breadcrumb segment is a real destination now.
+  await page.goto('/admin/finance');
+  await expect(page).toHaveURL(/\/admin\/finance\/revenue/);
+});
+
+test('the rail collapses to icons on desktop and comes back', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signInAs(page, 'Demo Administrator');
+  const rail = page.locator('.sv-sidebar');
+  const wide = (await rail.boundingBox())!.width;
+  await page.getByRole('button', { name: 'Collapse the navigation rail' }).click();
+  await expect.poll(async () => (await rail.boundingBox())!.width).toBeLessThan(80);
+  await expect(page.locator('.sv-nav__label').first()).toBeHidden();
+  await page.getByRole('button', { name: 'Expand the navigation rail' }).click();
+  await expect.poll(async () => (await rail.boundingBox())!.width).toBe(wide);
+});
+
+test('the property filter names units in human terms, ID second', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+  await page.goto('/admin/properties?month=2027-01');
+  await page.waitForSelector('.sv-filters');
+  const options = await page.locator('.sv-filter select').nth(1).locator('option').allInnerTexts();
+  expect(options).toContain('5th Floor — 2 BHK · HYD-501');
+  expect(options).not.toContain('HYD-501');
 });

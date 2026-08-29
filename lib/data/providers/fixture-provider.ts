@@ -157,6 +157,10 @@ export class FixtureDashboardDataProvider implements DashboardDataProvider {
     return this.views.propertyIds();
   }
 
+  async getPropertyDirectory() {
+    return this.views.propertyDirectory();
+  }
+
   async getSourceMeta(): Promise<DataMeta> {
     return this.meta(this.views.currentMonth());
   }

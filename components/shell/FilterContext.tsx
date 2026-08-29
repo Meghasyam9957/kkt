@@ -13,12 +13,12 @@
  */
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import type { ReportFilters } from '@/lib/data/providers/types';
+import type { ReportFilters, PropertyOption } from '@/lib/data/providers/types';
 
 interface FilterContextValue {
   filters: ReportFilters;
   availableMonths: string[];
-  availableProperties: string[];
+  availableProperties: PropertyOption[];
   availablePlatforms: string[];
   setMonth(month: string): void;
   setProperty(propertyId: string | null): void;
@@ -35,7 +35,7 @@ export function FilterProvider({
   children: ReactNode;
   defaultMonth: string;
   availableMonths: string[];
-  availableProperties: string[];
+  availableProperties: PropertyOption[];
   availablePlatforms: string[];
 }) {
   const router = useRouter();

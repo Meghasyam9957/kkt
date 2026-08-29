@@ -7,7 +7,7 @@
  * mobile the platform's own picker is better than anything custom.
  */
 import { useFilters } from './FilterContext';
-import { formatMonthLong } from '@/lib/shared/format';
+import { formatMonthLong, propertyOptionLabel } from '@/lib/shared/format';
 
 export function FilterBar({ show = ['month', 'property', 'platform'] }: {
   show?: Array<'month' | 'property' | 'platform'>;
@@ -43,7 +43,9 @@ export function FilterBar({ show = ['month', 'property', 'platform'] }: {
             onChange={(e) => setProperty(e.target.value || null)}
           >
             <option value="">All properties</option>
-            {availableProperties.map((id) => <option key={id} value={id}>{id}</option>)}
+            {availableProperties.map((option) => (
+              <option key={option.id} value={option.id}>{propertyOptionLabel(option)}</option>
+            ))}
           </select>
         </label>
       ) : null}

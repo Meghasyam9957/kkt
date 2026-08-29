@@ -40,7 +40,6 @@ export const NAVIGATION: NavSection[] = [
     title: 'Property',
     items: [
       { label: 'Properties', href: '/admin/properties', capability: 'properties.read' },
-      { label: 'Reservations', href: '/admin/reservations', capability: 'reservations.read' },
     ],
   },
   {
@@ -63,6 +62,15 @@ export const NAVIGATION: NavSection[] = [
     title: 'Finance',
     items: [
       { label: 'Revenue', href: '/admin/finance/revenue', capability: 'revenue.read' },
+      /*
+       * "Bookings" is the ONE user-facing booking concept, and it lives under
+       * Operations (the working screen). This entry is the financial VIEW of the same
+       * bookings — gross value and expected payout — so it sits with the money screens
+       * under a ledger name, and its menu visibility follows a financial capability.
+       * The page itself keeps `reservations.read` plus the role projection, so a
+       * direct visit by operations still renders the money-free columns.
+       */
+      { label: 'Booking Ledger', href: '/admin/reservations', capability: 'revenue.read' },
       { label: 'Expenses', href: '/admin/finance/expenses', capability: 'expenses.read' },
       { label: 'CAPEX', href: '/admin/finance/capex', capability: 'capex.read' },
       { label: 'Cash Flow', href: '/admin/finance/cashflow', capability: 'cashflow.read' },
@@ -103,9 +111,13 @@ export const NAVIGATION: NavSection[] = [
   {
     title: 'System',
     items: [
-      { label: 'Compliance', href: '/admin/settings', capability: 'compliance.read' },
+      /*
+       * ONE entry, because one screen exists. "Compliance" and "Audit" used to sit here
+       * as aliases of the same route — three labels lighting up for one page is a menu
+       * telling a story the application cannot back. Dedicated compliance and audit
+       * screens are future milestones; until they exist they are not links.
+       */
       { label: 'Settings', href: '/admin/settings', capability: 'settings.read' },
-      { label: 'Audit', href: '/admin/settings', capability: 'audit.read' },
     ],
   },
 ];
