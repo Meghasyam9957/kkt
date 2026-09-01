@@ -32,7 +32,7 @@ import { useCallback, useId, useRef, useState } from 'react';
 import {
   Badge, Button, ConfigurationRequired, ErrorState, LoadingBlock, StatusPill,
 } from '@/components/ui/primitives';
-import { SrivilluMark } from '@/components/shell/Logo';
+import { MakamMark } from '@/components/shell/Logo';
 import {
   copilotViewState, copilotShowsAnswer, copilotRefusalKind, copilotBudgetNotable,
   type CopilotViewState,
@@ -181,7 +181,7 @@ export function CopilotConsole() {
 function Opening() {
   return (
     <>
-      <SrivilluMark size={44} />
+      <MakamMark size={44} />
       <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.25rem', fontWeight: 600 }}>
         Ask about the business
       </p>

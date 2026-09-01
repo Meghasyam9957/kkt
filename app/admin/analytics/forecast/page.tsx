@@ -7,7 +7,7 @@ import type {
   ForecastEstimate, ForecastAccuracy, ConfidenceAssessment,
 } from '@/lib/server/analytics/forecast';
 
-export const metadata = { title: 'Forecast — Srivillu Home Stays' };
+export const metadata = { title: 'Forecast — MAKAM Home Stays' };
 
 export default async function ForecastPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

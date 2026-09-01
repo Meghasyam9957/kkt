@@ -29,7 +29,7 @@ import { formatCurrency, formatPercent, formatMonthLong } from '@/lib/shared/for
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'Portfolio — Srivillu Home Stays' };
+export const metadata = { title: 'Portfolio — MAKAM Home Stays' };
 
 export default async function PortfolioPage() {
   const access = await checkPageAccess('investor.self.read');
@@ -42,7 +42,7 @@ export default async function PortfolioPage() {
     // already refuses an investor without a mapping — so it is a last line, not a path.
     return (
       <>
-        <PageHeader title="Portfolio" description="Your investment in Srivillu Home Stays." />
+        <PageHeader title="Portfolio" description="Your investment in MAKAM Home Stays." />
         <Section>
           <EmptyState
             title="No investor record is linked to this account"

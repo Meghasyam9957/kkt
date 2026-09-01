@@ -3,7 +3,7 @@ import { Card, CardHeader, CardBody, TableScroller } from '@/components/ui/primi
 import { formatCurrency, formatPercent } from '@/lib/shared/format';
 import type { PnlView } from '@/lib/data/providers/types';
 
-export const metadata = { title: 'P&L — Srivillu Home Stays' };
+export const metadata = { title: 'P&L — MAKAM Home Stays' };
 
 export default async function PnlPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

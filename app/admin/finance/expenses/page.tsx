@@ -4,7 +4,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { expenseFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 
-export const metadata = { title: 'Expenses — Srivillu Home Stays' };
+export const metadata = { title: 'Expenses — MAKAM Home Stays' };
 
 /**
  * The "+ New Expense" flow. An async server component so the property options come from

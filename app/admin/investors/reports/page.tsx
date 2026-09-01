@@ -3,7 +3,7 @@ import { Card, CardHeader, CardBody, EmptyState, ConfigurationRequired } from '@
 import { formatMonthLong } from '@/lib/shared/format';
 import type { InvestorPreviewView } from '@/lib/data/providers/types';
 
-export const metadata = { title: 'Investor Reports — Srivillu Home Stays' };
+export const metadata = { title: 'Investor Reports — MAKAM Home Stays' };
 
 export default async function InvestorReportsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

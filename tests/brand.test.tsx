@@ -23,7 +23,7 @@ import {
   __resetBrandAssetCache, brandAssetsMissing,
 } from '@/lib/server/brand/assets';
 import { BRAND, BRAND_ASSET_SPECS, NO_BRAND_ASSETS, type BrandAssetSet } from '@/lib/shared/brand';
-import { SrivilluLogo, SrivilluMark } from '@/components/shell/Logo';
+import { MakamLogo, MakamMark } from '@/components/shell/Logo';
 
 const ROOT = process.cwd();
 const BRAND_DIR = path.join(ROOT, 'public', 'brand');
@@ -96,14 +96,14 @@ describe('brand · intrinsic dimensions are read from the file', () => {
 
   it('an unmeasurable file is treated as absent, not rendered blind', () => {
     // Rendering a file whose proportions we cannot determine is how logos get squashed.
-    const placed = placeIfAbsent('/brand/srivillu-logo.png', Buffer.from('corrupt bytes'));
+    const placed = placeIfAbsent('/brand/makam-logo.png', Buffer.from('corrupt bytes'));
     if (!placed) return;                        // real artwork present; nothing to prove here
-    expect(measureBrandAsset('/brand/srivillu-logo.png')).toBeNull();
+    expect(measureBrandAsset('/brand/makam-logo.png')).toBeNull();
   });
 
   it('measures a file that is actually on disk', () => {
-    const placed = placeIfAbsent('/brand/srivillu-logo.png', pngWithSize(1024, 256));
-    const asset = measureBrandAsset('/brand/srivillu-logo.png');
+    const placed = placeIfAbsent('/brand/makam-logo.png', pngWithSize(1024, 256));
+    const asset = measureBrandAsset('/brand/makam-logo.png');
     expect(asset).not.toBeNull();
     if (placed) {
       expect(asset!.width).toBe(1024);
@@ -122,7 +122,7 @@ describe('brand · intrinsic dimensions are read from the file', () => {
 describe('brand · asset resolution', () => {
   it('reports both roles as absent when nothing has been delivered', () => {
     const assets = resolveBrandAssets();
-    const anyRealFileExists = ['srivillu-logo.png', 'srivillu-logo.svg', 'srivillu-mark.svg', 'srivillu-mark.png']
+    const anyRealFileExists = ['makam-logo.png', 'makam-logo.svg', 'makam-mark.svg', 'makam-mark.png']
       .some((f) => fs.existsSync(path.join(BRAND_DIR, f)));
     if (anyRealFileExists) {
       // Artwork has been delivered — then resolution must FIND it.
@@ -135,20 +135,20 @@ describe('brand · asset resolution', () => {
   });
 
   it('prefers the vector logo when both formats are supplied', () => {
-    const svgPlaced = placeIfAbsent('/brand/srivillu-logo.svg',
+    const svgPlaced = placeIfAbsent('/brand/makam-logo.svg',
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100"></svg>');
-    const pngPlaced = placeIfAbsent('/brand/srivillu-logo.png', pngWithSize(1200, 400));
+    const pngPlaced = placeIfAbsent('/brand/makam-logo.png', pngWithSize(1200, 400));
     if (!svgPlaced || !pngPlaced) return;       // real artwork present; ordering not ours to assert
 
     __resetBrandAssetCache();
     const assets = resolveBrandAssets();
-    expect(assets.logo?.src).toBe('/brand/srivillu-logo.svg');
+    expect(assets.logo?.src).toBe('/brand/makam-logo.svg');
     // The candidate list is the contract; the resolver must follow it in order.
-    expect(BRAND_ASSET_SPECS.logo.candidates[0]).toBe('/brand/srivillu-logo.svg');
+    expect(BRAND_ASSET_SPECS.logo.candidates[0]).toBe('/brand/makam-logo.svg');
   });
 
   it('resolves the mark independently of the full logo', () => {
-    const placed = placeIfAbsent('/brand/srivillu-mark.svg',
+    const placed = placeIfAbsent('/brand/makam-mark.svg',
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"></svg>');
     __resetBrandAssetCache();
     const assets = resolveBrandAssets();
@@ -158,8 +158,8 @@ describe('brand · asset resolution', () => {
 
   it('the expected drop location is documented for whoever supplies the artwork', () => {
     const readme = fs.readFileSync(path.join(BRAND_DIR, 'README.md'), 'utf8');
-    expect(readme).toContain('srivillu-logo.png');
-    expect(readme).toContain('srivillu-mark.svg');
+    expect(readme).toContain('makam-logo.png');
+    expect(readme).toContain('makam-mark.svg');
   });
 });
 
@@ -168,23 +168,23 @@ describe('brand · asset resolution', () => {
  * ================================================================== */
 
 const LOGO: BrandAssetSet = {
-  logo: { src: '/brand/srivillu-logo.png', width: 1000, height: 250, aspectRatio: 4 },
-  mark: { src: '/brand/srivillu-mark.svg', width: 64, height: 64, aspectRatio: 1 },
+  logo: { src: '/brand/makam-logo.png', width: 1000, height: 250, aspectRatio: 4 },
+  mark: { src: '/brand/makam-mark.svg', width: 64, height: 64, aspectRatio: 1 },
 };
 
 describe('brand · rendering', () => {
   it('renders the supplied artwork as an image, not as drawn shapes', () => {
-    const { container } = render(<SrivilluLogo assets={LOGO} />);
+    const { container } = render(<MakamLogo assets={LOGO} />);
     const img = container.querySelector('img.sv-logo__image') as HTMLImageElement;
     expect(img).not.toBeNull();
-    expect(img.getAttribute('src')).toBe('/brand/srivillu-logo.png');
+    expect(img.getAttribute('src')).toBe('/brand/makam-logo.png');
     expect(img.getAttribute('alt')).toBe(BRAND.name);
     // The placeholder mark must be gone entirely — not hidden, not layered underneath.
     expect(container.querySelector('svg.sv-mark')).toBeNull();
   });
 
   it('pins height and leaves width automatic, so the file ratio always wins', () => {
-    const { container } = render(<SrivilluLogo assets={LOGO} />);
+    const { container } = render(<MakamLogo assets={LOGO} />);
     const img = container.querySelector('img.sv-logo__image') as HTMLImageElement;
 
     // Intrinsic size is declared, so the browser reserves the correct box before load.
@@ -197,28 +197,28 @@ describe('brand · rendering', () => {
   });
 
   it('uses the compact mark in compact contexts, never the full lockup scaled down', () => {
-    const { container } = render(<SrivilluLogo assets={LOGO} compact />);
+    const { container } = render(<MakamLogo assets={LOGO} compact />);
     const img = container.querySelector('img.sv-logo__image') as HTMLImageElement;
-    expect(img.getAttribute('src')).toBe('/brand/srivillu-mark.svg');
+    expect(img.getAttribute('src')).toBe('/brand/makam-mark.svg');
     expect(img.style.height).toBe(`${BRAND_ASSET_SPECS.mark.renderHeight}px`);
     // The wordmark is not rendered at compact size — it would be illegible.
     expect(screen.queryByText(BRAND.tagline)).toBeNull();
   });
 
   it('falls back to the typographic lockup when nothing is delivered', () => {
-    render(<SrivilluLogo assets={NO_BRAND_ASSETS} />);
+    render(<MakamLogo assets={NO_BRAND_ASSETS} />);
     expect(screen.getByText(BRAND.wordmark)).toBeInTheDocument();
     expect(screen.getByText(BRAND.tagline)).toBeInTheDocument();
     expect(screen.getByRole('img', { name: BRAND.name })).toBeInTheDocument();
   });
 
   it('defaults to the fallback when no assets prop is supplied at all', () => {
-    render(<SrivilluLogo />);
+    render(<MakamLogo />);
     expect(screen.getByText(BRAND.wordmark)).toBeInTheDocument();
   });
 
   it('degrades in steps when a file fails to load in the browser', () => {
-    const { container } = render(<SrivilluLogo assets={LOGO} />);
+    const { container } = render(<MakamLogo assets={LOGO} />);
 
     // Step 1 — the full lockup fails. The wordmark becomes real text, and the mark (a
     // different file, which may well still be reachable) carries the identity.
@@ -226,7 +226,7 @@ describe('brand · rendering', () => {
     expect(screen.getByText(BRAND.wordmark)).toBeInTheDocument();
     expect(screen.getByText(BRAND.tagline)).toBeInTheDocument();
     const remaining = container.querySelector('img.sv-logo__image') as HTMLImageElement;
-    expect(remaining.getAttribute('src')).toBe('/brand/srivillu-mark.svg');
+    expect(remaining.getAttribute('src')).toBe('/brand/makam-mark.svg');
 
     // Step 2 — the mark fails too (the whole asset path is unreachable). Only now does
     // the drawn placeholder appear, and the brand is still legible as text.
@@ -237,13 +237,13 @@ describe('brand · rendering', () => {
   });
 
   it('the compact mark also degrades gracefully', () => {
-    const { container } = render(<SrivilluMark size={24} assets={LOGO} />);
+    const { container } = render(<MakamMark size={24} assets={LOGO} />);
     fireEvent.error(container.querySelector('img')!);
     expect(container.querySelector('svg.sv-mark')).not.toBeNull();
   });
 
   it('the fallback mark is a neutral placeholder, not a reconstruction of the badge', () => {
-    const { container } = render(<SrivilluMark size={32} />);
+    const { container } = render(<MakamMark size={32} />);
     const svg = container.querySelector('svg.sv-mark')!;
     // A redrawn badge would need far more geometry than this. Keep it plainly a stand-in.
     expect(svg.querySelectorAll('path, circle, rect, polygon, ellipse').length).toBeLessThanOrEqual(6);
@@ -252,7 +252,7 @@ describe('brand · rendering', () => {
   });
 
   it('the fallback uses palette tokens rather than hard-coded colour', () => {
-    const { container } = render(<SrivilluMark size={32} />);
+    const { container } = render(<MakamMark size={32} />);
     const markup = container.innerHTML;
     expect(markup).toContain('var(--brand-');
     expect(markup).not.toMatch(/fill="#[0-9a-f]{3,6}"/i);

@@ -8,7 +8,7 @@ import { FilterBar } from '@/components/shell/FilterBar';
 import { DashboardContent } from '@/components/dashboard/DashboardView';
 import { formatMonthLong } from '@/lib/shared/format';
 
-export const metadata = { title: 'Dashboard — Srivillu Home Stays' };
+export const metadata = { title: 'Dashboard — MAKAM Home Stays' };
 
 export default async function DashboardPage({
   searchParams,

@@ -4,7 +4,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { maintenanceFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 
-export const metadata = { title: 'Maintenance — Srivillu Home Stays' };
+export const metadata = { title: 'Maintenance — MAKAM Home Stays' };
 
 async function NewIssueAction() {
   const propertyIds = await getDataProvider().getPropertyIds();

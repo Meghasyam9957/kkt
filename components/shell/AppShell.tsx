@@ -27,7 +27,7 @@ import { BRAND, NO_BRAND_ASSETS, type BrandAssetSet } from '@/lib/shared/brand';
 import { Icon, NAV_ICONS } from '@/components/ui/icons';
 import { useFocusTrap, useInertOutside } from '@/components/ui/focus';
 import { ToastProvider } from '@/components/ui/toast';
-import { SrivilluLogo, SrivilluMark } from './Logo';
+import { MakamLogo, MakamMark } from './Logo';
 import { EnvironmentStatus } from './EnvironmentStatus';
 import type { DataMeta } from '@/lib/data/providers/types';
 import type { PublicEnvironmentInfo } from '@/lib/shared/environment';
@@ -112,7 +112,7 @@ export function AppShell({
           <a className="sv-skip-link" href="#main">Skip to main content</a>
           <header className="sv-invmast">
             <div className="sv-invmast__brand">
-              <SrivilluLogo assets={brandAssets} />
+              <MakamLogo assets={brandAssets} />
               <span className="sv-invmast__audience">Investor</span>
             </div>
             <div className="sv-invmast__context">
@@ -139,7 +139,7 @@ export function AppShell({
         aria-label="Primary navigation"
       >
         <div className="sv-sidebar__brand">
-          <SrivilluLogo assets={brandAssets} />
+          <MakamLogo assets={brandAssets} />
           {/* The drawer's own exit, inside the trapped subtree — so dismissal never
               depends on the scrim or on a hardware Escape key. Drawer-only by CSS. */}
           {mobileOpen ? (
@@ -223,7 +223,7 @@ export function AppShell({
             aria-controls="sv-primary-nav"
             onClick={() => setMobileOpen((v) => !v)}
           >
-            <SrivilluMark size={24} assets={brandAssets} />
+            <MakamMark size={24} assets={brandAssets} />
             <Icon name="menu" size={20} />
           </button>
 

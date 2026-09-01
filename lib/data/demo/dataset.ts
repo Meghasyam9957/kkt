@@ -37,7 +37,7 @@ import { fillDistributionPending } from '@/lib/server/analytics/kpi';
 import { computeRentSchedule } from '@/lib/server/analytics/rent';
 
 /** Stamped on the dataset and asserted by tests. Nothing production-shaped carries it. */
-export const DEMO_MARKER = 'SRIVILLU-DEMO';
+export const DEMO_MARKER = 'MAKAM-DEMO';
 
 /** Appended to every free-text field the V1 contract provides, so a row is identifiable. */
 export const DEMO_NOTE = '[DEMO] Fictional demonstration record.';

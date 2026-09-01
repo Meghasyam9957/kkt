@@ -4,7 +4,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable';
 import { formatCurrency, formatPercent } from '@/lib/shared/format';
 import type { InvestorPreviewView, InvestorRegisterRow } from '@/lib/data/providers/types';
 
-export const metadata = { title: 'Investors — Srivillu Home Stays' };
+export const metadata = { title: 'Investors — MAKAM Home Stays' };
 
 export default async function InvestorsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

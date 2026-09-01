@@ -116,7 +116,7 @@ export const NAV_ICONS: Readonly<Record<string, IconName>> = {
   Reports: 'report',
   Performance: 'performance',
   Forecast: 'forecast',
-  'Srivillu Copilot': 'copilot',
+  'MAKAM Copilot': 'copilot',
   Compliance: 'compliance',
   Settings: 'settings',
   Audit: 'audit',

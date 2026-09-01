@@ -74,7 +74,7 @@ export const DEMO_INVESTORS: InvestorRecord[] = [
  * and the UI shows CONFIGURATION REQUIRED. Populating these would fabricate an agreement.
  */
 export const DEMO_SETTINGS: BusinessSettings = {
-  businessName: 'Srivillu Home Stays',
+  businessName: 'MAKAM Home Stays',
   city: 'Hyderabad',
   country: 'India',
   currency: '₹',

@@ -5,7 +5,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { reservationFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 
-export const metadata = { title: 'Reservations — Operations — Srivillu Home Stays' };
+export const metadata = { title: 'Reservations — Operations — MAKAM Home Stays' };
 
 async function NewReservationAction() {
   const provider = getDataProvider();

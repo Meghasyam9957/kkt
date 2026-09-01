@@ -20,7 +20,7 @@ function NewCashAction() {
   );
 }
 
-export const metadata = { title: 'Cash Flow — Srivillu Home Stays' };
+export const metadata = { title: 'Cash Flow — MAKAM Home Stays' };
 
 export default async function CashFlowPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

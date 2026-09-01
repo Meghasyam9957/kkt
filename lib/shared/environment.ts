@@ -49,7 +49,7 @@ export const ENVIRONMENT_DESCRIPTORS: Record<AppEnv, EnvironmentDescriptor> = {
     env: 'production',
     name: 'PRODUCTION',
     banner: null,
-    dataSourceLabel: 'Srivillu Operations Workbook',
+    dataSourceLabel: 'MAKAM Operations Workbook',
     demoControls: false,
   },
 };

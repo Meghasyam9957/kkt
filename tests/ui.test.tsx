@@ -240,7 +240,7 @@ describe('5 · demo mode is unmistakable', () => {
     expect(screen.queryByText('DEMO / UAT')).toBeNull();
     expect(screen.queryByText(/DEMO/)).toBeNull();
     expect(screen.getByText('PRODUCTION')).toBeDefined();
-    expect(screen.getByText('Srivillu Operations Workbook')).toBeDefined();
+    expect(screen.getByText('MAKAM Operations Workbook')).toBeDefined();
   });
 
   it('every fixture payload is marked demo', async () => {

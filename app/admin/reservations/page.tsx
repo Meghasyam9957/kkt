@@ -4,7 +4,7 @@ import { OpsReservationsTable } from '@/components/pages/OpsTables';
 import { operationalReservationRows } from '@/lib/data/views/role-projections';
 import { roleSeesFinancialFigures } from '@/lib/shared/roles';
 
-export const metadata = { title: 'Reservations — Srivillu Home Stays' };
+export const metadata = { title: 'Reservations — MAKAM Home Stays' };
 
 /**
  * Shared register, role-scoped columns. A role with no financial capability gets the

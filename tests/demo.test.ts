@@ -53,7 +53,7 @@ describe('demo dataset · a full fictional operation', () => {
     expect(dataset.demo).toBe(true);
   });
 
-  it('covers the four Srivillu units', () => {
+  it('covers the four MAKAM units', () => {
     expect(dataset.workbook.properties.map((p) => p.PropertyID))
       .toEqual(['HYD-501', 'HYD-502', 'HYD-601', 'HYD-602']);
     const types = Object.fromEntries(dataset.workbook.properties.map((p) => [p.PropertyID, p.BHKType]));

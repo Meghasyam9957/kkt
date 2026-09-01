@@ -4,7 +4,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable';
 import { formatPercent, formatDate } from '@/lib/shared/format';
 import type { SettingsView } from '@/lib/data/providers/types';
 
-export const metadata = { title: 'Settings — Srivillu Home Stays' };
+export const metadata = { title: 'Settings — MAKAM Home Stays' };
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

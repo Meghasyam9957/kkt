@@ -21,7 +21,7 @@ async function NewRevenueAction() {
   );
 }
 
-export const metadata = { title: 'Revenue — Srivillu Home Stays' };
+export const metadata = { title: 'Revenue — MAKAM Home Stays' };
 
 export default async function RevenuePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

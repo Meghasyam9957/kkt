@@ -298,7 +298,7 @@ describe('invariant 7 · switching APP_ENV is deliberate and visible', () => {
     expect(production.name).toBe('PRODUCTION');
     // Production has no banner text at all, so it cannot render a demo badge.
     expect(production.banner).toBeNull();
-    expect(production.dataSourceLabel).toBe('Srivillu Operations Workbook');
+    expect(production.dataSourceLabel).toBe('MAKAM Operations Workbook');
   });
 
   it('an unrecognised APP_ENV is refused rather than guessed', () => {

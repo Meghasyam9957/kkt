@@ -73,7 +73,7 @@ export function buildGuestJourney(now: Date = new Date()): GuestJourney {
       title: 'Guest views their stay information',
       detail: 'Check-in and check-out dates, the unit, house rules and the Wi-Fi details.',
       response: `${propertyId} · check-out ${session?.checkOut ?? '—'} at 11:00. `
-        + 'Wi-Fi: SRIVILLU-GUEST. House rules: no smoking indoors, quiet hours after 10 PM.',
+        + 'Wi-Fi: MAKAM-GUEST. House rules: no smoking indoors, quiet hours after 10 PM.',
       watchFor: 'Nothing internal is shown — no rates, no payouts, no other guests.',
     },
     {

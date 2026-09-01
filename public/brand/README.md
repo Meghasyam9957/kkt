@@ -1,4 +1,4 @@
-# Brand assets — Srivillu Home Stays
+# Brand assets — MAKAM Home Stays
 
 ## Drop the artwork here
 
@@ -7,19 +7,19 @@ present on the next request and uses it.
 
 | File | Required? | Used for |
 |---|---|---|
-| `srivillu-logo.png` | **yes** — the master | sidebar header, sign-in, print |
-| `srivillu-logo.svg` | preferred if available | same, but crisp at any size — tried first |
-| `srivillu-mark.svg` | **yes** | collapsed sidebar, mobile bar, favicon, avatar |
-| `srivillu-mark.png` | optional fallback | used only if the SVG mark is absent |
+| `makam-logo.png` | **yes** — the master | sidebar header, sign-in, print |
+| `makam-logo.svg` | preferred if available | same, but crisp at any size — tried first |
+| `makam-mark.svg` | **yes** | collapsed sidebar, mobile bar, favicon, avatar |
+| `makam-mark.png` | optional fallback | used only if the SVG mark is absent |
 | `og-image.png` (1200×630) | optional | link previews |
 
-The **mark** is the cottage-and-arc **without** the wordmark. It is a separate file because
+The **mark** is the badge **without** the wordmark. It is a separate file because
 the full badge is illegible below about 48 px, which is exactly the size the collapsed
 sidebar and the favicon need.
 
 ## How the app uses them
 
-- **Vector first.** `srivillu-logo.svg` is tried before the PNG; the mark likewise.
+- **Vector first.** `makam-logo.svg` is tried before the PNG; the mark likewise.
 - **Dimensions are read from the file** — the PNG header, or the SVG `viewBox`. Nothing is
   hard-coded, so whatever proportions you supply are the proportions rendered.
 - **Height is pinned, width is never set.** The file's own aspect ratio always wins, so no
@@ -29,7 +29,8 @@ sidebar and the favicon need.
 - **Absence is a normal state.** Until the files land, the shell shows a typographic
   lockup — the wordmark as text plus a neutral placeholder mark built from the palette in
   `lib/shared/brand.ts`. It is a stand-in, **not** a reconstruction of your badge; the app
-  never redraws the logo.
+  never redraws the logo. **The MAKAM artwork has not been delivered yet, so this is what
+  the shell is showing today** — the wordmark "MAKAM" as text beside a neutral mark.
 - **Failure degrades in steps.** If the full lockup fails to load in the browser: mark plus
   wordmark text. If that fails too: placeholder mark plus wordmark text. The brand stays
   legible at every stage.
@@ -42,7 +43,7 @@ refresh. In production it is resolved once at startup — redeploy after changin
 ## Usage rules
 
 - **Clear space:** at least 25% of the badge diameter on all sides.
-- **Minimum size:** 120 px for the full badge; below that use `srivillu-mark.svg`.
+- **Minimum size:** 120 px for the full badge; below that use `makam-mark.svg`.
 - **Background:** the cream `--brand-cream`. On photography, place it on a solid cream
   disc — never straight onto an image.
 - **Do not** recolour, stretch, rotate, add effects, or reset the wordmark in another

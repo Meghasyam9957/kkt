@@ -5,7 +5,7 @@ import { formatCurrency, formatPercent, formatMonthLong } from '@/lib/shared/for
 import type { InvestorPreviewView } from '@/lib/data/providers/types';
 import type { InvestorAllocation } from '@/lib/shared/domain';
 
-export const metadata = { title: 'Distributions — Srivillu Home Stays' };
+export const metadata = { title: 'Distributions — MAKAM Home Stays' };
 
 export default async function DistributionsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

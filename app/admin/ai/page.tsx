@@ -3,7 +3,7 @@ import { checkPageAccess } from '@/lib/server/auth/page-guard';
 import { AccessDenied } from '@/components/shell/AccessDenied';
 import { CopilotConsole } from '@/components/copilot/CopilotConsole';
 
-export const metadata = { title: 'Srivillu Copilot — Srivillu Home Stays' };
+export const metadata = { title: 'MAKAM Copilot — MAKAM Home Stays' };
 
 /**
  * Copilot shell.
@@ -25,7 +25,7 @@ export default async function CopilotPage() {
   return (
     <>
       <PageHeader
-        title="Srivillu Copilot"
+        title="MAKAM Copilot"
         description="A management assistant that answers from the operational data — never from memory, and never from invention."
       />
       <Section>

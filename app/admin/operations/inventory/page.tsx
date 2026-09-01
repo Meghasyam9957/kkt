@@ -2,7 +2,7 @@ import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { InventoryTable } from '@/components/pages/OpsTables';
 import { inventoryMovementFields } from '@/lib/server/api/form-fields';
 
-export const metadata = { title: 'Inventory — Srivillu Home Stays' };
+export const metadata = { title: 'Inventory — MAKAM Home Stays' };
 
 export default async function InventoryPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

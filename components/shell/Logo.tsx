@@ -25,7 +25,7 @@ export interface LogoProps {
   compact?: boolean;
 }
 
-export function SrivilluLogo({ assets = NO_BRAND_ASSETS, compact = false }: LogoProps) {
+export function MakamLogo({ assets = NO_BRAND_ASSETS, compact = false }: LogoProps) {
   // In the compact lockup only the mark shows, so that is the asset that matters there.
   const asset = compact ? assets.mark : assets.logo;
   const height = compact ? BRAND_ASSET_SPECS.mark.renderHeight : BRAND_ASSET_SPECS.logo.renderHeight;
@@ -41,7 +41,7 @@ export function SrivilluLogo({ assets = NO_BRAND_ASSETS, compact = false }: Logo
 
   return (
     <span className={`sv-logo ${compact ? 'sv-logo--compact' : ''}`}>
-      <SrivilluMark size={compact ? 28 : 36} assets={assets} />
+      <MakamMark size={compact ? 28 : 36} assets={assets} />
       {!compact ? (
         <span className="sv-logo__text">
           <span className="sv-logo__word">{BRAND.wordmark}</span>
@@ -56,7 +56,7 @@ export function SrivilluLogo({ assets = NO_BRAND_ASSETS, compact = false }: Logo
  * Compact mark for the collapsed sidebar, mobile header and favicon slot.
  * The full badge is illegible below ~48px, which is why this contract exists separately.
  */
-export function SrivilluMark({ size = 32, assets = NO_BRAND_ASSETS }: {
+export function MakamMark({ size = 32, assets = NO_BRAND_ASSETS }: {
   size?: number;
   assets?: BrandAssetSet;
 }) {
@@ -72,7 +72,9 @@ export function SrivilluMark({ size = 32, assets = NO_BRAND_ASSETS }: {
       aria-label={BRAND.name} className="sv-mark"
     >
       <circle cx="20" cy="20" r="19" fill="var(--brand-cream)" stroke="var(--brand-green)" strokeWidth="1.5" />
-      {/* Roofline and doorway — a neutral stand-in echoing the cottage in the badge. */}
+      {/* Roofline and doorway — a neutral placeholder in the brand palette. It is NOT a
+          rendition of the MAKAM logo: the official artwork has not been supplied, and
+          guessing at it is exactly what this component must never do. */}
       <path d="M11 20.5 L20 13 L29 20.5" fill="none" stroke="var(--brand-terracotta)"
         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M13.5 20.5 V28 H26.5 V20.5" fill="none" stroke="var(--brand-green)"

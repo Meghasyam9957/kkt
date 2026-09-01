@@ -1,16 +1,22 @@
 /**
- * Brand tokens — Srivillu Home Stays.
+ * Brand tokens — MAKAM Home Stays.
  *
- * Values are sampled from the supplied logo badge. Treat them as the working palette and
- * confirm against the master artwork before print; if a brand guide exists, that wins.
+ * The product was previously branded Srivillu; MAKAM is the current user-facing brand.
+ * This object is the ONLY place the name is written — page titles, the shell, the
+ * sign-in screen and the live business-name fallback all derive from it, so a future
+ * rename is one edit here rather than a sweep.
+ *
+ * The palette is unchanged by the rename: it was sampled from the badge and re-approved
+ * as the Verandah Ledger system, which is an internal design-system name and stays.
+ * Confirm against the master artwork before print; if a brand guide exists, that wins.
  *
  * These are the ONLY places colour is defined. Components consume the tokens, never hex.
  */
 
 export const BRAND = {
-  name: 'Srivillu Home Stays',
-  shortName: 'Srivillu',
-  wordmark: 'Srivillu',
+  name: 'MAKAM Home Stays',
+  shortName: 'MAKAM',
+  wordmark: 'MAKAM',
   tagline: 'Home Stays',
   city: 'Hyderabad',
 } as const;
@@ -71,9 +77,9 @@ export const BRAND_TYPOGRAPHY = {
 } as const;
 
 export const BRAND_ASSETS = {
-  logo: '/brand/srivillu-logo.png',
-  logoSvg: '/brand/srivillu-logo.svg',
-  mark: '/brand/srivillu-mark.svg',
+  logo: '/brand/makam-logo.png',
+  logoSvg: '/brand/makam-logo.svg',
+  mark: '/brand/makam-mark.svg',
   ogImage: '/brand/og-image.png',
 } as const;
 
@@ -92,7 +98,7 @@ export const BRAND_ASSETS = {
 export type BrandAssetRole = 'logo' | 'mark';
 
 export interface BrandAsset {
-  /** Public URL, e.g. '/brand/srivillu-logo.png'. */
+  /** Public URL, e.g. '/brand/makam-logo.png'. */
   src: string;
   /** Intrinsic pixel size read from the file itself. Used to reserve space (no CLS). */
   width: number;
@@ -119,7 +125,7 @@ export const BRAND_ASSET_SPECS = {
   logo: {
     role: 'logo' as const,
     /** Vector first when supplied; the PNG is the guaranteed master. */
-    candidates: ['/brand/srivillu-logo.svg', '/brand/srivillu-logo.png'],
+    candidates: ['/brand/makam-logo.svg', '/brand/makam-logo.png'],
     contexts: ['sidebar header', 'sign-in screen', 'printed statements'],
     /** Rendered height in the app shell, in px. Width follows the intrinsic ratio. */
     renderHeight: 40,
@@ -127,7 +133,7 @@ export const BRAND_ASSET_SPECS = {
   },
   mark: {
     role: 'mark' as const,
-    candidates: ['/brand/srivillu-mark.svg', '/brand/srivillu-mark.png'],
+    candidates: ['/brand/makam-mark.svg', '/brand/makam-mark.png'],
     contexts: ['collapsed sidebar', 'mobile top bar', 'favicon', 'avatar'],
     renderHeight: 28,
     minHeight: 16,

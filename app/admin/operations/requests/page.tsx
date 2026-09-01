@@ -1,7 +1,7 @@
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { GuestRequestsTable } from '@/components/pages/OpsTables';
 
-export const metadata = { title: 'Guest Requests — Srivillu Home Stays' };
+export const metadata = { title: 'Guest Requests — MAKAM Home Stays' };
 
 export default async function GuestRequestsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

@@ -7,7 +7,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { capexFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 
-export const metadata = { title: 'CAPEX — Srivillu Home Stays' };
+export const metadata = { title: 'CAPEX — MAKAM Home Stays' };
 
 async function NewCapexAction() {
   const propertyIds = await getDataProvider().getPropertyIds();

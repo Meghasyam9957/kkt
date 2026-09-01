@@ -3,7 +3,7 @@ import { FinancialPropertyTable, OperationalPropertyTable } from '@/components/p
 import { operationalPropertyRows } from '@/lib/data/views/role-projections';
 import { roleSeesFinancialFigures } from '@/lib/shared/roles';
 
-export const metadata = { title: 'Properties — Srivillu Home Stays' };
+export const metadata = { title: 'Properties — MAKAM Home Stays' };
 
 /**
  * The register is shared, its columns are not. A role with no financial capability gets

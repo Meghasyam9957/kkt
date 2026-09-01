@@ -5,7 +5,7 @@ import { RevenueTrendChart, OccupancyTrendChart } from '@/components/charts/Char
 import { formatCurrency, formatPercent, formatMonthShort } from '@/lib/shared/format';
 import type { MonthlyMetrics } from '@/lib/shared/domain';
 
-export const metadata = { title: 'Performance — Srivillu Home Stays' };
+export const metadata = { title: 'Performance — MAKAM Home Stays' };
 
 export default async function PerformancePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

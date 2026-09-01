@@ -116,14 +116,14 @@ describe('role menus', () => {
     for (const expected of ['Today', 'Bookings', 'Check-ins', 'Check-outs', 'Housekeeping', 'Maintenance', 'Inventory', 'Guest Requests', 'Properties']) {
       expect(labels, expected).toContain(expected);
     }
-    for (const hidden of ['Dashboard', 'Revenue', 'Booking Ledger', 'Expenses', 'CAPEX', 'Cash Flow', 'P&L', 'Investors', 'Distributions', 'Reports', 'Performance', 'Forecast', 'Settings', 'Srivillu Copilot']) {
+    for (const hidden of ['Dashboard', 'Revenue', 'Booking Ledger', 'Expenses', 'CAPEX', 'Cash Flow', 'P&L', 'Investors', 'Distributions', 'Reports', 'Performance', 'Forecast', 'Settings', 'MAKAM Copilot']) {
       expect(labels, hidden).not.toContain(hidden);
     }
   });
 
   it('admin: management set incl. the ledger and exactly one Settings', () => {
     const labels = forRole('ADMIN').flatMap((s) => s.items.map((i) => i.label));
-    for (const expected of ['Dashboard', 'Booking Ledger', 'P&L', 'Investors', 'Settings', 'Srivillu Copilot']) {
+    for (const expected of ['Dashboard', 'Booking Ledger', 'P&L', 'Investors', 'Settings', 'MAKAM Copilot']) {
       expect(labels, expected).toContain(expected);
     }
     expect(labels.filter((l) => l === 'Settings')).toHaveLength(1);

@@ -15,7 +15,7 @@ import { authMode, supabaseStatus } from '@/lib/server/auth/shell-session';
 import { DEMO_IDENTITIES } from '@/lib/server/auth/demo-identities';
 import { isLiveDataEnabled } from '@/lib/data/providers';
 import { resolveBrandAssets } from '@/lib/server/brand/assets';
-import { SrivilluLogo } from '@/components/shell/Logo';
+import { MakamLogo } from '@/components/shell/Logo';
 
 const ERRORS: Record<string, string> = {
   invalid: 'That email address and password combination was not accepted.',
@@ -44,7 +44,7 @@ export default function SignInPage({ searchParams }: { searchParams: { error?: s
     <main className="sv-signin">
       <div className="sv-signin__card">
         <div className="sv-signin__brand">
-          <SrivilluLogo assets={brandAssets} />
+          <MakamLogo assets={brandAssets} />
         </div>
 
         {environment.banner ? (

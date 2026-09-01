@@ -262,7 +262,7 @@ export async function runPreflight({ env = process.env, cwd = process.cwd(), log
   } else {
     checks.add('title identifies this as a parity copy', looksLikeCopy, `"${title}"`,
       'Rename the copy so its title contains PARITY, COPY, TEST or SANDBOX — e.g.\n'
-      + '      "Srivillu Ops — PARITY COPY (do not use for business)".\n'
+      + '      "MAKAM Ops — PARITY COPY (do not use for business)".\n'
       + `      If the title genuinely cannot be changed, set ${ENV_NAMES.titleOverride}=yes\n`
       + '      and the override will be recorded in the parity report.');
   }

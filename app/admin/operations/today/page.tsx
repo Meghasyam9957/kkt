@@ -15,7 +15,7 @@
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { TodayBoard } from '@/components/operations/TodayBoard';
 
-export const metadata = { title: "Today — Srivillu Home Stays" };
+export const metadata = { title: "Today — MAKAM Home Stays" };
 
 export default async function TodayPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;

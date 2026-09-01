@@ -4,7 +4,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { housekeepingFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 
-export const metadata = { title: 'Housekeeping — Srivillu Home Stays' };
+export const metadata = { title: 'Housekeeping — MAKAM Home Stays' };
 
 async function NewTurnoverAction() {
   const propertyIds = await getDataProvider().getPropertyIds();

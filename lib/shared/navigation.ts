@@ -97,7 +97,7 @@ export const NAVIGATION: NavSection[] = [
   {
     title: 'AI',
     items: [
-      { label: 'Srivillu Copilot', href: '/admin/ai', capability: 'ai.copilot' },
+      { label: 'MAKAM Copilot', href: '/admin/ai', capability: 'ai.copilot' },
     ],
   },
   {
