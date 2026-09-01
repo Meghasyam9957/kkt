@@ -315,7 +315,34 @@ export interface HousekeepingTask {
   taskId: string;
   propertyId: string;
   checkoutDate: string;
+  /**
+   * 13_HOUSEKEEPING FinalStatus — THE turnover's own state, and the canonical one.
+   * `Failed Inspection` lives here, which is why the inspection result below is a
+   * sub-step rather than a second lifecycle.
+   */
   status: 'Pending' | 'Assigned' | 'In Progress' | 'Completed' | 'Failed Inspection';
+  /**
+   * InspectionStatus — Pending / Passed / Failed, from the INSPECTION list.
+   *
+   * Written by `housekeeping.update` (the mark-clean form asks for it) and, until now,
+   * never read back: a front office recorded an inspection result it could never see
+   * again. It is a SUB-STEP of `status`, not a competing state, and nothing derives one
+   * from the other. Empty where the turnover has not reached an inspection.
+   */
+  inspectionStatus: string;
+  /** Cleaner — who is handling it. Written by create and update; empty when unassigned. */
+  cleaner: string;
+  /**
+   * BookingID, as recorded ON THE TURNOVER — and nothing more than that.
+   *
+   * The column exists and `housekeeping.create` writes whatever it is given, but NOTHING
+   * validates it against 04_RESERVATIONS (compare `revenue.create`, which does check),
+   * nothing makes it unique, and nothing requires it: every seeded turnover in both demo
+   * sources leaves it empty. So a value here may be READ FORWARD — this turnover names
+   * that booking — and must never be read backward: the absence of a reference is not
+   * evidence that a booking had no turnover. See docs/UI8_TURNOVER_DECISIONS.md.
+   */
+  bookingId: string;
 }
 
 export interface InventoryItem {

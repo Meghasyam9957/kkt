@@ -409,10 +409,19 @@ function buildDemoOperations(today: string, scenario: DemoScenario): OperationsD
       status: 'Resolved', description: 'Balcony light replaced', reportedOn: shift(-9) },
   ];
 
+  /*
+   * Cleaner and inspection are demonstration fiction of the same kind as every other
+   * value here. `bookingId` is deliberately left EMPTY on all of them: 13_HOUSEKEEPING
+   * has the column, nothing validates it and nothing fills it, and seeding one would
+   * fabricate exactly the booking-to-turnover relationship UI-8 found it could not prove.
+   */
   const housekeeping: HousekeepingTask[] = [
-    { taskId: 'HK-D-0044', propertyId: 'HYD-502', checkoutDate: today, status: 'Pending' },
-    { taskId: 'HK-D-0043', propertyId: 'HYD-602', checkoutDate: shift(-1), status: 'Completed' },
-    { taskId: 'HK-D-0042', propertyId: 'HYD-501', checkoutDate: shift(-2), status: 'Completed' },
+    { taskId: 'HK-D-0044', propertyId: 'HYD-502', checkoutDate: today, status: 'Pending',
+      inspectionStatus: 'Pending', cleaner: '', bookingId: '' },
+    { taskId: 'HK-D-0043', propertyId: 'HYD-602', checkoutDate: shift(-1), status: 'Completed',
+      inspectionStatus: 'Passed', cleaner: 'Lakshmi', bookingId: '' },
+    { taskId: 'HK-D-0042', propertyId: 'HYD-501', checkoutDate: shift(-2), status: 'Completed',
+      inspectionStatus: 'Passed', cleaner: 'Sunita', bookingId: '' },
   ];
 
   /* 6 · low inventory — two items below their reorder point, two comfortably above. */
@@ -437,6 +446,7 @@ function buildDemoOperations(today: string, scenario: DemoScenario): OperationsD
     });
     housekeeping.unshift({
       taskId: 'HK-D-0050', propertyId: 'HYD-601', checkoutDate: today, status: 'Failed Inspection',
+      inspectionStatus: 'Failed', cleaner: 'Lakshmi', bookingId: '',
     });
     inventory.push({
       itemId: 'ITM-D-007', propertyId: 'COMMON', item: 'Bed linen sets', unit: 'sets',

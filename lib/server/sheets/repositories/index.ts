@@ -674,6 +674,13 @@ export class HousekeepingRepository extends SheetRepository<HousekeepingTask> {
       checkoutDate: isoOrEmpty(r.date('CheckoutDate')),
       // FinalStatus is the turnover's own state; InspectionStatus is a sub-step of it.
       status: r.text('FinalStatus') as HousekeepingTask['status'],
+      // Read, not derived. The mark-clean form writes this and the board could not show
+      // it back; `Failed Inspection` remains a FinalStatus value and is not computed here.
+      inspectionStatus: r.text('InspectionStatus'),
+      cleaner: r.text('Cleaner'),
+      /* Recorded on the row, unvalidated by anything. Carried so the register can show
+         what somebody wrote; never used to answer "which turnovers belong to a booking". */
+      bookingId: r.text('BookingID'),
     };
   }
 }

@@ -17,7 +17,9 @@
  *   - The guest's full name as a prefilled value. The product never discloses one, so
  *     prefilling would mean writing the minimised form back over the real name.
  */
+import Link from 'next/link';
 import { RowActionButton } from '@/components/mutations/actions';
+import { Icon } from '@/components/ui/icons';
 import {
   checkInFields, checkOutFields, cancelReservationFields, noShowFields,
   extendStayFields, editBookingFields,
@@ -96,11 +98,30 @@ export function BookingActions({ booking }: { booking: OperationalBookingDetail 
 
   if (!isOpen(booking.bookingStatus)) {
     return (
-      <p className="sv-bkdetail__closed">
-        {CLOSED_SENTENCE[booking.bookingStatus] ?? `This booking is ${booking.bookingStatus}.`}
-        {' '}Nothing further can be done here — the row stays in the ledger as a record of
-        what happened.
-      </p>
+      <>
+        <p className="sv-bkdetail__closed">
+          {CLOSED_SENTENCE[booking.bookingStatus] ?? `This booking is ${booking.bookingStatus}.`}
+          {' '}Nothing further can be done here — the row stays in the ledger as a record of
+          what happened.
+        </p>
+        {booking.bookingStatus === 'Checked Out' ? (
+          /*
+           * The EXISTING next step, not an automation. Nothing in the write pipeline
+           * creates a turnover when a guest departs, and UI-8 did not invent one — so the
+           * panel points at the surface where a turnover is raised and worked, filtered
+           * to this unit, and a person decides.
+           */
+          <p className="sv-bkdetail__next">
+            <Link
+              className="sv-availlink"
+              href={`/admin/operations/housekeeping?property=${booking.propertyId}`}
+            >
+              <Icon name="housekeeping" size={16} />
+              Turnovers for {booking.unitName || booking.propertyId}
+            </Link>
+          </p>
+        ) : null}
+      </>
     );
   }
 

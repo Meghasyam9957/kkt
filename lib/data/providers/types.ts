@@ -194,8 +194,27 @@ export interface ArrivalRow {
 export interface CleaningRow {
   taskId: string;
   propertyId: string;
+  /** The Unit name from the property master. Empty when the unit has none. */
+  unitName: string;
   checkoutDate: string;
+  /** FinalStatus — the turnover's own state, and the canonical one. */
   status: string;
+  /** InspectionStatus, verbatim. Empty where no inspection has been recorded. */
+  inspectionStatus: string;
+  /** Who is handling it. Empty when nobody is assigned yet. */
+  cleaner: string;
+  /**
+   * The booking reference RECORDED ON THIS TURNOVER — read forward only.
+   *
+   * Empty on every seeded row in both demo sources, and never validated on write, so its
+   * ABSENCE means nothing. `bookingKnown` says whether the reference, when there is one,
+   * names a booking the register actually holds; a reference that does not resolve is
+   * shown as unresolved rather than quietly dropped.
+   */
+  bookingRef: string;
+  bookingKnown: boolean;
+  /** Minimised, and only when the reference resolves. Never a full name, never contact. */
+  guestDisplayName: string | null;
 }
 
 export interface MaintenanceRow {
@@ -352,6 +371,10 @@ export interface BookingDetailRow extends ReservationRow {
 export interface UnitOperationalState {
   /** Open turnover status, verbatim from the housekeeping record. Null when none is open. */
   housekeeping: string | null;
+  /** That turnover's id, its inspection result and who is handling it. Null when none. */
+  housekeepingTaskId: string | null;
+  housekeepingInspection: string | null;
+  housekeepingCleaner: string | null;
   /** How many maintenance tickets are still open on this unit. */
   openMaintenance: number;
   /** The most pressing open ticket, verbatim. Null when there are none. */

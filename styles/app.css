@@ -1895,7 +1895,12 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-bktools__calendar:focus-visible,
 .sv-daylink a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
-.sv-daylink { margin: calc(-1 * var(--s-2)) 0 var(--s-4); }
+/* Two links, and they ran together into one word on a phone — the paragraph had no
+   layout of its own, so the inline-flex children sat flush against each other. */
+.sv-daylink {
+  display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-5);
+  margin: calc(-1 * var(--s-2)) 0 var(--s-4);
+}
 @media (pointer: coarse) {
   .sv-bktools__calendar, .sv-daylink a { min-height: 44px; }
 }
@@ -2076,4 +2081,35 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 @media (max-width: 640px) {
   .sv-drawer .sv-mutation-form__actions { flex-direction: column-reverse; }
   .sv-drawer .sv-mutation-form__actions .sv-btn { width: 100%; min-height: 44px; }
+}
+
+/* ====================================================================
+ * UI-8 — THE TURNOVER REGISTER
+ * ==================================================================== */
+
+/* Unit first: the name a person says, the id underneath it. */
+.sv-hk__unit { display: flex; flex-direction: column; gap: 1px; }
+.sv-hk__unitname { font-weight: 600; color: var(--text-primary); }
+.sv-hk__unitid { font-size: var(--t-label); color: var(--text-muted); }
+
+/* A booking reference recorded on the turnover — shown for exactly what it is. */
+/* These three read as sentences, so they wrap. A `nowrap` cell sets its column's minimum
+   width, and seven that could not wrap pushed the primary action off a 1024px screen. */
+.sv-hk__ref, .sv-hk__noref, .sv-hk__unknown { white-space: normal; }
+.sv-hk__ref { display: inline-flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap; }
+.sv-hk__guest { color: var(--text-primary); }
+/* A reference the register does not hold. Said out loud rather than dropped, because a
+   silently hidden reference reads as "none recorded", which is a different fact. */
+.sv-hk__unknown { color: var(--warn-fg); font-size: var(--t-label); }
+/* Nothing recorded. Muted and in words — never an empty cell, which reads as "nothing to
+   say here" when what it means is "nobody has said". */
+.sv-hk__noref { color: var(--text-muted); font-style: italic; }
+
+/* The post-checkout next step on the booking panel. */
+.sv-bkdetail__next { margin-top: var(--s-3); }
+
+/* A stacked record IS the phone layout, so its one action is a thumb target there —
+   the product's `pointer: coarse` rule already covers a touchscreen at any width. */
+@media (max-width: 640px) {
+  .sv-table--stack .sv-btn, .sv-table--stack .sv-btn--sm { min-height: 44px; }
 }

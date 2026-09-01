@@ -411,10 +411,15 @@ export function buildDemoOps(today = DEMO_TODAY_ISO): DemoOpsData {
       { ticketId: 'MNT-2027-0009', propertyId: 'HYD-602', category: 'Electrical', priority: 'Medium',
         status: 'Resolved', description: 'Balcony light replaced', reportedOn: shift(-9) },
     ],
+    /* `bookingId` is empty on every one of these, deliberately — see the note in
+       lib/data/demo/dataset.ts and docs/UI8_TURNOVER_DECISIONS.md. */
     housekeeping: [
-      { taskId: 'HK-2027-0044', propertyId: 'HYD-502', checkoutDate: today, status: 'Pending' },
-      { taskId: 'HK-2027-0043', propertyId: 'HYD-602', checkoutDate: shift(-1), status: 'Completed' },
-      { taskId: 'HK-2027-0042', propertyId: 'HYD-501', checkoutDate: shift(-2), status: 'Completed' },
+      { taskId: 'HK-2027-0044', propertyId: 'HYD-502', checkoutDate: today, status: 'Pending',
+        inspectionStatus: 'Pending', cleaner: '', bookingId: '' },
+      { taskId: 'HK-2027-0043', propertyId: 'HYD-602', checkoutDate: shift(-1), status: 'Completed',
+        inspectionStatus: 'Passed', cleaner: 'Lakshmi', bookingId: '' },
+      { taskId: 'HK-2027-0042', propertyId: 'HYD-501', checkoutDate: shift(-2), status: 'Completed',
+        inspectionStatus: 'Passed', cleaner: 'Sunita', bookingId: '' },
     ],
     inventory: [
       { itemId: 'ITM-002', propertyId: 'COMMON', item: 'Bath towels', unit: 'pcs', currentStock: 4, minStock: 12 },

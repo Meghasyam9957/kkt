@@ -30,6 +30,10 @@ const HK_TONE: Record<string, Tone> = {
   Completed: 'good', 'In Progress': 'info', Assigned: 'info',
   Pending: 'warn', 'Failed Inspection': 'bad',
 };
+/* The INSPECTION list, in the same vocabulary the turnover statuses use. */
+const INSPECTION_TONE: Record<string, Tone> = {
+  Passed: 'good', Pending: 'warn', Failed: 'bad',
+};
 const MNT_TONE: Record<string, Tone> = {
   Open: 'bad', Assigned: 'warn', 'In Progress': 'info', Waiting: 'warn',
   Resolved: 'good', Closed: 'neutral',
@@ -42,25 +46,74 @@ const PRIORITY_TONE: Record<string, Tone> = {
  * Housekeeping
  * ------------------------------------------------------------------ */
 
+/**
+ * THE BOOKING REFERENCE RECORDED ON A TURNOVER — read forward, never backward.
+ *
+ * 13_HOUSEKEEPING has a BookingID column. Nothing validates it against the register,
+ * nothing makes it unique, and every seeded turnover in both demo sources leaves it
+ * empty — so a value here is a note somebody made, and its ABSENCE is not evidence that
+ * a booking had no turnover. Shown for what it is: the reference, plus the guest's
+ * minimised name when the register actually holds that booking, and an honest
+ * "not in the register" when it does not.
+ */
+function BookingRef({ row }: { row: CleaningRow }) {
+  if (row.bookingRef === '') {
+    return <span className="sv-hk__noref">None recorded</span>;
+  }
+  return (
+    <span className="sv-hk__ref">
+      <code className="numeric">{row.bookingRef}</code>
+      {row.bookingKnown
+        ? <span className="sv-hk__guest">{row.guestDisplayName}</span>
+        : <span className="sv-hk__unknown">not in the register</span>}
+    </span>
+  );
+}
+
 export function HousekeepingTable({ rows }: { rows: CleaningRow[] }) {
   const columns: Column<CleaningRow>[] = [
-    { key: 'id', header: 'Task', render: (r) => <code className="numeric">{r.taskId}</code> },
-    { key: 'property', header: 'Property', render: (r) => r.propertyId },
-    { key: 'checkout', header: 'After checkout', render: (r) => formatDateShort(r.checkoutDate) },
     {
-      key: 'status', header: 'Status',
+      key: 'unit', header: 'Unit',
+      render: (r) => (
+        <span className="sv-hk__unit">
+          <span className="sv-hk__unitname">{r.unitName || r.propertyId}</span>
+          <code className="sv-hk__unitid numeric">{r.propertyId} · {r.taskId}</code>
+        </span>
+      ),
+    },
+    { key: 'checkout', header: 'Checkout', render: (r) => formatDateShort(r.checkoutDate) },
+    {
+      key: 'status', header: 'Turnover',
       render: (r) => <StatusPill tone={HK_TONE[r.status] ?? 'neutral'}>{r.status}</StatusPill>,
     },
+    {
+      /* The result of the step the mark-clean form already asks for. It was written to
+         the workbook and never read back, so a front office could record an inspection
+         and never see it again. Verbatim — nothing derives it from the status. */
+      key: 'inspection', header: 'Inspection',
+      render: (r) => (r.inspectionStatus === ''
+        ? <span className="sv-hk__noref">Not recorded</span>
+        : <StatusPill tone={INSPECTION_TONE[r.inspectionStatus] ?? 'neutral'}>{r.inspectionStatus}</StatusPill>),
+    },
+    {
+      key: 'cleaner', header: 'Cleaner',
+      render: (r) => (r.cleaner === ''
+        ? <span className="sv-hk__noref">Nobody yet</span>
+        : r.cleaner),
+    },
+    { key: 'booking', header: 'Booking', render: (r) => <BookingRef row={r} /> },
     {
       key: 'actions', header: 'Actions',
       render: (r) => (r.status === 'Completed'
         ? <span className="sv-muted">Done</span>
         : (
           <RowActionButton
-            label="Mark Clean" endpoint={`/api/housekeeping/${r.taskId}`} method="PATCH"
-            confirmTitle={`Turnover ${r.taskId} — mark clean`}
+            label="Mark clean" endpoint={`/api/housekeeping/${r.taskId}`} method="PATCH"
+            surface="drawer"
+            confirmTitle={`${r.unitName || r.propertyId} — mark clean`}
+            context={<TurnoverFacts row={r} />}
             fields={markCleanFields()}
-            successTemplate={`${r.taskId} completed — the unit is ready.`}
+            successTemplate={`${r.unitName || r.propertyId} is ready — ${r.taskId} completed.`}
           />
         )),
     },
@@ -75,11 +128,29 @@ export function HousekeepingTable({ rows }: { rows: CleaningRow[] }) {
       <CardBody className="sv-card__body--flush">
         <DataTable
           columns={columns} rows={rows} caption="Housekeeping register"
+          /* Below 640px each turnover becomes a stacked record carrying its own column
+             labels: a front office reads this one unit at a time on a phone. */
+          mobile="stack"
           getRowKey={(r) => r.taskId} emptyTitle="No turnovers outstanding"
           emptyMessage="Every unit is ready."
         />
       </CardBody>
     </Card>
+  );
+}
+
+/**
+ * The turnover restated above the mark-clean fields. Context only — nothing is submitted,
+ * and nothing here is a figure.
+ */
+function TurnoverFacts({ row }: { row: CleaningRow }) {
+  return (
+    <dl className="sv-staycontext">
+      <div><dt>Unit</dt><dd>{row.unitName || row.propertyId}</dd></div>
+      <div><dt>Task</dt><dd className="numeric">{row.taskId}</dd></div>
+      <div><dt>After checkout</dt><dd>{formatDateShort(row.checkoutDate)}</dd></div>
+      <div><dt>Turnover</dt><dd>{row.status}</dd></div>
+    </dl>
   );
 }
 

@@ -80,6 +80,9 @@ export function buildDemoWorkbookGrids(): Record<string, Row[]> {
       TaskID: t.taskId, PropertyID: t.propertyId,
       CheckoutDate: t.checkoutDate ? isoToSerial(t.checkoutDate) : null,
       FinalStatus: t.status,
+      // Written so the grid-backed demo reads back what the dataset says. BookingID is
+      // not laid at all: the dataset holds none, and an empty cell is the truth.
+      InspectionStatus: t.inspectionStatus, Cleaner: t.cleaner,
     })),
   ];
   grids[SHEET_META.MAINTENANCE.name] = [

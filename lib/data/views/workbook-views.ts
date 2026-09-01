@@ -60,6 +60,7 @@ import { BUSINESS_RULES, PNL as PNL_CONTRACT } from '@/lib/contract/contract.gen
 import {
   OPEN_MAINTENANCE_STATUSES, OPEN_HOUSEKEEPING_STATUSES, OCCUPANCY_STATUSES,
   type WorkbookData, type MonthlyMetrics, type OperationsData, type MaintenanceTicket,
+  type HousekeepingTask,
   type ReservationRecord, type RentRecord,
 } from '@/lib/shared/domain';
 import type {
@@ -457,6 +458,38 @@ export class WorkbookViews {
   }
 
   /**
+   * ONE turnover, as the front office reads it.
+   *
+   * The booking reference is carried EXACTLY as recorded and resolved only forward: if
+   * the register holds that booking, the guest's minimised name is added; if it does not,
+   * `bookingKnown` is false and the screen says the reference does not resolve rather
+   * than hiding it. Nothing here answers "which turnovers belong to this booking" —
+   * 13_HOUSEKEEPING.BookingID is optional, unvalidated and empty on every seeded row, so
+   * its absence is not evidence. See docs/UI8_TURNOVER_DECISIONS.md.
+   */
+  private cleaningRow(task: HousekeepingTask): CleaningRow {
+    const master = this.workbook.properties.find((p) => p.PropertyID === task.propertyId);
+    const ref = task.bookingId.trim();
+    const booking = ref === ''
+      ? undefined
+      : this.workbook.reservations.find((b) => b.BookingID === ref);
+
+    return {
+      taskId: task.taskId,
+      propertyId: task.propertyId,
+      unitName: master?.Unit ?? '',
+      checkoutDate: task.checkoutDate,
+      status: task.status,
+      inspectionStatus: task.inspectionStatus,
+      cleaner: task.cleaner,
+      bookingRef: ref,
+      bookingKnown: booking !== undefined,
+      // Minimised upstream exactly as every list shows it, and only when it resolves.
+      guestDisplayName: booking ? minimizeGuestName(booking.GuestName) : null,
+    };
+  }
+
+  /**
    * What a UNIT is doing right now — the turnover and the tickets on it.
    *
    * Keyed on PropertyID only. It is not a claim about any stay: 13_HOUSEKEEPING carries a
@@ -474,6 +507,10 @@ export class WorkbookViews {
 
     return {
       housekeeping: turnover?.status ?? null,
+      housekeepingTaskId: turnover?.taskId ?? null,
+      /* Verbatim, and empty-as-null: an inspection nobody has done is not a pass. */
+      housekeepingInspection: turnover?.inspectionStatus || null,
+      housekeepingCleaner: turnover?.cleaner || null,
       openMaintenance: tickets.length,
       maintenancePriority: tickets[0]?.priority ?? null,
       maintenanceHeadline: tickets[0]?.description ?? null,
@@ -638,9 +675,7 @@ export class WorkbookViews {
 
     const cleaning = this.ops.housekeeping
       .filter((t) => OPEN_HOUSEKEEPING_STATUSES.includes(t.status) && matches(t.propertyId))
-      .map<CleaningRow>((t) => ({
-        taskId: t.taskId, propertyId: t.propertyId, checkoutDate: t.checkoutDate, status: t.status,
-      }));
+      .map<CleaningRow>((t) => this.cleaningRow(t));
 
     const maintenance = this.openMaintenanceTickets()
       .filter((t) => matches(t.propertyId))

@@ -6,6 +6,7 @@
  * landing, four nav items active at once, and an inaccessible mobile drawer.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const WIDTHS = [375, 390, 768, 1024, 1440, 1920] as const;
 
@@ -937,6 +938,148 @@ for (const width of [375, 390, 768, 1024, 1440] as const) {
     await arrival.getByLabel('Arrival time').focus();
     const focused = await page.evaluate(() => document.activeElement?.getAttribute('type'));
     expect(focused).toBe('time');
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * UI-8 — the turnover register, and what it may claim
+ * ------------------------------------------------------------------ */
+
+/**
+ * A turnover this spec owns.
+ *
+ * The register is shared demo state and the mark-clean spec deliberately empties rows out
+ * of it, so a spec that waited for "whatever happens to be open" would pass or fail on
+ * worker ordering. Each one raises its own through the real pipeline instead.
+ */
+async function openTurnover(page: Page, propertyId = 'HYD-501'): Promise<string> {
+  const res = await page.request.post('/api/housekeeping', {
+    data: {
+      operationId: randomUUID(), propertyId, checkoutDate: '2027-02-19',
+      notes: 'raised by the browser suite',
+    },
+  });
+  expect(res.status(), await res.text()).toBe(200);
+  return (await res.json()).record.TaskID as string;
+}
+
+test('the turnover register answers unit, state, inspection and who has it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signInAs(page, 'Demo Operations Manager');
+  await openTurnover(page);
+  await page.goto('/admin/operations/housekeeping');
+  await page.waitForSelector('.sv-table');
+
+  const headers = await page.locator('thead th').allTextContents();
+  expect(headers).toEqual(
+    ['Unit', 'Checkout', 'Turnover', 'Inspection', 'Cleaner', 'Booking', 'Actions']);
+
+  // The unit's NAME leads, with its id underneath — not a bare identifier.
+  await expect(page.locator('.sv-hk__unitname').first()).not.toBeEmpty();
+
+  /*
+   * Every seeded turnover leaves BookingID empty, in both demo sources. The register says
+   * so in words rather than leaving a blank cell that reads as "nothing to say here".
+   */
+  await expect(page.locator('.sv-hk__noref').first()).toBeVisible();
+  await expect(page.locator('main')).toContainText('None recorded');
+
+  // An operations surface: no figure anywhere on it.
+  await expect(page.locator('main')).not.toContainText('₹');
+});
+
+test('marking a turnover clean records the inspection and clears the row', async ({ page }) => {
+  test.slow();
+  await signInAs(page, 'Demo Operations Manager');
+  /* By identity, never by row COUNT: the suite runs two workers over one demo store, so
+     this spec raises the turnover it is going to finish and follows that one. */
+  const taskId = await openTurnover(page, 'HYD-602');
+  await page.goto('/admin/operations/housekeeping');
+  await page.waitForSelector('.sv-table');
+
+  const row = page.locator('tbody tr').filter({ hasText: taskId });
+  await expect(row).toHaveCount(1);
+  await row.getByRole('button', { name: 'Mark clean' }).click();
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer).toBeVisible();
+  // The turnover is in front of the person before they commit.
+  await expect(drawer.locator('.sv-staycontext')).toContainText('Unit');
+
+  await drawer.getByLabel('Cleaned by').fill('Lakshmi');
+  await drawer.getByLabel('Inspection').selectOption('Passed');
+  await drawer.getByRole('button', { name: /Mark clean/ }).click();
+
+  // Reported only after the server verified, and the list re-reads: a completed turnover
+  // is no longer outstanding work.
+  await expect(page.locator('.sv-toast')).toContainText(`${taskId} completed`);
+  // A completed turnover is no longer outstanding work, so its row leaves the register.
+  await expect.poll(async () =>
+    page.locator('tbody tr').filter({ hasText: taskId }).count()).toBe(0);
+});
+
+test('a departed booking points at the turnover surface without claiming one exists', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/reservations');
+  await page.waitForSelector('.sv-bklink');
+
+  const row = page.locator('tbody tr').filter({ hasText: 'Checked Out' }).first();
+  if (await row.count() === 0) test.skip(true, 'no departed booking in the current demo state');
+  await row.locator('a.sv-bklink').first().click();
+
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer).toBeVisible();
+  // The unit's own state, titled for the unit — never for the stay.
+  await expect(drawer.locator('.sv-bkdetail__heading')).toContainText(['This unit, right now']);
+  await expect(drawer).toContainText('Inspection');
+  await expect(drawer).toContainText('Turnover assigned to');
+  await expect(drawer).not.toContainText(/turnovers? for this booking/i);
+
+  // The EXISTING next step: the register, filtered to this unit. No automation ran.
+  const next = drawer.getByRole('link', { name: /Turnovers for/ });
+  await expect(next).toBeVisible();
+  await next.click();
+  await expect(page).toHaveURL(/\/admin\/operations\/housekeeping\?property=HYD-/);
+  await page.waitForSelector('.sv-table, .sv-state--empty');
+});
+
+test('an investor is refused the turnover register', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await page.goto('/admin/operations/housekeeping');
+  await expect(page.locator('h1')).toContainText('Not available');
+  await expect(page.locator('.sv-table')).toHaveCount(0);
+  // No unit or task identifier reaches the response at all.
+  expect(await page.content()).not.toMatch(/HK-\d{4}-\d{4}|HK-D-\d{4}/);
+});
+
+for (const width of [375, 390, 768, 1024, 1440] as const) {
+  test(`the turnover register is usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signInAs(page, 'Demo Operations Manager');
+    const taskId = await openTurnover(page);
+    await page.goto('/admin/operations/housekeeping');
+    await page.waitForSelector('.sv-table');
+
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `the register must not scroll sideways at ${width}px`).toBeLessThanOrEqual(0);
+
+    // Below 640px each turnover is a stacked record carrying its own column labels.
+    const stacked = await page.locator('.sv-table--stack').count();
+    expect(stacked).toBe(1);
+    if (width <= 640) {
+      const label = await page.locator('tbody td').first().evaluate((el) =>
+        getComputedStyle(el, '::before').content);
+      expect(label, 'each cell keeps its column label when stacked').not.toBe('none');
+    }
+
+    const action = page.locator('tbody tr').filter({ hasText: taskId })
+      .getByRole('button', { name: 'Mark clean' });
+    const box = (await action.boundingBox())!;
+    expect(box.height, 'the action is a real target')
+      .toBeGreaterThanOrEqual(width <= 640 ? 44 : 32);
+    expect(box.x + box.width, 'the action is inside the viewport')
+      .toBeLessThanOrEqual(width + 1);
   });
 }
 

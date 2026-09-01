@@ -110,11 +110,19 @@ export function BookingDetailDrawer({ detail, requestedId, actions }: {
           <Fact label="Notes" value={detail.notes} />
         </Section>
 
-        {/* THE UNIT, not the stay. The workbook holds no booking-to-turnover link that
-            the domain reads, so this is deliberately labelled as the unit's own state
-            rather than presented as something this booking caused. */}
+        {/*
+          * THE UNIT, not the stay.
+          *
+          * 13_HOUSEKEEPING has a BookingID column, but nothing validates it, nothing
+          * makes it unique and every seeded turnover leaves it empty — so there is no
+          * relationship to report, and this section says whose state it is describing in
+          * its own title. UI-8 audited that and declined to fabricate the join; see
+          * docs/UI8_TURNOVER_DECISIONS.md.
+          */}
         <Section title="This unit, right now">
           <Fact label="Turnover" value={detail.unitState.housekeeping} />
+          <Fact label="Inspection" value={detail.unitState.housekeepingInspection} />
+          <Fact label="Turnover assigned to" value={detail.unitState.housekeepingCleaner} />
           <div className="sv-bkdetail__fact">
             <dt>Open maintenance</dt>
             <dd>

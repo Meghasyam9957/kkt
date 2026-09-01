@@ -337,7 +337,9 @@ function renderUi(ui: ReactElement, search = 'booking=BK-2027-0001') {
 }
 
 const QUIET_UNIT = {
-  housekeeping: null, openMaintenance: 0, maintenancePriority: null, maintenanceHeadline: null,
+  housekeeping: null, housekeepingTaskId: null, housekeepingInspection: null,
+  housekeepingCleaner: null,
+  openMaintenance: 0, maintenancePriority: null, maintenanceHeadline: null,
 };
 
 const booking = (over: Partial<OperationalBookingDetail> = {}): OperationalBookingDetail => ({
@@ -415,7 +417,9 @@ describe('stay · the panel says where the stay is', () => {
     const { container } = panel({
       bookingStatus: 'Checked Out',
       unitState: {
-        housekeeping: 'In Progress', openMaintenance: 2,
+        housekeeping: 'In Progress', housekeepingTaskId: 'HK-2027-0044',
+        housekeepingInspection: 'Pending', housekeepingCleaner: 'Lakshmi',
+        openMaintenance: 2,
         maintenancePriority: 'Critical', maintenanceHeadline: 'Geyser leaking in the bathroom',
       },
     });
