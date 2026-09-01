@@ -296,6 +296,38 @@ export interface ReservationRow {
   payoutStatus: string;
 }
 
+/**
+ * ONE booking, in full, for the detail panel.
+ *
+ * Extends the list row rather than replacing it, so the two can never disagree about a
+ * booking's dates or status. The added fields are 04_RESERVATIONS input columns no
+ * calculation depends on — front-office facts the product wrote and then never showed.
+ *
+ * `null` throughout means NOT RECORDED, which is not the same as "no". A blank
+ * MaintenanceRequired is a check nobody made; rendering it as "No" would assert
+ * something the workbook does not say.
+ */
+export interface BookingDetailRow extends ReservationRow {
+  /** From the property master, never invented. Empty when the unit has no name. */
+  unitName: string;
+  adults: number;
+  children: number;
+  guests: number;
+  /** The OTA's own confirmation code. Empty when the booking is Direct. */
+  platformRef: string;
+  /** When the booking was MADE. Null where the source does not model it. */
+  bookedOn: string | null;
+  /** Recorded AT check-in/out by the mutation. There is no SCHEDULED time anywhere. */
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  earlyCheckIn: boolean | null;
+  lateCheckout: boolean | null;
+  guestVerification: string | null;
+  damageReport: string | null;
+  maintenanceRequired: boolean | null;
+  notes: string | null;
+}
+
 export interface CapexRow {
   id: string;
   date: string | null;
@@ -384,6 +416,15 @@ export interface DashboardDataProvider {
   /** The investor master. Management only — enforced by the route and the page guard. */
   getInvestorRegister(): Promise<Envelope<InvestorRegisterRow[]>>;
   getReservations(filters: ReportFilters): Promise<Envelope<ReservationRow[]>>;
+  /**
+   * ONE booking by identifier, for the detail panel — resolved IN PROCESS, like every
+   * other read. Null when no such booking exists, so the screen can say so in words
+   * instead of rendering an empty panel.
+   *
+   * Deliberately not scoped by month: a detail link must work from anywhere, including a
+   * pasted URL for a stay that started in another period.
+   */
+  getBookingDetail(bookingId: string): Promise<Envelope<BookingDetailRow | null>>;
   getRevenue(filters: ReportFilters): Promise<Envelope<LedgerRow[]>>;
   getExpenses(filters: ReportFilters): Promise<Envelope<LedgerRow[]>>;
   getCapex(filters: ReportFilters): Promise<Envelope<CapexRow[]>>;

@@ -1688,3 +1688,37 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
      column reads better with the pair aligned to the right edge. */
   .sv-table--stack .sv-bkcell { align-items: flex-end; }
 }
+
+/* ---- Booking detail panel ---- */
+.sv-bklink { color: inherit; text-decoration: none; border-bottom: 1px solid var(--line-strong); }
+.sv-bklink:hover { border-bottom-color: var(--text-brand); }
+.sv-bklink:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+@media (pointer: coarse) {
+  /* A tap target, not a word: the whole cell is reachable with a thumb. */
+  .sv-bklink { display: inline-flex; align-items: center; min-height: 44px; }
+}
+
+.sv-bkdetail { display: flex; flex-direction: column; gap: var(--s-5); }
+.sv-bkdetail__section { display: flex; flex-direction: column; gap: var(--s-2); }
+.sv-bkdetail__heading {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+  padding-bottom: var(--s-2); border-bottom: 1px solid var(--line);
+}
+.sv-bkdetail__facts { display: flex; flex-direction: column; gap: 0; margin: 0; }
+.sv-bkdetail__fact {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--s-4); padding: 6px 0;
+}
+.sv-bkdetail__fact dt { color: var(--text-muted); font-size: var(--t-small); flex: none; }
+.sv-bkdetail__fact dd { margin: 0; text-align: right; font-size: var(--t-small); color: var(--text-primary); }
+/* An absence is stated, and looks like an absence — never like a value. */
+.sv-bkdetail__unset { color: var(--text-muted); font-style: italic; }
+.sv-bkdetail__actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.sv-bkdetail__actions .sv-btn { flex: 1 1 auto; justify-content: center; }
+
+@media (max-width: 640px) {
+  /* Bottom sheet on a phone: the drawer already becomes one (§18); its actions go
+     full width so a thumb reaches them without aiming. */
+  .sv-bkdetail__actions .sv-btn { flex-basis: 100%; }
+}

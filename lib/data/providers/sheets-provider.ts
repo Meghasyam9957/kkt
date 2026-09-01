@@ -28,6 +28,7 @@ import type {
   DashboardDataProvider, DashboardView, Envelope, ReportFilters, DataMeta, FreshnessState,
   ReservationRow, LedgerRow, CapexRow, CashFlowRow, PnlView, SettingsView, InvestorPreviewView,
   ForecastView,
+  BookingDetailRow,
 } from './types';
 
 /** The workbook is one cache entry; the views slice it. One read serves every screen. */
@@ -170,6 +171,11 @@ export class GoogleSheetsDashboardDataProvider implements DashboardDataProvider 
   async getReservations(filters: ReportFilters): Promise<Envelope<ReservationRow[]>> {
     const { views, result } = await this.views();
     return this.wrap(views.reservations(filters), result, views.resolveMonth(filters.month));
+  }
+
+  async getBookingDetail(bookingId: string): Promise<Envelope<BookingDetailRow | null>> {
+    const { views, result } = await this.views();
+    return this.wrap(views.bookingDetail(bookingId), result, views.resolveMonth(''));
   }
 
   async getRevenue(filters: ReportFilters): Promise<Envelope<LedgerRow[]>> {

@@ -13,8 +13,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, within, cleanup } from '@testing-library/react';
 import { createElement, type ReactElement } from 'react';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import {
   AppRouterContext, type AppRouterInstance,
@@ -41,38 +39,7 @@ import type {
 } from '@/lib/data/providers/types';
 import type { OperationalReservationRow } from '@/lib/data/views/role-projections';
 
-const ROOT = process.cwd();
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-
-/**
- * Source with its comments removed.
- *
- * Every scan below is an assertion about CODE. Without this, explaining a defect in a
- * doc comment ("this table used to title itself ...") would fail the very test that
- * guards against the defect — which teaches the next reader to delete the explanation
- * rather than keep the guard.
- */
-function codeOf(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')      // block comments, JSDoc included
-    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');  // line comments, sparing protocol slashes
-}
-
-/** Every source file a booking status could be given a colour in. */
-function uiSourceFiles(): string[] {
-  const out: string[] = [];
-  const walk = (dir: string) => {
-    for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
-      const rel = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) walk(rel);
-      else if (/\.tsx?$/.test(entry.name)) out.push(rel);
-    }
-  };
-  walk('components');
-  walk('app');
-  walk('lib');
-  return out;
-}
+import { readSource as read, codeOf, uiSourceFiles } from './support/source';
 
 const replaced: string[] = [];
 const refresh = vi.fn();

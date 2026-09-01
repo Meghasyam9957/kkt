@@ -57,6 +57,29 @@ export interface ReservationRecord {
   OtherDeductions: number;
   ActualPayout: number;
   PayoutDate: Serial | null;
+
+  /*
+   * FRONT-OFFICE DETAIL — 04_RESERVATIONS input columns that no calculation depends on.
+   *
+   * Optional on purpose, and `undefined` means "nobody has recorded this", which is a
+   * different fact from "recorded as no". A blank MaintenanceRequired is not a unit
+   * confirmed undamaged; it is a check nobody has made, and a detail panel that renders
+   * the two the same way is lying quietly. The KPI engine reads none of them.
+   *
+   * CheckInTime and CheckOutTime are WRITTEN today by the check-in and check-out
+   * mutations and were never read back anywhere — the times went into the workbook and
+   * out of the product's sight.
+   */
+  /** Recorded AT check-in. The workbook carries no SCHEDULED arrival time. */
+  CheckInTime?: string;
+  CheckOutTime?: string;
+  EarlyCheckIn?: boolean;
+  LateCheckout?: boolean;
+  /** 02_SETTINGS vocabulary — whether the guest's identity was verified, and how. */
+  GuestVerification?: string;
+  DamageReport?: string;
+  MaintenanceRequired?: boolean;
+  Notes?: string;
 }
 
 export interface RevenueRecord {

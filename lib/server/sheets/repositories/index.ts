@@ -45,6 +45,26 @@ function reader(sheet: SheetKey, row: Row) {
     text: (key: string) => str(row[columnIndex(sheet, key)]),
     num: (key: string) => num(row[columnIndex(sheet, key)]),
     date: (key: string): Serial | null => toSerial(row[columnIndex(sheet, key)]),
+    /**
+     * A checkbox column. Returns `undefined` for a BLANK cell rather than false: nobody
+     * recorded it is not the same claim as recorded as no, and only the caller can decide
+     * how to present the difference.
+     */
+    bool: (key: string): boolean | undefined => {
+      const value = row[columnIndex(sheet, key)];
+      if (value === null || value === undefined || value === '') return undefined;
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') return value !== 0;
+      const text = String(value).trim().toLowerCase();
+      if (['true', 'yes', 'y', '1'].includes(text)) return true;
+      if (['false', 'no', 'n', '0'].includes(text)) return false;
+      return undefined;
+    },
+    /** Text, but `undefined` rather than '' when the cell is blank — see `bool`. */
+    optionalText: (key: string): string | undefined => {
+      const text = str(row[columnIndex(sheet, key)]);
+      return text === '' ? undefined : text;
+    },
   };
 }
 
@@ -327,6 +347,14 @@ export class ReservationRepository extends SheetRepository<ReservationRecord> {
       ExtraGuestFee: r.num('ExtraGuestFee'), OtherCharges: r.num('OtherCharges'), Discount: r.num('Discount'),
       Taxes: r.num('Taxes'), PlatformFee: r.num('PlatformFee'), OtherDeductions: r.num('OtherDeductions'),
       ActualPayout: r.num('ActualPayout'), PayoutDate: r.date('PayoutDate'),
+      // Front-office detail. Absent cells stay `undefined` so the screen can say
+      // "not recorded" rather than inventing a negative nobody asserted.
+      CheckInTime: r.optionalText('CheckInTime'), CheckOutTime: r.optionalText('CheckOutTime'),
+      EarlyCheckIn: r.bool('EarlyCheckIn'), LateCheckout: r.bool('LateCheckout'),
+      GuestVerification: r.optionalText('GuestVerification'),
+      DamageReport: r.optionalText('DamageReport'),
+      MaintenanceRequired: r.bool('MaintenanceRequired'),
+      Notes: r.optionalText('Notes'),
     };
   }
 }

@@ -18,7 +18,9 @@
  *   - The operational tables in components/pages take the projected types, so rendering
  *     a financial field there is a type error, not a review comment.
  */
-import type { PropertyBoardRow, ReservationRow, UnitStatus } from '@/lib/data/providers/types';
+import type {
+  PropertyBoardRow, ReservationRow, UnitStatus, BookingDetailRow,
+} from '@/lib/data/providers/types';
 
 /* ------------------------------------------------------------------ *
  * Properties
@@ -110,6 +112,80 @@ export function operationalReservationRows(
 }
 
 /* ------------------------------------------------------------------ *
+ * One booking, in full — the detail panel
+ * ------------------------------------------------------------------ */
+
+/**
+ * A booking as the front office sees it in detail: who, where, when, and what has been
+ * recorded about the stay. Everything a person at a desk needs to act, and no figure.
+ *
+ * The same four payout fields are withheld as on the list row, for the same reason and
+ * by the same mechanism — a fresh literal, field by field, guarded below. A detail panel
+ * is exactly where a financial field would slip back in ("Admin can see it anyway"), so
+ * this type exists to make that a build failure rather than a judgement call.
+ *
+ * `null` throughout means NOT RECORDED. It is not "no": a blank damage report is a check
+ * nobody made, and the panel must not turn that into a clean bill.
+ */
+export interface OperationalBookingDetail {
+  bookingId: string;
+  platform: string;
+  platformRef: string;
+  propertyId: string;
+  unitName: string;
+  bookingStatus: string;
+  /** Already minimised upstream: given name + last initial, never contact details. */
+  guestDisplayName: string;
+  adults: number;
+  children: number;
+  guests: number;
+  bookedOn: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
+  nights: number;
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  earlyCheckIn: boolean | null;
+  lateCheckout: boolean | null;
+  guestVerification: string | null;
+  damageReport: string | null;
+  maintenanceRequired: boolean | null;
+  notes: string | null;
+}
+
+/** The SAME withheld set as the list row — one rule, not two that can drift apart. */
+export const DETAIL_FIELDS_WITHHELD_FROM_OPERATIONS = RESERVATION_FIELDS_WITHHELD_FROM_OPERATIONS;
+
+export function operationalBookingDetail(
+  row: BookingDetailRow,
+): OperationalBookingDetail {
+  return {
+    bookingId: row.bookingId,
+    platform: row.platform,
+    platformRef: row.platformRef,
+    propertyId: row.propertyId,
+    unitName: row.unitName,
+    bookingStatus: row.bookingStatus,
+    guestDisplayName: row.guestDisplayName,
+    adults: row.adults,
+    children: row.children,
+    guests: row.guests,
+    bookedOn: row.bookedOn,
+    checkIn: row.checkIn,
+    checkOut: row.checkOut,
+    nights: row.nights,
+    checkInTime: row.checkInTime,
+    checkOutTime: row.checkOutTime,
+    earlyCheckIn: row.earlyCheckIn,
+    lateCheckout: row.lateCheckout,
+    guestVerification: row.guestVerification,
+    damageReport: row.damageReport,
+    maintenanceRequired: row.maintenanceRequired,
+    notes: row.notes,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Compile-time guards
  * ------------------------------------------------------------------ */
 
@@ -126,4 +202,8 @@ export const OPERATIONAL_PROPERTY_ROW_CARRIES_NO_FINANCIAL_FIELD: Disjoint<
 
 export const OPERATIONAL_RESERVATION_ROW_CARRIES_NO_FINANCIAL_FIELD: Disjoint<
   OperationalReservationRow, (typeof RESERVATION_FIELDS_WITHHELD_FROM_OPERATIONS)[number]
+> = true;
+
+export const OPERATIONAL_BOOKING_DETAIL_CARRIES_NO_FINANCIAL_FIELD: Disjoint<
+  OperationalBookingDetail, (typeof DETAIL_FIELDS_WITHHELD_FROM_OPERATIONS)[number]
 > = true;

@@ -21,7 +21,8 @@
  * optimistic state, `router.refresh()` as the authoritative re-read. No booking state is
  * computed here.
  */
-import { useCallback, useMemo, useState, useTransition } from 'react';
+import { useCallback, useMemo, useState, useTransition, type ReactNode } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   Card, CardHeader, CardBody, StatusPill, EmptyState, Button, Chip,
@@ -31,6 +32,7 @@ import { RowActionButton } from '@/components/mutations/actions';
 import type { FieldSpec } from '@/components/mutations/MutationForm';
 import { formatDate, formatDateShort } from '@/lib/shared/format';
 import { bookingStatusTone, bookingStatusRank } from '@/lib/shared/booking-status';
+import { BOOKING_PARAM } from './BookingDetailDrawer';
 import type { PropertyOption } from '@/lib/data/providers/types';
 import type { OperationalReservationRow } from '@/lib/data/views/role-projections';
 
@@ -57,6 +59,11 @@ export interface BookingsWorkspaceProps {
   checkInFields: FieldSpec[];
   checkOutFields: FieldSpec[];
   cancelFields: FieldSpec[];
+  /**
+   * The detail panel for `?booking=`, already resolved and projected on the server.
+   * Rendered as a child so this component never decides what a booking may disclose.
+   */
+  detail?: ReactNode;
 }
 
 /** The one legal next step for a booking, or null when the stay is over. */
@@ -75,7 +82,7 @@ function restingLabel(status: string): string {
 
 export function BookingsWorkspace({
   rows, units, scope, date, isOperationalDay, periodLabel,
-  checkInFields, checkOutFields, cancelFields,
+  checkInFields, checkOutFields, cancelFields, detail,
 }: BookingsWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -159,6 +166,13 @@ export function BookingsWorkspace({
     ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
     : { key, direction: 'asc' }));
 
+  /** The address of one booking, keeping whatever scope and filters are already set. */
+  const hrefFor = (bookingId: string): string => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set(BOOKING_PARAM, bookingId);
+    return `${pathname}?${params.toString()}`;
+  };
+
   /* ---- columns: WHAT · WHO · WHERE · WHEN · STATUS · ACTION ---- */
 
   const columns: Column<OperationalReservationRow>[] = [
@@ -166,7 +180,17 @@ export function BookingsWorkspace({
       key: 'booking', header: 'Booking', sortable: true,
       render: (r) => (
         <span className="sv-bkcell">
-          <code className="numeric">{r.bookingId}</code>
+          {/* A real link, not a click handler: it pushes history (so Back closes the
+              panel), survives a middle-click into a new tab, and is a shareable
+              address for one booking. */}
+          <Link
+            className="sv-bklink"
+            href={hrefFor(r.bookingId)}
+            scroll={false}
+            aria-label={`Open booking ${r.bookingId} for ${r.guestDisplayName}`}
+          >
+            <code className="numeric">{r.bookingId}</code>
+          </Link>
           <span className="sv-bkcell__sub">{r.platform}</span>
         </span>
       ),
@@ -316,6 +340,10 @@ export function BookingsWorkspace({
           />
         )}
       </CardBody>
+
+      {/* Server-resolved, server-projected. The panel is a child, so this component
+          holds no opinion about what a booking may disclose. */}
+      {detail}
     </Card>
   );
 }

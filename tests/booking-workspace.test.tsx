@@ -19,8 +19,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, within, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createElement, type ReactElement } from 'react';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import {
   AppRouterContext, type AppRouterInstance,
@@ -31,16 +29,20 @@ import {
 
 import { ToastProvider } from '@/components/ui/toast';
 import { BookingsWorkspace } from '@/components/operations/BookingsWorkspace';
+import { BookingDetailDrawer, BOOKING_PARAM } from '@/components/operations/BookingDetailDrawer';
 import { FixtureDashboardDataProvider } from '@/lib/data/providers/fixture-provider';
-import { operationalReservationRows } from '@/lib/data/views/role-projections';
-import { RESERVATION_FIELDS_WITHHELD_FROM_OPERATIONS } from '@/lib/data/views/role-projections';
+import {
+  operationalReservationRows, operationalBookingDetail,
+  RESERVATION_FIELDS_WITHHELD_FROM_OPERATIONS, DETAIL_FIELDS_WITHHELD_FROM_OPERATIONS,
+  type OperationalBookingDetail,
+} from '@/lib/data/views/role-projections';
+import { roleHasCapability, ROLES } from '@/lib/shared/roles';
 import { resolveFilters } from '@/lib/shared/page-helpers';
 import { isoToSerial } from '@/lib/shared/dates';
 import { OCCUPANCY_STATUSES } from '@/lib/shared/domain';
 import type { PropertyOption, ReservationRow } from '@/lib/data/providers/types';
 
-const ROOT = process.cwd();
-const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+import { readSource as read, codeOf } from './support/source';
 
 const provider = new FixtureDashboardDataProvider({ now: () => new Date('2027-01-19T10:00:00Z') });
 
@@ -91,6 +93,32 @@ async function workspace(over: Partial<Parameters<typeof BookingsWorkspace>[0]> 
     cancelFields: [{ name: 'reason', label: 'Why?', type: 'textarea' as const, required: true }],
     ...over,
   }));
+}
+
+/** One booking, resolved and projected exactly as the page does it. */
+async function detailFor(bookingId: string): Promise<OperationalBookingDetail | null> {
+  const { data } = await provider.getBookingDetail(bookingId);
+  return data ? operationalBookingDetail(data) : null;
+}
+
+async function firstBookingId(): Promise<string> {
+  return (await bookings())[0]!.bookingId;
+}
+
+/** The drawer, wired the way the page wires it. */
+function renderDetail(detail: OperationalBookingDetail | null, requestedId: string) {
+  return renderUi(
+    createElement(BookingDetailDrawer, { detail, requestedId }),
+    `${BOOKING_PARAM}=${requestedId}`,
+  );
+}
+
+/** Read a labelled fact out of the rendered panel. */
+function factOf(container: HTMLElement, label: string): string {
+  const dt = [...container.querySelectorAll('.sv-bkdetail__fact dt')]
+    .find((el) => el.textContent === label);
+  if (!dt) throw new Error(`no fact labelled "${label}" in the panel`);
+  return dt.nextElementSibling?.textContent ?? '';
 }
 
 const bodyRows = (container: HTMLElement) =>
@@ -490,7 +518,7 @@ describe('bookings workspace · what it must never carry', () => {
       // "Priya S." — a given name and a last initial, produced upstream in the view.
       expect(row.guestDisplayName, row.bookingId).toMatch(/^\S+(\s\S\.)?$/);
     }
-    const src = read('components/operations/BookingsWorkspace.tsx');
+    const src = codeOf(read('components/operations/BookingsWorkspace.tsx'));
     expect(src).not.toMatch(/guestName|GuestName|fullName/);
   });
 
@@ -505,5 +533,224 @@ describe('bookings workspace · what it must never carry', () => {
     expect(src).toContain('operationalReservationRows(rows)');
     // A branch here would mean a configuration of this screen that shows money.
     expect(src).not.toContain('roleSeesFinancialFigures');
+  });
+});
+
+/* ================================================================== *
+ * MILESTONE 4 . THE BOOKING DETAIL, AT ITS OWN ADDRESS
+ * ================================================================== */
+
+describe('bookings workspace . the detail panel', () => {
+  it('opens from the URL alone, so a pasted link works', async () => {
+    const id = await firstBookingId();
+    const { container } = renderDetail(await detailFor(id), id);
+
+    const drawer = container.querySelector('.sv-drawer');
+    expect(drawer).toBeTruthy();
+    expect(drawer).toHaveAttribute('aria-modal', 'true');
+    expect(drawer!.getAttribute('aria-label')).toContain(id);
+  });
+
+  it('is closed when the URL does not ask for a booking', () => {
+    const { container } = renderUi(
+      createElement(BookingDetailDrawer, { detail: null, requestedId: undefined }),
+    );
+    expect(container.querySelector('.sv-drawer')).toBeNull();
+  });
+
+  it('resolves a booking OUTSIDE the reporting month — a link must work from anywhere', async () => {
+    // The list is month-scoped; a detail link is not. A booking from an earlier period
+    // still opens, which is the whole point of addressing one by reference.
+    const months = await provider.getAvailableMonths();
+    const early = (await provider.getReservations({ month: months[0]! })).data[0]!;
+    const current = await latestMonth();
+
+    expect(months[0]).not.toBe(current);
+    expect((await bookings()).map((r) => r.bookingId)).not.toContain(early.bookingId);
+
+    const detail = await detailFor(early.bookingId);
+    expect(detail).not.toBeNull();
+    expect(detail!.bookingId).toBe(early.bookingId);
+  });
+
+  it('says so in words when the reference names nothing', async () => {
+    expect(await detailFor('BK-9999-9999')).toBeNull();
+
+    const { container } = renderDetail(null, 'BK-9999-9999');
+    expect(within(container).getByText('No booking BK-9999-9999')).toBeInTheDocument();
+    expect(container.textContent).toContain('Check the booking ID');
+    // Not an empty panel pretending to be a booking.
+    expect(container.querySelector('.sv-bkdetail')).toBeNull();
+  });
+
+  it('carries the four sections a front office needs, in order', async () => {
+    const id = await firstBookingId();
+    const { container } = renderDetail(await detailFor(id), id);
+    const headings = [...container.querySelectorAll('.sv-bkdetail__heading')]
+      .map((h) => h.textContent);
+    expect(headings).toEqual(['Booking', 'Guest', 'Stay', 'Operations']);
+  });
+
+  it('shows the stay facts the list has no room for', async () => {
+    const id = await firstBookingId();
+    const row = (await bookings()).find((r) => r.bookingId === id)!;
+    const detail = await detailFor(id);
+    const { container } = renderDetail(detail, id);
+
+    expect(factOf(container, 'Reference')).toBe(id);
+    expect(factOf(container, 'Platform')).toBe(row.platform);
+    expect(factOf(container, 'Unit ID')).toBe(row.propertyId);
+    expect(factOf(container, 'Nights')).toBe(String(row.nights));
+    expect(factOf(container, 'Guests in total')).toBe(String(detail!.guests));
+  });
+
+  it('distinguishes NOT RECORDED from NO — an unchecked room is not a clean one', async () => {
+    const id = await firstBookingId();
+    const base = (await detailFor(id))!;
+
+    // Nothing recorded: the panel says nobody looked.
+    const absent = renderDetail({ ...base, maintenanceRequired: null, damageReport: null }, id);
+    expect(factOf(absent.container, 'Maintenance required')).toBe('Not recorded');
+    expect(factOf(absent.container, 'Damage report')).toBe('Not recorded');
+    cleanup();
+
+    // Recorded as no: somebody inspected and found nothing.
+    const checked = renderDetail({ ...base, maintenanceRequired: false }, id);
+    expect(factOf(checked.container, 'Maintenance required')).toBe('No');
+    cleanup();
+
+    const flagged = renderDetail({ ...base, maintenanceRequired: true }, id);
+    expect(factOf(flagged.container, 'Maintenance required')).toBe('Yes');
+  });
+
+  it('reads back the arrival time the check-in mutation writes', async () => {
+    // CheckInTime was written by the check-in flow and read by nothing: the value went
+    // into the workbook and out of the product's sight. This closes that loop.
+    const id = await firstBookingId();
+    const base = (await detailFor(id))!;
+
+    const withTime = renderDetail({ ...base, checkInTime: '14:20', checkOutTime: '10:05' }, id);
+    expect(factOf(withTime.container, 'Arrived at')).toBe('14:20');
+    expect(factOf(withTime.container, 'Departed at')).toBe('10:05');
+    cleanup();
+
+    const without = renderDetail({ ...base, checkInTime: null, checkOutTime: null }, id);
+    expect(factOf(without.container, 'Arrived at')).toBe('Not recorded');
+  });
+
+  it('closing clears only the booking param and keeps the rest of the URL', async () => {
+    const user = userEvent.setup();
+    const id = await firstBookingId();
+    const { container } = renderUi(
+      createElement(BookingDetailDrawer, { detail: await detailFor(id), requestedId: id }),
+      `scope=in-progress&${BOOKING_PARAM}=${id}&property=HYD-501`,
+    );
+
+    await user.click(within(container).getByRole('button', { name: /Close this panel/ }));
+    // REPLACE, not back(): a reader who arrived on a pasted link must land on the list,
+    // not be walked out of the application.
+    const target = replaced.at(-1)!;
+    expect(target).not.toContain(BOOKING_PARAM);
+    expect(target).toContain('scope=in-progress');
+    expect(target).toContain('property=HYD-501');
+  });
+
+  it('opens from a real link, so Back closes it and a middle-click opens a tab', async () => {
+    const { container } = await workspace();
+    const link = container.querySelector('a.sv-bklink') as HTMLAnchorElement;
+
+    expect(link, 'the booking reference must be an anchor, not a click handler').toBeTruthy();
+    expect(link.getAttribute('href')).toContain(`${BOOKING_PARAM}=`);
+    // Named for a screen reader, not left as a bare code.
+    expect(link.getAttribute('aria-label')).toMatch(/^Open booking BK-/);
+  });
+
+  it('keeps the current scope and filters in the link it builds', async () => {
+    const rows = operationalReservationRows(await bookings());
+    const { container } = renderUi(createElement(BookingsWorkspace, {
+      rows, units: UNITS, scope: 'in-progress' as const,
+      date: '2027-01-19', isOperationalDay: true, periodLabel: 'Jan 2027',
+      checkInFields: FIELDS, checkOutFields: FIELDS, cancelFields: FIELDS,
+    }), 'scope=in-progress&platform=Airbnb');
+
+    const href = (container.querySelector('a.sv-bklink') as HTMLAnchorElement).getAttribute('href')!;
+    expect(href).toContain('scope=in-progress');
+    expect(href).toContain('platform=Airbnb');
+    expect(href).toContain(`${BOOKING_PARAM}=`);
+  });
+});
+
+/* ================================================================== *
+ * WHAT THE DETAIL MUST NEVER CARRY
+ * ================================================================== */
+
+describe('bookings workspace . the detail panel carries no money and no full name', () => {
+  it('has no financial field on the projected payload, for any booking', async () => {
+    for (const row of await bookings()) {
+      const detail = (await detailFor(row.bookingId))!;
+      for (const withheld of DETAIL_FIELDS_WITHHELD_FROM_OPERATIONS) {
+        expect(Object.keys(detail), row.bookingId).not.toContain(withheld);
+      }
+      expect(JSON.stringify(detail)).not.toMatch(/payout|grossValue/i);
+    }
+  });
+
+  it('withholds exactly the same fields as the list row — one rule, not two', () => {
+    expect([...DETAIL_FIELDS_WITHHELD_FROM_OPERATIONS])
+      .toEqual([...RESERVATION_FIELDS_WITHHELD_FROM_OPERATIONS]);
+  });
+
+  it('is guarded at COMPILE time, not by review', () => {
+    const src = read('lib/data/views/role-projections.ts');
+    expect(src).toContain('OPERATIONAL_BOOKING_DETAIL_CARRIES_NO_FINANCIAL_FIELD');
+    // A fresh literal, field by field. A spread would carry every future money column.
+    const fn = src.slice(src.indexOf('export function operationalBookingDetail'));
+    expect(fn.slice(0, fn.indexOf('}\n'))).not.toContain('...row');
+  });
+
+  it('renders no amount and no payout status in the panel', async () => {
+    const id = await firstBookingId();
+    const { container } = renderDetail(await detailFor(id), id);
+    const text = container.textContent ?? '';
+    expect(text).not.toMatch(/₹|INR/);
+    expect(text).not.toMatch(/\d{1,3}(,\d{2,3})+/);
+    expect(text).not.toMatch(/payout/i);
+  });
+
+  it('shows only the minimised guest name — no full name reaches the panel', async () => {
+    const id = await firstBookingId();
+    const detail = (await detailFor(id))!;
+    expect(detail.guestDisplayName).toMatch(/^\S+(\s\S\.)?$/);
+    expect(Object.keys(detail)).not.toContain('guestName');
+
+    // Scanned as CODE: the file's own comment explains that contact details are never
+    // carried, and prose about a rule must not fail the rule's guard.
+    const src = codeOf(read('components/operations/BookingDetailDrawer.tsx'));
+    expect(src).not.toMatch(/guestName|fullName|email|phone|contact/i);
+  });
+
+  it('decides nothing about disclosure in the client', () => {
+    const src = codeOf(read('components/operations/BookingDetailDrawer.tsx'));
+    // No capability check, no role branch: the server sent a projection, and a client
+    // that never receives a field cannot leak it however this file is later edited.
+    expect(src).not.toMatch(/roleHasCapability|roleSeesFinancialFigures|capabilit/i);
+    expect(src).toContain('OperationalBookingDetail');
+  });
+
+  it('the page projects the detail on the server, with no capability branch', () => {
+    const src = read('app/admin/operations/reservations/page.tsx');
+    expect(src).toContain('operationalBookingDetail(detail.data)');
+    expect(src).not.toContain('roleSeesFinancialFigures');
+  });
+
+  it('an investor can reach neither the workspace nor a booking within it', () => {
+    // The panel has no per-booking owner concept; the page capability is the control.
+    expect(roleHasCapability('INVESTOR', 'reservations.read')).toBe(false);
+    for (const role of ROLES) {
+      if (role === 'INVESTOR') continue;
+      expect(roleHasCapability(role, 'reservations.read'), role).toBe(true);
+    }
+    expect(read('app/admin/operations/reservations/page.tsx'))
+      .toContain('capability="reservations.read"');
   });
 });

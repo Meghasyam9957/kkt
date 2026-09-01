@@ -26,6 +26,12 @@ export interface SearchParams {
    * narrow to the safe default rather than reaching the view as itself.
    */
   scope?: string;
+  /**
+   * A booking reference, which opens that booking's detail panel over the list. Never
+   * trusted as an existence claim: the view returns null for a reference the workbook
+   * does not hold, and the screen says so in words.
+   */
+  booking?: string;
 }
 
 /** Resolve URL params into the filter shape the provider expects. */

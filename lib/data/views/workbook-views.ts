@@ -36,7 +36,7 @@ import {
 import type {
   DashboardView, ReportFilters, KpiValue, ReservationRow, LedgerRow, CapexRow, CashFlowRow,
   PnlView, PnlLine, SettingsView, InvestorPreviewView, OperationsToday, TrendPoint,
-  PropertyBoardRow, UnitStatus, OperationsBoardView, UrgentItem, UrgentSeverity,
+  PropertyBoardRow, UnitStatus, OperationsBoardView, UrgentItem, UrgentSeverity, BookingDetailRow,
   ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow, InvestorRegisterRow, ForecastView,
 } from '@/lib/data/providers/types';
 
@@ -777,6 +777,56 @@ export class WorkbookViews {
         };
       })
       .sort((a, b) => (a.checkIn ?? '').localeCompare(b.checkIn ?? ''));
+  }
+
+  /**
+   * ONE booking, in full. Not month-scoped: a detail link has to work from anywhere,
+   * including a pasted URL for a stay that began in another period.
+   *
+   * Built from the SAME mapping the list uses, plus the front-office columns no
+   * calculation depends on. `null` is used for every unrecorded field — a blank cell is
+   * a check nobody made, and rendering it as "No" would assert something the workbook
+   * does not say.
+   */
+  bookingDetail(bookingId: string): BookingDetailRow | null {
+    const booking = this.workbook.reservations.find((b) => b.BookingID === bookingId);
+    if (!booking) return null;
+
+    const master = this.workbook.properties.find((p) => p.PropertyID === booking.PropertyID);
+    const expected = expectedPayout(booking, this.workbook.settings);
+    const flag = (value: boolean | undefined): boolean | null => value ?? null;
+    const text = (value: string | undefined): string | null => (value && value.trim() !== '' ? value : null);
+
+    return {
+      bookingId: booking.BookingID,
+      platform: booking.Platform,
+      propertyId: booking.PropertyID,
+      bookingStatus: booking.BookingStatus,
+      guestDisplayName: minimizeGuestName(booking.GuestName),
+      checkIn: booking.CheckInDate === null ? null : serialToIso(booking.CheckInDate),
+      checkOut: booking.CheckOutDate === null ? null : serialToIso(booking.CheckOutDate),
+      nights: bookingNights(booking),
+      grossValue: grossBookingValue(booking),
+      expectedPayout: expected,
+      actualPayout: booking.ActualPayout,
+      payoutStatus: derivePayoutStatus(booking.BookingStatus, expected, booking.ActualPayout,
+        this.workbook.settings.payoutToleranceInr),
+
+      unitName: master?.Unit ?? '',
+      adults: booking.Adults,
+      children: booking.Children,
+      guests: booking.Adults + booking.Children,
+      platformRef: booking.PlatformResID,
+      bookedOn: booking.BookingDate === null ? null : serialToIso(booking.BookingDate),
+      checkInTime: text(booking.CheckInTime),
+      checkOutTime: text(booking.CheckOutTime),
+      earlyCheckIn: flag(booking.EarlyCheckIn),
+      lateCheckout: flag(booking.LateCheckout),
+      guestVerification: text(booking.GuestVerification),
+      damageReport: text(booking.DamageReport),
+      maintenanceRequired: flag(booking.MaintenanceRequired),
+      notes: text(booking.Notes),
+    };
   }
 
   revenue(filters: ReportFilters): LedgerRow[] {

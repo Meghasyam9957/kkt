@@ -1,6 +1,9 @@
 import { ReadOnlyPage, resolveFilters, type SearchParams } from '@/lib/shared/page-helpers';
 import { BookingsWorkspace, type BookingScope } from '@/components/operations/BookingsWorkspace';
-import { operationalReservationRows } from '@/lib/data/views/role-projections';
+import { BookingDetailDrawer } from '@/components/operations/BookingDetailDrawer';
+import {
+  operationalReservationRows, operationalBookingDetail,
+} from '@/lib/data/views/role-projections';
 import { NewRecordButton } from '@/components/mutations/actions';
 import {
   reservationFields, checkInFields, checkOutFields, cancelReservationFields,
@@ -48,9 +51,17 @@ async function WorkspaceLoader({ rows, scope, params }: {
 }) {
   const provider = getDataProvider();
   const filters = await resolveFilters(params);
-  const [units, board] = await Promise.all([
+  const requested = typeof params.booking === 'string' ? params.booking.trim() : '';
+
+  const [units, board, detail] = await Promise.all([
     provider.getPropertyDirectory(),
     provider.getOperations(filters),
+    /*
+     * Resolved IN PROCESS, like every other read on this screen — no new HTTP endpoint,
+     * and no month scoping, so a pasted link to a stay from another period still opens.
+     * The lookup only runs when the URL actually asks for one.
+     */
+    requested ? provider.getBookingDetail(requested) : Promise.resolve(null),
   ]);
 
   return (
@@ -66,6 +77,16 @@ async function WorkspaceLoader({ rows, scope, params }: {
       checkInFields={checkInFields()}
       checkOutFields={checkOutFields()}
       cancelFields={cancelReservationFields()}
+      detail={requested ? (
+        <BookingDetailDrawer
+          /* Projected on the SERVER, unconditionally, exactly as the list is: there is
+             no configuration of this screen — no role, no flag — in which a payout
+             figure reaches the browser. A capability branch here would be the moment
+             "Admin can see it anyway" put money on an operations surface. */
+          detail={detail?.data ? operationalBookingDetail(detail.data) : null}
+          requestedId={requested}
+        />
+      ) : undefined}
     />
   );
 }
