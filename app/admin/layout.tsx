@@ -54,12 +54,28 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // renders the lockup — never a flash of one replaced by the other.
   const brandAssets = resolveBrandAssets();
 
+  /*
+   * The filter vocabulary is MANAGEMENT vocabulary, and it is fetched only for a role
+   * entitled to it.
+   *
+   * It used to be fetched for everyone and handed to `FilterProvider`, a client
+   * component — so the whole property directory, every unit name and every trading month
+   * were serialised into the RSC payload of the INVESTOR's page, whose approved scope is
+   * portfolio-level and which renders no filter bar at all. Nothing was displayed, and
+   * the data was still in their browser.
+   *
+   * `properties.read` is the exact question being asked: you get the property directory
+   * if you may read properties. The investor holds no such capability, so the arrays
+   * arrive empty and there is nothing to serialise.
+   */
+  const mayFilter = roleHasCapability(session.role, 'properties.read');
+
   const [availableMonths, availablePlatforms, availableProperties, meta] = await Promise.all([
-    provider.getAvailableMonths(),
-    provider.getPlatforms(),
+    mayFilter ? provider.getAvailableMonths() : Promise.resolve([]),
+    mayFilter ? provider.getPlatforms() : Promise.resolve([]),
     // Identity, not bare IDs: the filter shows "5th Floor — 2 BHK · HYD-501". Names come
     // from the property master's Unit column — real data, never invented.
-    provider.getPropertyDirectory(),
+    mayFilter ? provider.getPropertyDirectory() : Promise.resolve([]),
     // Provenance comes FROM the provider rather than being assumed here. Asserting
     // "GOOD" in the layout would let the header claim live data was current when the
     // last fetch had actually failed.
