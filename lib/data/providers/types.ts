@@ -66,6 +66,19 @@ export interface ReportFilters {
    * value falls back rather than reaching a query.
    */
   date?: string | null;
+  /**
+   * Which bookings the reservations register is being asked for.
+   *
+   * 'month' (the default, and every caller that omits this) — bookings ARRIVING in the
+   * reporting month. That is the register's historical meaning and what the finance
+   * ledger totals.
+   *
+   * 'in-progress' — bookings whose stay COVERS `date`, whenever they arrived. A guest who
+   * checked in last month is in the house today and the month scope cannot see them, so
+   * "who is staying right now" — the commonest front-office question — was unanswerable
+   * from the register. Month is ignored in this mode by construction, not by accident.
+   */
+  scope?: 'month' | 'in-progress' | null;
 }
 
 /* ------------------------------------------------------------------ *

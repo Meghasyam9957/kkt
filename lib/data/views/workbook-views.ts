@@ -722,10 +722,40 @@ export class WorkbookViews {
     return items.sort((a, b) => order[a.severity] - order[b.severity]);
   }
 
+  /**
+   * The reservations register, in one of two scopes.
+   *
+   * MONTH (default) selects bookings by ARRIVAL — check-in inside the reporting month.
+   * That is what the register has always meant and what the finance ledger totals.
+   *
+   * IN-PROGRESS selects bookings whose stay COVERS the selected day, whenever they
+   * arrived. The month scope structurally cannot answer "who is in the house right now",
+   * because a guest who checked in on the 28th of last month has no check-in date in this
+   * one — they are simply absent from the list while standing in the building.
+   *
+   * The span test is the half-open interval the engine already uses for occupancy
+   * (`occupiedUnitCount`, `buildBoard`): check-in on or before the day, check-out strictly
+   * after it, so a same-day turnover counts once rather than twice. The status set is
+   * OCCUPANCY_STATUSES — the domain's own definition of a stay that really happened.
+   * Neither rule is invented here; both are read from where they already live.
+   */
   reservations(filters: ReportFilters): ReservationRow[] {
     const period = monthPeriod(this.resolveMonth(filters.month));
+    // Resolved the same way the Today board resolves it, so a malformed or impossible
+    // date falls back to the operational day instead of reaching this query.
+    const selected = isoToSerial(resolveBoardDate(filters.date, this.ops.today));
+    const inProgress = filters.scope === 'in-progress';
+
+    const covers = (b: ReservationRecord): boolean =>
+      b.CheckInDate !== null && b.CheckOutDate !== null
+      && b.CheckInDate <= selected && selected < b.CheckOutDate
+      && OCCUPANCY_STATUSES.includes(b.BookingStatus as (typeof OCCUPANCY_STATUSES)[number]);
+
+    const arrivesInMonth = (b: ReservationRecord): boolean =>
+      b.CheckInDate !== null && b.CheckInDate >= period.start && b.CheckInDate < period.end;
+
     return this.workbook.reservations
-      .filter((b) => b.CheckInDate !== null && b.CheckInDate >= period.start && b.CheckInDate < period.end)
+      .filter((b) => (inProgress ? covers(b) : arrivesInMonth(b)))
       .filter((b) => !filters.propertyId || b.PropertyID === filters.propertyId)
       .filter((b) => !filters.platform || b.Platform === filters.platform)
       .map<ReservationRow>((b) => {

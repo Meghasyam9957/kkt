@@ -20,6 +20,12 @@ export interface SearchParams {
   month?: string; property?: string; platform?: string;
   /** 'YYYY-MM-DD' for the Today board. Validated by the view, never trusted here. */
   date?: string;
+  /**
+   * 'in-progress' switches the bookings register from "arriving this month" to "staying
+   * on this day". Anything else resolves to the month scope — an unknown value must
+   * narrow to the safe default rather than reaching the view as itself.
+   */
+  scope?: string;
 }
 
 /** Resolve URL params into the filter shape the provider expects. */
@@ -34,6 +40,9 @@ export async function resolveFilters(params: SearchParams): Promise<ReportFilter
     propertyId: params.property ?? null,
     platform: params.platform ?? null,
     date: params.date ?? null,
+    // Allow-listed, not passed through: one recognised value, everything else is the
+    // default. A URL cannot introduce a scope the view has never heard of.
+    scope: params.scope === 'in-progress' ? 'in-progress' : 'month',
   };
 }
 

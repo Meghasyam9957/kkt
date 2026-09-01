@@ -1615,3 +1615,76 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   text-transform: uppercase; color: var(--text-muted); font-weight: 600;
 }
 .sv-facts dd { margin: 0; font-size: var(--t-small); color: var(--text-primary); }
+
+/* ================================================================== *
+ * BOOKINGS WORKSPACE (UI-4)
+ * ================================================================== */
+
+/* ---- Sortable table headers ---- */
+.sv-table__sort {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+  cursor: pointer;
+}
+.sv-table__sort:hover { color: var(--text-primary); }
+.sv-table__sort--active { color: var(--text-primary); font-weight: 700; }
+/* The arrow is decoration; aria-sort on the <th> carries the meaning. Inactive columns
+   show a faint one so the control is discoverable without shouting. */
+.sv-table__sort-icon { display: inline-flex; opacity: 0.3; transition: transform var(--m-fast) var(--e-standard); }
+.sv-table__sort--active .sv-table__sort-icon { opacity: 1; }
+.sv-table__sort-icon--asc { transform: rotate(180deg); }
+.sv-num .sv-table__sort { flex-direction: row-reverse; }
+@media (prefers-reduced-motion: reduce) { .sv-table__sort-icon { transition: none; } }
+@media (pointer: coarse) { .sv-table__sort { min-height: 44px; } }
+
+/* ---- The toolbar above the list ---- */
+.sv-bktools {
+  display: flex; flex-direction: column; gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+.sv-bktools__scope, .sv-bktools__status {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2);
+}
+.sv-bktools__find { display: flex; flex-direction: column; gap: var(--s-3); }
+.sv-chip__count { color: var(--text-muted); font-variant-numeric: tabular-nums; font-weight: 400; }
+.sv-chip[aria-pressed='true'] .sv-chip__count { color: inherit; }
+
+.sv-bksearch { display: flex; flex-direction: column; gap: 4px; }
+.sv-bksearch__label {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+.sv-bksearch__input {
+  width: 100%; max-width: 26rem;
+  padding: var(--s-2) var(--s-3);
+  font: inherit; font-size: var(--t-body); color: var(--text-primary);
+  background: var(--surface-card);
+  border: 1px solid var(--line-strong); border-radius: var(--r-2);
+}
+.sv-bksearch__input:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+@media (pointer: coarse) { .sv-bksearch__input { min-height: 44px; } }
+
+@media (min-width: 900px) {
+  /* Room for the search beside the status chips once there is any. */
+  .sv-bktools__find { flex-direction: row; align-items: flex-end; gap: var(--s-4); }
+  .sv-bksearch__input { min-width: 20rem; }
+}
+
+/* ---- Cells that carry a fact and its qualifier ---- */
+.sv-bkcell { display: inline-flex; flex-direction: column; gap: 1px; }
+.sv-bkcell__sub { font-size: var(--text-label); color: var(--text-muted); }
+
+/* ---- Row actions: one primary, one quiet escape hatch ---- */
+.sv-bkactions { display: inline-flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.sv-bkactions__resting { font-size: var(--t-small); color: var(--text-muted); }
+
+@media (max-width: 640px) {
+  /* One thumb, full width — the same rule the Today board's rows follow. */
+  .sv-table--stack .sv-bkactions { width: 100%; }
+  .sv-table--stack .sv-bkactions .sv-btn { flex: 1; justify-content: center; }
+  /* The stacked cell is label-left / value-right; a stacked cell whose value is itself a
+     column reads better with the pair aligned to the right edge. */
+  .sv-table--stack .sv-bkcell { align-items: flex-end; }
+}

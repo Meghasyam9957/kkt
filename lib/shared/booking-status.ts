@@ -36,6 +36,24 @@ export const BOOKING_STATUS_TONE: Readonly<Record<BookingStatus, Tone>> = {
 };
 
 /**
+ * Lifecycle order, for sorting a list BY status.
+ *
+ * Alphabetical would put Cancelled first and Confirmed second, which tells the reader
+ * nothing. This is the order a booking actually travels in — the same progression the
+ * server's transition table enforces — so sorting by status groups a list into "not
+ * decided yet", "on the books", "in the house", "done", "lost".
+ */
+export const BOOKING_STATUS_ORDER: readonly BookingStatus[] = [
+  'Inquiry', 'Confirmed', 'Checked In', 'Checked Out', 'Cancelled', 'No Show',
+];
+
+/** Sort rank for a status. An unrecognised one sorts last rather than first. */
+export function bookingStatusRank(status: string): number {
+  const index = BOOKING_STATUS_ORDER.indexOf(status as BookingStatus);
+  return index === -1 ? BOOKING_STATUS_ORDER.length : index;
+}
+
+/**
  * The tone for a booking status.
  *
  * Takes a `string` rather than `BookingStatus` because the workbook is the source of
