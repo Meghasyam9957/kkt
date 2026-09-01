@@ -614,6 +614,106 @@ describe('mutations · reservation lifecycle', () => {
     const bookings = await h.deps.repos.reservations.readAll();
     expect(bookings.some((b) => b.BookingID === id)).toBe(true);
   });
+
+  it('a NO-SHOW is its own status, not a cancellation wearing a flag', async () => {
+    // `noShow: true` is the only thing separating the two outcomes on the wire, and V1
+    // counts them differently nowhere — both are lost bookings — but they are different
+    // FACTS about a guest, and the cancellation rate is not the only reader of this row.
+    const id = await createBooking();
+    const res = await h.request('operations', 'POST', `/api/reservations/${id}/cancel`,
+      { operationId: randomUUID(), reason: 'Guest never arrived', noShow: true });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.record.BookingStatus).toBe('No Show');
+    // The note names what happened. "Cancelled via web" on a no-show reads, months
+    // later, as a decision somebody made rather than a guest who did not come.
+    expect(String(res.body.record.Notes)).toContain('No-show via web');
+    expect(String(res.body.record.Notes)).toContain('Guest never arrived');
+
+    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    expect(stored.BookingStatus).toBe('No Show');
+  });
+
+  it('a cancellation and a no-show reach DIFFERENT statuses from the same endpoint', async () => {
+    const cancelled = await createBooking();
+    const noShow = await createBooking();
+
+    await h.request('operations', 'POST', `/api/reservations/${cancelled}/cancel`,
+      { operationId: randomUUID(), reason: 'Changed their plans' });
+    await h.request('operations', 'POST', `/api/reservations/${noShow}/cancel`,
+      { operationId: randomUUID(), reason: 'Did not arrive', noShow: true });
+
+    const rows = await h.deps.repos.reservations.readAll();
+    expect(rows.find((b) => b.BookingID === cancelled)!.BookingStatus).toBe('Cancelled');
+    expect(rows.find((b) => b.BookingID === noShow)!.BookingStatus).toBe('No Show');
+  });
+
+  it('records the arrival time, and reads it back — a write nothing used to show', async () => {
+    const id = await createBooking();
+    await h.request('operations', 'POST', `/api/reservations/${id}/check-in`,
+      { operationId: randomUUID(), checkInTime: '14:35' });
+
+    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    expect(stored.CheckInTime).toBe('14:35');
+    // A time nobody supplied stays absent rather than becoming an empty string, so the
+    // detail panel can tell "not recorded" from "recorded as nothing".
+    expect(stored.CheckOutTime).toBeUndefined();
+  });
+
+  it('refuses a departure moved before the arrival, even when only ONE date is sent', async () => {
+    // The order check used to run only when BOTH dates arrived together, so amending one
+    // skipped it. That was unreachable until a screen offered a single-date change.
+    const id = await createBooking();
+    const backwards = await h.request('operations', 'PATCH', `/api/reservations/${id}`,
+      { operationId: randomUUID(), checkOutDate: '2026-08-25' });
+
+    expect(backwards.status, JSON.stringify(backwards.body)).toBe(422);
+    expect(JSON.stringify(backwards.body.error.details))
+      .toContain('checkOutDate must be after checkInDate');
+
+    // The stay is untouched by the refusal.
+    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    expect(stored.CheckOutDate).toBe(isoToSerial('2026-09-03'));
+  });
+
+  it('accepts a legal single-date change and moves only that date', async () => {
+    const id = await createBooking();
+    const res = await h.request('operations', 'PATCH', `/api/reservations/${id}`,
+      { operationId: randomUUID(), checkOutDate: '2026-09-06' });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    expect(stored.CheckOutDate).toBe(isoToSerial('2026-09-06'));
+    expect(stored.CheckInDate).toBe(isoToSerial('2026-09-01'));
+  });
+
+  it('refuses an arrival moved after the departure, the mirror of the same rule', async () => {
+    const id = await createBooking();
+    const res = await h.request('operations', 'PATCH', `/api/reservations/${id}`,
+      { operationId: randomUUID(), checkInDate: '2026-09-05' });
+    expect(res.status).toBe(422);
+    expect(JSON.stringify(res.body.error.details))
+      .toContain('checkOutDate must be after checkInDate');
+  });
+
+  it('confirms an inquiry through the amend route, and refuses an illegal jump', async () => {
+    const inquiry = await h.request('operations', 'POST', '/api/reservations', {
+      operationId: randomUUID(), platform: 'Direct', propertyId: 'HYD-501',
+      bookingDate: '2026-08-20', guestName: 'Enquiring Guest', adults: 1, children: 0,
+      checkInDate: '2026-09-10', checkOutDate: '2026-09-12', bookingStatus: 'Inquiry',
+    });
+    const id = inquiry.body.record.BookingID;
+
+    const confirmed = await h.request('operations', 'PATCH', `/api/reservations/${id}`,
+      { operationId: randomUUID(), bookingStatus: 'Confirmed' });
+    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(200);
+    expect(confirmed.body.record.BookingStatus).toBe('Confirmed');
+
+    // Inquiry -> Checked In is not a step anybody may take.
+    const jump = await h.request('operations', 'PATCH', `/api/reservations/${id}`,
+      { operationId: randomUUID(), bookingStatus: 'Checked Out' });
+    expect(jump.status).toBe(422);
+  });
 });
 
 /* ================================================================== *

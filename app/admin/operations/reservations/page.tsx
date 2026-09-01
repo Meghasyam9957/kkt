@@ -1,13 +1,12 @@
 import { ReadOnlyPage, resolveFilters, type SearchParams } from '@/lib/shared/page-helpers';
 import { BookingsWorkspace, type BookingScope } from '@/components/operations/BookingsWorkspace';
 import { BookingDetailDrawer } from '@/components/operations/BookingDetailDrawer';
+import { BookingActions } from '@/components/operations/BookingActions';
 import {
   operationalReservationRows, operationalBookingDetail,
 } from '@/lib/data/views/role-projections';
 import { NewRecordButton } from '@/components/mutations/actions';
-import {
-  reservationFields, checkInFields, checkOutFields, cancelReservationFields,
-} from '@/lib/server/api/form-fields';
+import { reservationFields, checkInFields, checkOutFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 import { formatMonthLong } from '@/lib/shared/format';
 import type { ReservationRow } from '@/lib/data/providers/types';
@@ -24,7 +23,13 @@ async function NewBookingAction() {
       label="+ New Booking"
       title="Create a booking"
       endpoint="/api/reservations"
-      fields={reservationFields(propertyIds, platforms)}
+      /*
+       * NO MONEY FIELDS on this surface. OPERATIONS holds no financial capability, so a
+       * role that may not read a booking's value does not author one either; the fields
+       * are absent from the form, the payload and the browser rather than hidden. Booking
+       * money is entered on the finance view of the same register.
+       */
+      fields={reservationFields(propertyIds, platforms, { withValues: false })}
       submitLabel="Create booking"
       successTemplate="{id} created — totals and payout are calculated by the workbook."
       idField="BookingID"
@@ -64,6 +69,8 @@ async function WorkspaceLoader({ rows, scope, params }: {
     requested ? provider.getBookingDetail(requested) : Promise.resolve(null),
   ]);
 
+  const projected = detail?.data ? operationalBookingDetail(detail.data) : null;
+
   return (
     <BookingsWorkspace
       /* Projected for EVERY role: booking values and payout fields are stripped on the
@@ -76,15 +83,15 @@ async function WorkspaceLoader({ rows, scope, params }: {
       periodLabel={formatMonthLong(filters.month)}
       checkInFields={checkInFields()}
       checkOutFields={checkOutFields()}
-      cancelFields={cancelReservationFields()}
       detail={requested ? (
         <BookingDetailDrawer
           /* Projected on the SERVER, unconditionally, exactly as the list is: there is
              no configuration of this screen — no role, no flag — in which a payout
              figure reaches the browser. A capability branch here would be the moment
              "Admin can see it anyway" put money on an operations surface. */
-          detail={detail?.data ? operationalBookingDetail(detail.data) : null}
+          detail={projected}
           requestedId={requested}
+          actions={projected ? <BookingActions booking={projected} /> : undefined}
         />
       ) : undefined}
     />

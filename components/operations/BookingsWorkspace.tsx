@@ -58,7 +58,6 @@ export interface BookingsWorkspaceProps {
   /** Field specs built on the server from the V1 contract — never assembled here. */
   checkInFields: FieldSpec[];
   checkOutFields: FieldSpec[];
-  cancelFields: FieldSpec[];
   /**
    * The detail panel for `?booking=`, already resolved and projected on the server.
    * Rendered as a child so this component never decides what a booking may disclose.
@@ -82,7 +81,7 @@ function restingLabel(status: string): string {
 
 export function BookingsWorkspace({
   rows, units, scope, date, isOperationalDay, periodLabel,
-  checkInFields, checkOutFields, cancelFields, detail,
+  checkInFields, checkOutFields, detail,
 }: BookingsWorkspaceProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -229,7 +228,6 @@ export function BookingsWorkspace({
           row={r}
           checkInFields={checkInFields}
           checkOutFields={checkOutFields}
-          cancelFields={cancelFields}
         />
       ),
     },
@@ -349,23 +347,23 @@ export function BookingsWorkspace({
 }
 
 /**
- * One primary action per row: the booking's legal next transition, and nothing else
- * competing with it. Cancel stays available as a quiet secondary until the detail drawer
- * carries it — removing a working escape hatch before its replacement exists would be a
- * worse screen, not a tidier one.
+ * ONE action per row: the booking's legal next transition, and nothing competing with
+ * it. Everything else a booking can do — edit, change dates, cancel, no-show, confirm —
+ * lives in the detail panel, reached by the booking reference on the same row.
+ *
+ * Cancel used to sit here as a second button. It moved rather than disappeared: the
+ * replacement was built and proven before the escape hatch was taken away.
  *
  * The SERVER re-checks every transition on submit; this only keeps dead buttons off a
  * busy list.
  */
-function BookingRowAction({ row, checkInFields, checkOutFields, cancelFields }: {
+function BookingRowAction({ row, checkInFields, checkOutFields }: {
   row: OperationalReservationRow;
   checkInFields: FieldSpec[];
   checkOutFields: FieldSpec[];
-  cancelFields: FieldSpec[];
 }) {
   const base = `/api/reservations/${row.bookingId}`;
   const next = primaryAction(row.bookingStatus);
-  const cancellable = row.bookingStatus === 'Confirmed' || row.bookingStatus === 'Inquiry';
 
   return (
     <span className="sv-bkactions">
@@ -391,16 +389,6 @@ function BookingRowAction({ row, checkInFields, checkOutFields, cancelFields }: 
         /* Nothing to do here, said plainly rather than left as an empty cell. */
         <span className="sv-bkactions__resting">{restingLabel(row.bookingStatus)}</span>
       )}
-
-      {cancellable ? (
-        <RowActionButton
-          label="Cancel" variant="ghost" size="sm"
-          endpoint={`${base}/cancel`}
-          confirmTitle={`Cancel ${row.bookingId}?`}
-          fields={cancelFields}
-          successTemplate={`${row.bookingId} cancelled — the row remains in the ledger.`}
-        />
-      ) : null}
     </span>
   );
 }

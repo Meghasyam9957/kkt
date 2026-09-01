@@ -99,7 +99,28 @@ export function cashflowFields(): FieldSpec[] {
  * Operations
  * ------------------------------------------------------------------ */
 
-export function reservationFields(propertyIds: readonly string[], platforms: readonly string[]): FieldSpec[] {
+/**
+ * Create a booking.
+ *
+ * `withValues` decides whether the money columns are offered at all. They are omitted on
+ * the operations workspace: OPERATIONS holds no financial capability, and a role that may
+ * not read a booking's value has no business authoring one. They remain on the finance
+ * view of the same register, where money is entered.
+ *
+ * Nothing is hidden either way — an omitted field is not in the form, not in the payload
+ * and not in the browser.
+ */
+export function reservationFields(
+  propertyIds: readonly string[], platforms: readonly string[],
+  { withValues = true }: { withValues?: boolean } = {},
+): FieldSpec[] {
+  const money: FieldSpec[] = withValues ? [
+    { name: 'baseRate', label: 'Base rate / night', type: 'currency' },
+    { name: 'roomRevenue', label: 'Room revenue', type: 'currency', help: 'Totals, fees and payouts are calculated by the workbook.' },
+    { name: 'cleaningFee', label: 'Cleaning fee', type: 'currency' },
+    { name: 'extraGuestFee', label: 'Extra guest fee', type: 'currency' },
+    { name: 'discount', label: 'Discount', type: 'currency' },
+  ] : [];
   return [
     { name: 'propertyId', label: 'Property', type: 'select', required: true, options: propertyOptions(propertyIds, false) },
     { name: 'platform', label: 'Platform', type: 'select', required: true, options: platforms.map((value) => ({ value })) },
@@ -111,11 +132,7 @@ export function reservationFields(propertyIds: readonly string[], platforms: rea
     { name: 'checkInDate', label: 'Check-in', type: 'date', required: true },
     { name: 'checkOutDate', label: 'Check-out', type: 'date', required: true },
     { name: 'bookingStatus', label: 'Status', type: 'select', required: true, options: list('BOOKING_STATUS'), defaultValue: 'Confirmed' },
-    { name: 'baseRate', label: 'Base rate / night', type: 'currency' },
-    { name: 'roomRevenue', label: 'Room revenue', type: 'currency', help: 'Totals, fees and payouts are calculated by the workbook.' },
-    { name: 'cleaningFee', label: 'Cleaning fee', type: 'currency' },
-    { name: 'extraGuestFee', label: 'Extra guest fee', type: 'currency' },
-    { name: 'discount', label: 'Discount', type: 'currency' },
+    ...money,
     { name: 'notes', label: 'Notes', type: 'textarea' },
   ];
 }
@@ -167,6 +184,80 @@ export function resolveMaintenanceFields(): FieldSpec[] {
 export function cancelReservationFields(): FieldSpec[] {
   return [
     { name: 'reason', label: 'Why is this booking being cancelled?', type: 'textarea', required: true },
+  ];
+}
+
+/**
+ * A no-show is the same server transition as a cancellation with `noShow: true` — the
+ * caller supplies that flag as a constant, so the form asks only for what a person
+ * actually has to type. The row is never deleted; the status moves and the reason is
+ * recorded, exactly as with a cancellation.
+ */
+export function noShowFields(): FieldSpec[] {
+  return [
+    {
+      name: 'reason', label: 'What happened?', type: 'textarea', required: true,
+      placeholder: 'Guest did not arrive and did not make contact',
+      help: 'Recorded on the booking. The row stays in the ledger — a no-show is a status, not a deletion.',
+    },
+  ];
+}
+
+/**
+ * Extend or shorten a stay: the departure date, and nothing else.
+ *
+ * No figure is asked for and none is offered. Changing the length of a stay changes
+ * what the booking is worth, and the workbook owns that arithmetic — this records the
+ * new date and the formulas follow. The server re-checks the date order against the
+ * booking on file, so a departure cannot be moved before the arrival.
+ */
+export function extendStayFields(currentCheckOut: string | null): FieldSpec[] {
+  return [
+    {
+      name: 'checkOutDate', label: 'New check-out date', type: 'date', required: true,
+      ...(currentCheckOut ? { defaultValue: currentCheckOut } : {}),
+      help: 'Totals and payout are recalculated by the workbook from the new dates.',
+    },
+  ];
+}
+
+/**
+ * Amend a booking's own details. NON-FINANCIAL ONLY, and deliberately so.
+ *
+ * Every money column is absent — not hidden, absent — because this form is reached from
+ * an operations surface and OPERATIONS holds no financial capability. `ActualPayout` and
+ * `PayoutDate` are absent for the same reason and one more: the role that may not READ
+ * the payout must not set it either.
+ *
+ * The guest name is offered BLANK rather than prefilled. The product never discloses a
+ * full guest name, so prefilling it would mean writing back the minimised form
+ * ("Priya S.") and destroying the real name on save. Left blank the field is simply not
+ * sent, so an untouched form changes nothing.
+ */
+export function editBookingFields(current: {
+  adults: number; children: number;
+  checkIn: string | null; checkOut: string | null; notes: string | null;
+}): FieldSpec[] {
+  return [
+    {
+      name: 'guestName', label: 'Correct the guest name', type: 'text',
+      placeholder: 'Leave blank to keep the current name',
+      help: 'The full name is not shown here. Fill this in only to replace it.',
+    },
+    { name: 'adults', label: 'Adults', type: 'number', min: 1, max: 20, defaultValue: String(current.adults) },
+    { name: 'children', label: 'Children', type: 'number', min: 0, max: 20, defaultValue: String(current.children) },
+    {
+      name: 'checkInDate', label: 'Check-in', type: 'date',
+      ...(current.checkIn ? { defaultValue: current.checkIn } : {}),
+    },
+    {
+      name: 'checkOutDate', label: 'Check-out', type: 'date',
+      ...(current.checkOut ? { defaultValue: current.checkOut } : {}),
+    },
+    {
+      name: 'notes', label: 'Notes', type: 'textarea',
+      ...(current.notes ? { defaultValue: current.notes } : {}),
+    },
   ];
 }
 

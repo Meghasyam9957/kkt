@@ -48,6 +48,27 @@ function dateOrder(input: Record<string, unknown>, fromKey: string, toKey: strin
     : [`${toKey} must be after ${fromKey}.`];
 }
 
+/**
+ * Check-in before check-out, on the MERGED row: whichever date the caller did not send
+ * comes from the stored booking. Reads, never computes — the stored dates are serials
+ * already, so nothing is converted twice.
+ */
+async function datesRemainOrdered(ctx: MutationContextData): Promise<string[]> {
+  const bookings = await ctx.repos.reservations.readAll();
+  const current = bookings.find((b) => b.BookingID === (ctx.entityId ?? ''));
+  if (!current) return [];   // the transition check already reports an unknown booking
+
+  const checkIn = ctx.input.checkInDate !== undefined
+    ? isoToSerial(String(ctx.input.checkInDate)) : current.CheckInDate;
+  const checkOut = ctx.input.checkOutDate !== undefined
+    ? isoToSerial(String(ctx.input.checkOutDate)) : current.CheckOutDate;
+
+  if (checkIn === null || checkOut === null) return [];
+  return checkOut > checkIn
+    ? []
+    : ['checkOutDate must be after checkInDate.'];
+}
+
 async function reservationTransition(
   ctx: MutationContextData, next: string,
 ): Promise<string[]> {
@@ -108,8 +129,18 @@ const defs: Record<string, MutationDefinition> = {
       if (ctx.input.bookingStatus !== undefined) {
         problems.push(...await reservationTransition(ctx, String(ctx.input.bookingStatus)));
       }
-      if (ctx.input.checkInDate !== undefined && ctx.input.checkOutDate !== undefined) {
-        problems.push(...dateOrder(ctx.input, 'checkInDate', 'checkOutDate'));
+      /*
+       * "Check-out must be after check-in" was only checked when BOTH dates arrived in
+       * the same request, so amending ONE of them skipped it entirely — an extend-stay
+       * that moved the departure before the arrival was accepted. That was unreachable
+       * while no screen offered a single-date change; the booking detail now does.
+       *
+       * This is the same rule, not a new one: it is evaluated against the row as it will
+       * be AFTER the patch, filling whichever date the request did not supply from the
+       * booking already on file.
+       */
+      if (ctx.input.checkInDate !== undefined || ctx.input.checkOutDate !== undefined) {
+        problems.push(...await datesRemainOrdered(ctx));
       }
       return problems;
     },
@@ -138,9 +169,11 @@ const defs: Record<string, MutationDefinition> = {
     validate: async (ctx) =>
       reservationTransition(ctx, ctx.input.noShow ? 'No Show' : 'Cancelled'),
     // A cancellation is a status transition plus a reason in Notes — the row remains.
+    // The note names what actually happened: a no-show recorded as "Cancelled via web"
+    // reads, months later, as a decision somebody made rather than a guest who never came.
     toColumns: (i) => ({
       BookingStatus: i.noShow ? 'No Show' : 'Cancelled',
-      Notes: `Cancelled via web: ${i.reason}`,
+      Notes: `${i.noShow ? 'No-show' : 'Cancelled'} via web: ${i.reason}`,
     }),
   },
 

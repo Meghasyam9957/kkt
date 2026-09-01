@@ -90,7 +90,6 @@ async function workspace(over: Partial<Parameters<typeof BookingsWorkspace>[0]> 
     rows, units: UNITS, scope: 'month' as const,
     date: '2027-01-19', isOperationalDay: true, periodLabel: 'Jan 2027',
     checkInFields: FIELDS, checkOutFields: FIELDS,
-    cancelFields: [{ name: 'reason', label: 'Why?', type: 'textarea' as const, required: true }],
     ...over,
   }));
 }
@@ -670,7 +669,7 @@ describe('bookings workspace . the detail panel', () => {
     const { container } = renderUi(createElement(BookingsWorkspace, {
       rows, units: UNITS, scope: 'in-progress' as const,
       date: '2027-01-19', isOperationalDay: true, periodLabel: 'Jan 2027',
-      checkInFields: FIELDS, checkOutFields: FIELDS, cancelFields: FIELDS,
+      checkInFields: FIELDS, checkOutFields: FIELDS,
     }), 'scope=in-progress&platform=Airbnb');
 
     const href = (container.querySelector('a.sv-bklink') as HTMLAnchorElement).getAttribute('href')!;

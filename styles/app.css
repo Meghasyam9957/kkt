@@ -1722,3 +1722,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
      full width so a thumb reaches them without aiming. */
   .sv-bkdetail__actions .sv-btn { flex-basis: 100%; }
 }
+
+.sv-bkdetail__closed {
+  font-size: var(--t-small); color: var(--text-muted);
+  padding: var(--s-3); background: var(--surface-sunken); border-radius: var(--r-2);
+}

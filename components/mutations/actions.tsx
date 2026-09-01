@@ -73,7 +73,7 @@ export function NewRecordButton({
 
 export function RowActionButton({
   label, endpoint, method = 'POST', successTemplate, idField, fields, confirmTitle,
-  variant = 'secondary', size = 'sm', surface = 'modal', context,
+  variant = 'secondary', size = 'sm', surface = 'modal', context, constants,
 }: {
   label: string;
   endpoint: string;
@@ -100,6 +100,12 @@ export function RowActionButton({
    * an operational surface (the caller passes a role-projected row).
    */
   context?: ReactNode;
+  /**
+   * Values the ACTION carries rather than the person — a status transition, a no-show
+   * flag. Merged into every submission, with or without fields, so an action whose
+   * meaning is fixed does not have to ask a person to restate it.
+   */
+  constants?: Record<string, unknown>;
 }) {
   const { phase, failure, submit, reset } = useMutation(endpoint, method);
   const toast = useToast();
@@ -107,7 +113,7 @@ export function RowActionButton({
   const [intent, setIntent] = useState(0);
 
   const fire = useCallback(async () => {
-    const outcome = await submit({});
+    const outcome = await submit({ ...constants });
     if (outcome.ok && outcome.record) {
       const id = idField ? String(outcome.record[idField] ?? '') : '';
       toast.push({ tone: 'success', title: successTemplate.replace('{id}', id) });
@@ -120,7 +126,7 @@ export function RowActionButton({
       });
       reset();      // a refused row action is over; the next click is a fresh intent
     }
-  }, [submit, toast, successTemplate, idField, reset]);
+  }, [submit, toast, successTemplate, idField, reset, constants]);
 
   if (!fields || fields.length === 0) {
     const text = phase === 'applying' ? 'Applying…' : phase === 'verified' ? 'Done' : label;
@@ -152,6 +158,7 @@ export function RowActionButton({
           submitLabel={label}
           successTemplate={successTemplate}
           idField={idField}
+          constants={constants}
           onVerified={() => setOpen(false)}
         />
       </Surface>

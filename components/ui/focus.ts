@@ -19,6 +19,17 @@ const FOCUSABLE = [
   'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
+/**
+ * The stack of open, trapped surfaces — innermost last.
+ *
+ * Every trap listens on `document` in the CAPTURE phase, so without this they all fire
+ * in mount order: pressing Escape inside a dialog opened FROM a drawer ran the drawer's
+ * handler first, closed the drawer, and stopped propagation — leaving the dialog behind
+ * with nothing underneath it. Only the topmost surface responds to Escape and Tab; the
+ * ones below it wait their turn, which is what "modal" has always meant.
+ */
+const TRAP_STACK: Array<HTMLElement> = [];
+
 export interface FocusTrapOptions {
   /** Called on Escape and when the scrim is the click target. Required — a trap without an exit is a cage. */
   onClose: () => void;
@@ -39,6 +50,7 @@ export function useFocusTrap(
     if (!surface) return;
 
     restoreTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    TRAP_STACK.push(surface);
 
     const focusables = (): HTMLElement[] =>
       Array.from(surface.querySelectorAll<HTMLElement>(FOCUSABLE))
@@ -50,6 +62,8 @@ export function useFocusTrap(
     else { surface.tabIndex = -1; surface.focus(); }
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // Only the innermost open surface reacts. See TRAP_STACK.
+      if (TRAP_STACK[TRAP_STACK.length - 1] !== surface) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         onClose();
@@ -78,7 +92,13 @@ export function useFocusTrap(
 
     return () => {
       document.removeEventListener('keydown', onKeyDown, true);
-      if (lockScroll) document.body.style.overflow = previousOverflow;
+      const at = TRAP_STACK.lastIndexOf(surface);
+      if (at !== -1) TRAP_STACK.splice(at, 1);
+      /*
+       * Scroll stays locked while ANY surface is still open. Restoring the outer
+       * drawer's "" here would unlock the page behind a dialog that is still up.
+       */
+      if (lockScroll && TRAP_STACK.length === 0) document.body.style.overflow = previousOverflow;
       restoreTo.current?.focus?.();
     };
   }, [ref, active, onClose, lockScroll]);
