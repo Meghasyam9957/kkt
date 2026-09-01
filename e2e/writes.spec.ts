@@ -372,12 +372,19 @@ test('housekeeping · create + mark clean through the dialog', async ({ page }) 
 
   await page.goto('/admin/operations/housekeeping');
   const row = page.locator('tbody tr', { hasText: taskId });
-  await row.getByRole('button', { name: 'Mark Clean' }).click();
-  const dialog = page.locator('.sv-modal');
+  await row.getByRole('button', { name: 'Mark clean' }).click();
+  /* A DRAWER since UI-8 — the turnover is put in front of the person before they finish
+     it, as every other operational action already did. */
+  const dialog = page.locator('.sv-drawer');
+  await expect(dialog.locator('.sv-staycontext')).toContainText(taskId);
   await dialog.getByLabel(/Cleaned by/).fill('Playwright Cleaner');
   await dialog.locator('button[type=submit]').click();
   await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'completed' }))
     .toBeVisible();
+
+  /* And it is genuinely FINISHED. Mark-clean used to write the cleaner and the inspection
+     while leaving FinalStatus untouched, so the task stayed on this list forever. */
+  await expect.poll(async () => row.count()).toBe(0);
 });
 
 test('inventory · a movement updates inputs; stock stays workbook-owned', async ({ page }) => {

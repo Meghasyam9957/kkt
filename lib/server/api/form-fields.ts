@@ -351,9 +351,31 @@ function notesField(current: { notes: string | null } | undefined, help: string)
   }];
 }
 
+/**
+ * FINISHING A TURNOVER — who cleaned it, how it inspected, and what state that leaves it in.
+ *
+ * `finalStatus` was missing, and its absence was the whole bug: the button said "Mark
+ * clean", the toast said the unit was ready, and `housekeeping.update` wrote the cleaner
+ * and the inspection while FinalStatus — the turnover's ONLY canonical state — stayed
+ * Pending. The task never left the outstanding list and the unit was never ready.
+ *
+ * It is ASKED FOR rather than derived. A failed inspection and a completed turnover are
+ * two different columns with two different vocabularies, and the workbook lets both be
+ * set independently; inferring one from the other here would invent a rule the contract
+ * does not have. The default is the ordinary outcome, and the person can say otherwise.
+ */
 export function markCleanFields(): FieldSpec[] {
   return [
     { name: 'cleaner', label: 'Cleaned by', type: 'text', required: true },
-    { name: 'inspectionStatus', label: 'Inspection', type: 'select', required: true, options: list('INSPECTION'), defaultValue: 'Passed' },
+    {
+      name: 'inspectionStatus', label: 'Inspection', type: 'select', required: true,
+      options: list('INSPECTION'), defaultValue: 'Passed',
+      help: 'The inspection result, recorded on the turnover.',
+    },
+    {
+      name: 'finalStatus', label: 'Turnover now', type: 'select', required: true,
+      options: list('HK_STATUS'), defaultValue: 'Completed',
+      help: 'Completed takes the unit off the outstanding list. Choose otherwise if it is not finished.',
+    },
   ];
 }
