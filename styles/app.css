@@ -1899,3 +1899,129 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 @media (pointer: coarse) {
   .sv-bktools__calendar, .sv-daylink a { min-height: 44px; }
 }
+
+/* ====================================================================
+ * UI-6 — AVAILABILITY SEARCH ("Find a unit")
+ *
+ * A front desk asks three questions and reads one answer, so the surface is a short
+ * form and a list of units — not a grid. Everything below stacks by default and only
+ * spreads out when there is room, which is why there is no mobile override further
+ * down: the phone layout IS the layout.
+ * ==================================================================== */
+
+/* ---- WHEN · WHERE · HOW MANY ---- */
+
+/* Four controls, each as wide as it needs to be and never narrower than a thumb. The
+   date inputs get the design system's own `.sv-input`, so the 44px coarse-pointer rule
+   applies here without a second copy of it. */
+.sv-availform__fields {
+  display: grid; gap: var(--s-3) var(--s-4);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.sv-availform__go {
+  display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap;
+  margin-top: var(--s-4);
+}
+.sv-availform__go .sv-btn { min-height: 44px; }
+.sv-availform__note { font-size: var(--t-small); color: var(--text-muted); }
+
+/* The answer in one sentence, and the live region that announces it. */
+.sv-availsummary {
+  margin-top: var(--s-4); padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+  font-size: var(--t-body); color: var(--text-primary);
+}
+
+/* ---- WHAT IS FREE ---- */
+
+.sv-availgroup { padding: var(--s-4) var(--s-5) var(--s-5); border-top: 1px solid var(--line); }
+.sv-availgroup__title {
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--t-label); font-weight: 600;
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: var(--s-3);
+}
+.sv-availgroup__count {
+  font-size: var(--t-small); font-weight: 600; color: var(--text-primary);
+  background: var(--surface-sunken); border-radius: var(--radius-full);
+  padding: 1px 8px; letter-spacing: 0;
+}
+.sv-availgroup__empty { font-size: var(--t-small); color: var(--text-muted); }
+
+.sv-availlist { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
+
+/* One unit. The left border states free/held a second way, so the pill's colour is
+   never carrying the answer alone. */
+.sv-availcard {
+  border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: var(--radius-md);
+  padding: var(--s-4);
+  background: var(--surface-card);
+  transition: border-color var(--m-fast) var(--e-standard),
+              box-shadow var(--m-fast) var(--e-standard);
+}
+/* The card's only motion is the border settling when it becomes the chosen one. The
+   state itself is a border colour and `aria-current`, so removing the transition removes
+   nothing a reader needs. */
+@media (prefers-reduced-motion: reduce) { .sv-availcard { transition: none; } }
+.sv-availcard--free { border-left-color: var(--good-fg); }
+.sv-availcard--held { border-left-color: var(--line-strong); background: var(--surface-sunken); }
+/* The unit whose booking form is open. `aria-current` says it to a screen reader; this
+   says it to everyone else. */
+.sv-availcard--selected {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 2px var(--good-bg);
+}
+
+.sv-availcard__head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--s-3); flex-wrap: wrap;
+}
+.sv-availcard__id { min-width: 0; }
+.sv-availcard__name { font-size: var(--t-body); font-weight: 600; color: var(--text-primary); }
+.sv-availcard__meta { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; }
+.sv-availcard__reason { font-size: var(--t-small); color: var(--text-muted); margin-top: var(--s-2); }
+
+/* A standing master flag carries no dates, so it cautions and never decides. */
+.sv-availcaution {
+  display: flex; align-items: flex-start; gap: var(--s-2);
+  margin-top: var(--s-3); padding: var(--s-2) var(--s-3);
+  font-size: var(--t-small); color: var(--warn-fg);
+  background: var(--warn-bg); border-radius: var(--radius-sm);
+}
+.sv-availcaution svg { flex: none; margin-top: 2px; }
+
+/* Who has the unit. */
+.sv-availconflicts {
+  list-style: none; margin: var(--s-3) 0 0; padding: 0;
+  display: grid; gap: var(--s-2);
+}
+.sv-availconflict {
+  display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
+  font-size: var(--t-small); color: var(--text-primary);
+}
+.sv-availconflict__when { color: var(--text-muted); }
+.sv-availconflict__ref { color: var(--text-brand); font-weight: 600; }
+.sv-availconflict__ref:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.sv-availconflict__guest { color: var(--text-muted); }
+
+.sv-availcard__actions {
+  display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap;
+  margin-top: var(--s-4);
+}
+/* One thumb, full width, until there is room for the row to sit side by side. */
+.sv-availcard__actions .sv-btn { min-height: 44px; width: 100%; justify-content: center; }
+@media (min-width: 560px) {
+  .sv-availcard__actions .sv-btn { width: auto; }
+}
+
+/* ---- Cross-surface links ---- */
+.sv-availlink {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  font-size: var(--t-small); color: var(--text-brand);
+}
+.sv-availlink:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.sv-calhead { display: inline-flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
+@media (pointer: coarse) {
+  .sv-availlink { min-height: 44px; }
+}

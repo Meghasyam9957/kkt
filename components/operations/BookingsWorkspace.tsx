@@ -286,6 +286,11 @@ export function BookingsWorkspace({
             <Icon name="calendar" size={16} />
             View availability
           </Link>
+          {/* The other direction: a guest on the phone, and dates to place them in. */}
+          <Link className="sv-bktools__calendar" href="/admin/operations/availability">
+            <Icon name="audit" size={16} />
+            Find a unit
+          </Link>
         </div>
 
         {/* ---- narrowing what is already here ---- */}

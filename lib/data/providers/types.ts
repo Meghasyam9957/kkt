@@ -404,8 +404,117 @@ export interface CalendarView {
   operationalMonth: boolean;
   /** The day the reader has selected — what the mobile view shows. */
   selectedDate: string;
+  /**
+   * The day after the selection. Carried so the calendar can offer "find a unit for this
+   * night" as a real one-night range without doing date arithmetic in the browser — the
+   * departure day of a one-night stay, under the same half-open interval.
+   */
+  selectedNextDate: string;
   /** True when `selectedDate` is inside the month being shown. */
   selectedInMonth: boolean;
+}
+
+/* ------------------------------------------------------------------ *
+ * UI-6 — AVAILABILITY SEARCH: "I need a unit for these dates."
+ * ------------------------------------------------------------------ */
+
+/**
+ * What the front office asked for. Every field arrives from a query string, so every
+ * field is untrusted: the view validates and reports, it does not assume.
+ */
+export interface AvailabilityQuery {
+  /** 'YYYY-MM-DD', raw. */
+  checkIn?: string | null;
+  checkOut?: string | null;
+  /** A PropertyID, or null for every unit. One row per unit: here a property IS a unit. */
+  propertyId?: string | null;
+  /** Total headcount, raw. Compared to MaxGuests exactly as `reservation.create` does. */
+  guests?: string | null;
+}
+
+/** Which input a problem belongs to, so the field itself can be marked invalid. */
+export type AvailabilityField = 'checkIn' | 'checkOut' | 'guests';
+
+export interface AvailabilityProblem {
+  field: AvailabilityField;
+  /** A sentence for a person, not a validator code. */
+  message: string;
+}
+
+/** Why a unit is not offered. `booked` always wins: it is the concrete fact. */
+export type AvailabilityBlocker = 'booked' | 'capacity';
+
+/**
+ * A booking standing in the way, clipped to the nights actually asked for.
+ *
+ * Carries what the Bookings list already shows the same capability — reference, status,
+ * platform, dates and the MINIMISED guest name. No financial field exists on this type.
+ */
+export interface AvailabilityConflict {
+  bookingId: string;
+  /** Given name + last initial, minimised upstream exactly as every list shows it. */
+  guestDisplayName: string;
+  bookingStatus: string;
+  platform: string;
+  /** The whole stay, which may reach outside the range asked for. */
+  checkIn: string | null;
+  checkOut: string | null;
+  /** The nights INSIDE the requested range this booking holds, inclusive. */
+  fromDate: string;
+  toDate: string;
+  nights: number;
+}
+
+export interface AvailabilityUnit {
+  propertyId: string;
+  /** The Unit name from the property master, never invented. */
+  unitName: string;
+  /** BHKType — the unit's type as the master states it. */
+  unitType: string;
+  maxGuests: number;
+  /** The master's own manual status. UNDATED, so it cautions; it never decides. */
+  propertyStatus: string;
+  outOfService: boolean;
+  /** Free for every night asked for, and big enough for the party. */
+  available: boolean;
+  /** False only when a guest count was asked for and exceeds MaxGuests. */
+  fitsGuests: boolean;
+  blocker: AvailabilityBlocker | null;
+  conflicts: AvailabilityConflict[];
+}
+
+export interface AvailabilitySearchView {
+  /** The validated range. Null when nothing was asked, or what was asked is unusable. */
+  checkIn: string | null;
+  checkOut: string | null;
+  /** Nights in the range — 0 when there is no usable range. */
+  nights: number;
+  /** The party size asked for, or null for "any". */
+  guests: number | null;
+  propertyId: string | null;
+  /** True when a usable search ran. False for a first visit AND for a rejected range. */
+  searched: boolean;
+  /**
+   * Exactly what was asked for, trimmed and echoed back.
+   *
+   * A rejected input has to stay on screen to be corrected. Seeding the form from the
+   * VALIDATED values instead would silently replace "2027-02-31" with tonight, so the
+   * reader would be told a date is wrong and shown a different one.
+   */
+  asked: { checkIn: string; checkOut: string; guests: string };
+  /** Empty when the inputs are usable. Never thrown — a bad date is an answer. */
+  problems: AvailabilityProblem[];
+  available: AvailabilityUnit[];
+  unavailable: AvailabilityUnit[];
+  /** Every unit, unfiltered, for the property control. */
+  properties: PropertyOption[];
+  /** The source's own operational day. */
+  operationalDate: string;
+  /** What the empty form offers: tonight, for one night. */
+  defaultCheckIn: string;
+  defaultCheckOut: string;
+  /** The longest range the search will scan, so the form can say so. */
+  maxNights: number;
 }
 
 export interface CapexRow {
@@ -511,6 +620,14 @@ export interface DashboardDataProvider {
    * own and carries no financial field.
    */
   getCalendar(filters: ReportFilters): Promise<Envelope<CalendarView>>;
+  /**
+   * AVAILABILITY SEARCH — which units are free for a date range.
+   *
+   * Takes its own query rather than `ReportFilters`: a stay range is not a reporting
+   * month, and squeezing it into one would have the same effect the month clamp had on
+   * the calendar — a control that moves the URL and nothing else.
+   */
+  getAvailability(query: AvailabilityQuery): Promise<Envelope<AvailabilitySearchView>>;
   getRevenue(filters: ReportFilters): Promise<Envelope<LedgerRow[]>>;
   getExpenses(filters: ReportFilters): Promise<Envelope<LedgerRow[]>>;
   getCapex(filters: ReportFilters): Promise<Envelope<CapexRow[]>>;

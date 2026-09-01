@@ -514,6 +514,122 @@ test('an investor is refused the calendar exactly as they are refused the regist
   expect(await page.content()).not.toMatch(/BK-20\d{2}-\d{4}/);
 });
 
+/* ------------------------------------------------------------------ *
+ * UI-6 — the availability search
+ * ------------------------------------------------------------------ */
+
+test('the search and the calendar agree, in the running application, about one night', async ({ page }) => {
+  /*
+   * The two surfaces answer the same question from opposite directions. If they ever
+   * disagree, one of them is telling somebody a unit is free when it is not — so this
+   * counts the free cells for a day on the grid and the free units in the search for
+   * that same night, and requires the same answer from both.
+   */
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signInAs(page, 'Demo Operations Manager');
+
+  await page.goto('/admin/operations/calendar?month=2027-01&date=2027-01-19');
+  await page.waitForSelector('.sv-caltable');
+  const freeOnGrid = await page.locator('a.sv-calfree[aria-label*="19 Jan 2027"]').count();
+
+  await page.goto('/admin/operations/availability?checkin=2027-01-19&checkout=2027-01-20');
+  await page.waitForSelector('.sv-availcard');
+  const freeInSearch = await page.locator('.sv-availcard--free').count();
+  const total = await page.locator('.sv-availcard').count();
+
+  expect(freeInSearch).toBe(freeOnGrid);
+  expect(total).toBe(4);                     // every unit is accounted for, either way
+  await expect(page.locator('[role="status"]').first())
+    .toContainText(/free for 1 night|No units are free/);
+
+  // No money on an operations surface.
+  await expect(page.locator('main')).not.toContainText('₹');
+  expect(await page.content()).not.toMatch(/grossValue|expectedPayout|actualPayout/);
+});
+
+test('the departure day is sellable, and a held night is not', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+
+  // A month past the trading year: nothing is booked, so every unit is free.
+  await page.goto('/admin/operations/availability?checkin=2027-09-10&checkout=2027-09-13');
+  await page.waitForSelector('.sv-availcard');
+  await expect(page.locator('.sv-availcard--free')).toHaveCount(4);
+  await expect(page.locator('[role="status"]').first()).toContainText('4 of 4 units free for 3 nights');
+
+  // Capacity narrows it with the master's own MaxGuests, not an invented rule.
+  await page.goto('/admin/operations/availability?checkin=2027-09-10&checkout=2027-09-13&guests=4');
+  await page.waitForSelector('.sv-availcard');
+  await expect(page.locator('.sv-availcard--free')).toHaveCount(2);
+  await expect(page.locator('.sv-availcard--held').first()).toContainText('Too small');
+});
+
+test('a range that cannot exist is refused in words, against the field that caused it', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/availability?checkin=2027-02-31&checkout=2027-03-05');
+
+  const checkIn = page.locator('#avail-checkin');
+  await expect(checkIn).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#avail-checkin-error')).toContainText('not a real calendar day');
+  // Nothing was searched, so nothing is claimed.
+  await expect(page.locator('.sv-availcard')).toHaveCount(0);
+
+  // And a backwards range is refused too, on the field that is wrong.
+  await page.goto('/admin/operations/availability?checkin=2027-03-10&checkout=2027-03-09');
+  await expect(page.locator('#avail-checkout')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#avail-checkout-error')).toContainText('after check-in');
+  await expect(page.locator('.sv-availcard')).toHaveCount(0);
+});
+
+test('choosing a unit opens the canonical booking form, prefilled and without money', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/availability?checkin=2027-09-10&checkout=2027-09-13&guests=2');
+  await page.waitForSelector('.sv-availcard--free');
+
+  const first = page.locator('.sv-availcard--free').first();
+  await first.getByRole('button', { name: 'Select' }).click();
+
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toContainText('Place a booking in');
+  // The search's own answers are already in the ONE booking form.
+  await expect(drawer.getByLabel('Check-in')).toHaveValue('2027-09-10');
+  await expect(drawer.getByLabel('Check-out')).toHaveValue('2027-09-13');
+  await expect(drawer.getByLabel('Adults')).toHaveValue('2');
+  // And no money field exists in it, because none was offered to this surface.
+  for (const money of ['Base rate / night', 'Room revenue', 'Cleaning fee', 'Discount']) {
+    await expect(drawer.getByLabel(money)).toHaveCount(0);
+  }
+  // The row the open form belongs to says so.
+  await expect(first).toHaveAttribute('aria-current', 'true');
+});
+
+test('the calendar and the search hand each other the same date and property', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signInAs(page, 'Demo Operations Manager');
+
+  await page.goto('/admin/operations/calendar?month=2027-09&date=2027-09-14&property=HYD-602');
+  await page.waitForSelector('.sv-caltable');
+  await page.getByRole('link', { name: /Find a unit for 14 Sep/ }).click();
+
+  await expect(page).toHaveURL(/checkin=2027-09-14&checkout=2027-09-15&property=HYD-602/);
+  await page.waitForSelector('.sv-availcard');
+  await expect(page.locator('.sv-availcard')).toHaveCount(1);
+
+  // …and back again, to the same day and the same unit.
+  await page.locator('.sv-availcard').getByRole('link', { name: /View calendar/ }).click();
+  await expect(page).toHaveURL(/month=2027-09&date=2027-09-14&property=HYD-602/);
+  await page.waitForSelector('.sv-caltable');
+});
+
+test('an investor is refused the search exactly as they are refused the register', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await page.goto('/admin/operations/availability?checkin=2027-01-19&checkout=2027-01-20');
+  await expect(page.locator('h1')).toContainText('Not available');
+  await expect(page.locator('.sv-availcard')).toHaveCount(0);
+  // No booking reference reaches the response at all.
+  expect(await page.content()).not.toMatch(/BK-20\d{2}-\d{4}/);
+});
+
 test('an unknown booking reference says so instead of showing an empty panel', async ({ page }) => {
   await signInAs(page, 'Demo Operations Manager');
   await page.goto('/admin/operations/reservations?booking=BK-9999-9999');
@@ -752,5 +868,40 @@ for (const width of [375, 390, 768, 1024, 1440] as const) {
       expect(box!.width, 'day pips are tappable').toBeGreaterThanOrEqual(44);
       expect(box!.height, 'day pips are tappable').toBeGreaterThanOrEqual(44);
     }
+  });
+
+  test(`the availability search does not scroll sideways at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signInAs(page, 'Demo Operations Manager');
+    await page.goto('/admin/operations/availability?checkin=2027-09-10&checkout=2027-09-13');
+    await page.waitForSelector('.sv-availcard');
+
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `the search must not scroll sideways at ${width}px`).toBeLessThanOrEqual(0);
+
+    /*
+     * Page overflow alone is NOT the guarantee. A card with `overflow: hidden` swallows a
+     * form laid out wider than the phone: the page never scrolls, and the Guests field is
+     * simply not on screen. So every control has to be INSIDE the viewport, not merely
+     * fail to widen the document.
+     */
+    const escaped = await page.$$eval('.sv-availform__fields .sv-input',
+      (els, w) => els
+        .filter((el) => {
+          const r = el.getBoundingClientRect();
+          return r.right > w + 1 || r.left < -1;
+        })
+        .map((el) => el.id),
+      width);
+    expect(escaped, `every search control must be inside ${width}px`).toEqual([]);
+
+    // A stacked form and a real thumb target for the one action that matters.
+    const select = page.locator('.sv-availcard--free').first().getByRole('button', { name: 'Select' });
+    const box = await select.boundingBox();
+    expect(box!.height, 'Select is tappable').toBeGreaterThanOrEqual(44);
+
+    const dateBox = await page.locator('#avail-checkin').boundingBox();
+    expect(dateBox!.width, 'the date input is not squeezed').toBeGreaterThanOrEqual(120);
   });
 }

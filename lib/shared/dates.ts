@@ -126,13 +126,26 @@ export function daysInMonth(serial: Serial): number {
  * is not a day, and the caller gets the operational day instead of a bad query.
  */
 export function resolveBoardDate(input: string | null | undefined, fallbackIso: string): string {
-  if (typeof input !== 'string') return fallbackIso;
+  return parseIsoDay(input) ?? fallbackIso;
+}
+
+/**
+ * An ISO day that survives the serial round-trip, or null.
+ *
+ * THE canonical day parser. `resolveBoardDate` is this with a fallback; the availability
+ * search needs the same judgement without one, because a front office asking for
+ * "2027-02-31" must be told the day does not exist rather than quietly shown a different
+ * one. Round-tripping rejects both the malformed ("12 Sep") and the impossible
+ * ("2027-02-31" → 2027-03-03 ≠ input). Never throws.
+ */
+export function parseIsoDay(input: string | null | undefined): string | null {
+  if (typeof input !== 'string') return null;
   const trimmed = input.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return fallbackIso;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
   try {
-    return serialToIso(isoToSerial(trimmed)) === trimmed ? trimmed : fallbackIso;
+    return serialToIso(isoToSerial(trimmed)) === trimmed ? trimmed : null;
   } catch {
-    return fallbackIso;
+    return null;
   }
 }
 

@@ -82,6 +82,18 @@ export function AvailabilityCalendar({ view, detail }: AvailabilityCalendarProps
   /** The booking's own address — the SAME detail panel the Bookings workspace opens. */
   const bookingHref = (bookingId: string): string => withParams({ [BOOKING_PARAM]: bookingId });
 
+  /*
+   * The same availability question asked the other way round, carrying the day the reader
+   * has selected as a one-night range. `selectedNextDate` comes from the view: the
+   * departure day of a one-night stay is arithmetic, and this component does none.
+   */
+  const findParams = new URLSearchParams({
+    checkin: view.selectedDate, checkout: view.selectedNextDate,
+  });
+  const propertyFilter = searchParams.get('property');
+  if (propertyFilter) findParams.set('property', propertyFilter);
+  const findHref = `/admin/operations/availability?${findParams.toString()}`;
+
   const selectedIndex = view.days.indexOf(view.selectedDate);
 
   return (
@@ -89,7 +101,15 @@ export function AvailabilityCalendar({ view, detail }: AvailabilityCalendarProps
       <CardHeader
         title="Availability"
         subtitle="Which unit is free, and when. Open a booking to act on it, or pick a free day to place one."
-        action={<span className="sv-muted">{view.units.length} unit{view.units.length === 1 ? '' : 's'}</span>}
+        action={(
+          <span className="sv-calhead">
+            <Link className="sv-availlink" href={findHref}>
+              <Icon name="audit" size={16} />
+              Find a unit for {formatDateShort(view.selectedDate)}
+            </Link>
+            <span className="sv-muted">{view.units.length} unit{view.units.length === 1 ? '' : 's'}</span>
+          </span>
+        )}
       />
 
       {/* ---------- the period ---------- */}

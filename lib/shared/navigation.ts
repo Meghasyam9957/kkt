@@ -53,6 +53,9 @@ export const NAVIGATION: NavSection[] = [
       // The same booking data seen as a grid, so it carries the same capability. There is
       // exactly one calendar in the product and this is its only menu entry.
       { label: 'Availability', href: '/admin/operations/calendar', capability: 'reservations.read' },
+      // The same availability question asked the other way round — "I need a unit for
+      // these dates" — over the same bookings, so it carries the same capability.
+      { label: 'Find a unit', href: '/admin/operations/availability', capability: 'reservations.read' },
       /*
        * "Check-ins" and "Check-outs" are gone as menu entries, not as routes. They were
        * half of Today each, rendered by a second component over the same payload; both

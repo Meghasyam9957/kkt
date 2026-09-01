@@ -14,7 +14,9 @@ import '@/lib/server/only';
  * asymmetry, already labelled "not tracked" on the live path.
  */
 import { FixtureDashboardDataProvider } from './fixture-provider';
-import type { DashboardDataProvider, Envelope, ReportFilters, DataMeta } from './types';
+import type {
+  DashboardDataProvider, Envelope, ReportFilters, DataMeta, AvailabilityQuery,
+} from './types';
 import {
   loadWorkbookData, loadOperationsData, loadRentRegister,
 } from '@/lib/server/sheets/repositories';
@@ -62,6 +64,7 @@ export class DemoGridProvider implements DashboardDataProvider {
   async getReservations(f: ReportFilters) { return (await this.ensure()).getReservations(f); }
   async getBookingDetail(id: string) { return (await this.ensure()).getBookingDetail(id); }
   async getCalendar(f: ReportFilters) { return (await this.ensure()).getCalendar(f); }
+  async getAvailability(q: AvailabilityQuery) { return (await this.ensure()).getAvailability(q); }
   async getRevenue(f: ReportFilters) { return (await this.ensure()).getRevenue(f); }
   async getExpenses(f: ReportFilters) { return (await this.ensure()).getExpenses(f); }
   async getCapex(f: ReportFilters) { return (await this.ensure()).getCapex(f); }

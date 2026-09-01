@@ -32,6 +32,16 @@ export interface SearchParams {
    * does not hold, and the screen says so in words.
    */
   booking?: string;
+  /**
+   * The stay range the availability search is asking for, and the party size.
+   *
+   * Deliberately NOT put through `resolveFilters`: a stay range is not a reporting month
+   * and has no business being clamped to one. `WorkbookViews.availability` validates all
+   * three and reports what it rejected — a malformed date is an answer, not a fallback.
+   */
+  checkin?: string;
+  checkout?: string;
+  guests?: string;
 }
 
 /** Resolve URL params into the filter shape the provider expects. */

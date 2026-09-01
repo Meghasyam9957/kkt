@@ -35,9 +35,21 @@ const CALENDAR_STATE: Readonly<Record<string, CalendarDayState>> = {
  * so it labels the unit and never paints a day.
  */
 const OUT_OF_SERVICE_STATUSES: readonly string[] = ['Blocked', 'Maintenance'];
+
+/**
+ * The longest stay range the availability search will scan.
+ *
+ * An INPUT bound, not a business rule: the search walks every night asked for against
+ * every unit, so `?checkout=2999-12-31` would otherwise be a quarter of a million
+ * iterations per unit for a question nobody asked. Ninety nights covers a season.
+ */
+const MAX_SEARCH_NIGHTS = 90;
+
+/** Input bound on the party size, matching the create form's own `adults` maximum. */
+const MAX_SEARCH_GUESTS = 20;
 import {
   serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial, edate, resolveBoardDate,
-  resolveMonthKey, shiftMonthKey, daysOfMonth, weekdayOf,
+  resolveMonthKey, shiftMonthKey, shiftIsoDay, daysOfMonth, weekdayOf, parseIsoDay,
 } from '@/lib/shared/dates';
 import {
   forecastOccupancy, forecastRevenue, forecastCashFlow, forecastVsActual, usableHistory,
@@ -55,6 +67,8 @@ import type {
   PnlView, PnlLine, SettingsView, InvestorPreviewView, OperationsToday, TrendPoint,
   PropertyBoardRow, UnitStatus, OperationsBoardView, UrgentItem, UrgentSeverity, BookingDetailRow,
   CalendarView, CalendarUnitRow, CalendarCell, CalendarStay, CalendarDayState,
+  AvailabilityQuery, AvailabilitySearchView, AvailabilityUnit, AvailabilityConflict,
+  AvailabilityProblem, PropertyOption,
   ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow, InvestorRegisterRow, ForecastView,
 } from '@/lib/data/providers/types';
 
@@ -944,7 +958,191 @@ export class WorkbookViews {
       operationalDate: this.ops.today,
       operationalMonth: this.ops.today.slice(0, 7) === month,
       selectedDate,
+      selectedNextDate: shiftIsoDay(selectedDate, 1),
       selectedInMonth: selectedDate.slice(0, 7) === month,
+    };
+  }
+
+  /**
+   * AVAILABILITY SEARCH — "I need a unit for these dates. Which ones are free?"
+   *
+   * The calendar's question asked the other way round. It uses the SAME occupancy rule,
+   * through the same helper: a unit is free for the range when no booking covers any
+   * night in it, under `CheckInDate <= night < CheckOutDate`. So a unit this screen calls
+   * free is a unit the calendar paints free and the occupancy figures count as empty.
+   *
+   * Conflicts are found by WALKING THE NIGHTS ASKED FOR, not by comparing intervals: the
+   * same discipline the calendar builds its bars with, so the two surfaces cannot drift.
+   *
+   * Three things it deliberately does NOT do:
+   *
+   *   - NO PLATFORM FILTER. A booking holds the unit whoever sold it. Narrowing the
+   *     register by platform here would report a unit free because the booking holding it
+   *     was hidden from the query — the one lie an availability screen must not tell.
+   *   - NO PRICE. Availability is availability; rate, total and payout are a later
+   *     business milestone and no field for them exists on this view.
+   *   - NO DATED BLOCK, because the workbook has none. `PropertyStatus` is a manual,
+   *     UNDATED flag, so it is carried as a caution on the row and never removes a unit
+   *     from the results — an undated flag cannot speak for a date. See
+   *     docs/UI6_AVAILABILITY_DECISIONS.md.
+   *
+   * A bad range is an ANSWER, not an exception: the problems come back in words, attached
+   * to the field that caused them, and no search runs.
+   */
+  availability(query: AvailabilityQuery): AvailabilitySearchView {
+    const properties = this.workbook.properties.filter((p) => p.PropertyID !== '');
+    const directory = properties.map<PropertyOption>((p) => ({
+      id: p.PropertyID, name: p.Unit || p.PropertyID,
+    }));
+
+    const raw = (value: string | null | undefined): string =>
+      typeof value === 'string' ? value.trim() : '';
+    const rawIn = raw(query.checkIn);
+    const rawOut = raw(query.checkOut);
+    const rawGuests = raw(query.guests);
+    const asked = rawIn !== '' || rawOut !== '' || rawGuests !== '';
+
+    const checkIn = parseIsoDay(rawIn);
+    const checkOut = parseIsoDay(rawOut);
+    const guestCount = Number(rawGuests);
+    const guests = rawGuests !== '' && Number.isInteger(guestCount)
+      && guestCount >= 1 && guestCount <= MAX_SEARCH_GUESTS ? guestCount : null;
+
+    const problems: AvailabilityProblem[] = [];
+    if (asked && checkIn === null) {
+      problems.push({
+        field: 'checkIn',
+        message: rawIn === ''
+          ? 'Choose a check-in date.'
+          : `“${rawIn}” is not a real calendar day. Use the date picker, or YYYY-MM-DD.`,
+      });
+    }
+    if (asked && checkOut === null) {
+      problems.push({
+        field: 'checkOut',
+        message: rawOut === ''
+          ? 'Choose a check-out date.'
+          : `“${rawOut}” is not a real calendar day. Use the date picker, or YYYY-MM-DD.`,
+      });
+    }
+
+    /* Nights, in the same units the workbook counts them: `CheckOutDate - CheckInDate`. */
+    let nights = checkIn !== null && checkOut !== null
+      ? isoToSerial(checkOut) - isoToSerial(checkIn)
+      : 0;
+    if (checkIn !== null && checkOut !== null) {
+      if (nights <= 0) {
+        problems.push({
+          field: 'checkOut',
+          message: 'Check-out has to be after check-in — a stay is at least one night.',
+        });
+      } else if (nights > MAX_SEARCH_NIGHTS) {
+        problems.push({
+          field: 'checkOut',
+          message: `Search ${MAX_SEARCH_NIGHTS} nights or fewer at a time.`,
+        });
+      }
+    }
+    if (rawGuests !== '' && guests === null) {
+      problems.push({
+        field: 'guests',
+        message: `Guests has to be a whole number from 1 to ${MAX_SEARCH_GUESTS}.`,
+      });
+    }
+
+    const searched = asked && problems.length === 0 && checkIn !== null && checkOut !== null;
+    if (!searched) nights = 0;
+
+    const propertyId = query.propertyId ?? null;
+    const available: AvailabilityUnit[] = [];
+    const unavailable: AvailabilityUnit[] = [];
+
+    if (searched) {
+      const start = isoToSerial(checkIn!);
+      const serials = Array.from({ length: nights }, (_, i) => start + i);
+      const days = serials.map((s) => serialToIso(s));
+
+      for (const master of properties) {
+        if (propertyId && master.PropertyID !== propertyId) continue;
+
+        const bookings = this.workbook.reservations
+          .filter((b) => b.PropertyID === master.PropertyID);
+
+        /* Who holds each night asked for. `stayCoversDay` is THE occupancy rule: a
+           cancellation and a no-show hold nothing, and a blank date holds nothing. */
+        const holders = serials.map((serial) =>
+          bookings.find((b) => stayCoversDay(b, serial)) ?? null);
+
+        const conflicts: AvailabilityConflict[] = [];
+        for (let i = 0; i < holders.length; i += 1) {
+          const booking = holders[i];
+          if (!booking) continue;
+          if (i > 0 && holders[i - 1]?.BookingID === booking.BookingID) continue;
+          let end = i;
+          while (end + 1 < holders.length
+            && holders[end + 1]?.BookingID === booking.BookingID) end += 1;
+
+          conflicts.push({
+            bookingId: booking.BookingID,
+            guestDisplayName: minimizeGuestName(booking.GuestName),
+            bookingStatus: booking.BookingStatus,
+            platform: booking.Platform,
+            checkIn: booking.CheckInDate === null ? null : serialToIso(booking.CheckInDate),
+            checkOut: booking.CheckOutDate === null ? null : serialToIso(booking.CheckOutDate),
+            fromDate: days[i]!,
+            toDate: days[end]!,
+            nights: end - i + 1,
+          });
+          i = end;
+        }
+
+        /* Capacity, on the SAME comparison `reservation.create` validates with: total
+           headcount against MaxGuests. Adults and children are not distinguished
+           anywhere in the contract, so they are not distinguished here either. */
+        const fitsGuests = guests === null || guests <= master.MaxGuests;
+        const blocker = conflicts.length > 0
+          ? 'booked' as const
+          : !fitsGuests ? 'capacity' as const : null;
+
+        const unit: AvailabilityUnit = {
+          propertyId: master.PropertyID,
+          unitName: master.Unit,
+          unitType: master.BHKType,
+          maxGuests: master.MaxGuests,
+          propertyStatus: master.PropertyStatus,
+          outOfService: OUT_OF_SERVICE_STATUSES.includes(master.PropertyStatus),
+          available: blocker === null,
+          fitsGuests,
+          blocker,
+          conflicts,
+        };
+        (blocker === null ? available : unavailable).push(unit);
+      }
+    }
+
+    /* Units carrying a standing caution sort last, so the ones that need no second
+       thought come first. Nothing else reorders them: choosing WHICH free unit to sell
+       is a yield decision, and this screen does not have one to make. */
+    const byUnit = (a: AvailabilityUnit, b: AvailabilityUnit): number =>
+      Number(a.outOfService) - Number(b.outOfService)
+      || a.propertyId.localeCompare(b.propertyId);
+
+    return {
+      checkIn: searched ? checkIn : null,
+      checkOut: searched ? checkOut : null,
+      nights,
+      guests,
+      propertyId,
+      searched,
+      asked: { checkIn: rawIn, checkOut: rawOut, guests: rawGuests },
+      problems,
+      available: available.sort(byUnit),
+      unavailable: unavailable.sort(byUnit),
+      properties: directory,
+      operationalDate: this.ops.today,
+      defaultCheckIn: this.ops.today,
+      defaultCheckOut: shiftIsoDay(this.ops.today, 1),
+      maxNights: MAX_SEARCH_NIGHTS,
     };
   }
 

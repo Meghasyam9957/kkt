@@ -18,6 +18,7 @@ import { Card, CardHeader, CardBody, StatusPill, EmptyState, type Tone } from '@
 import { RowActionButton } from '@/components/mutations/actions';
 import { markCleanFields, checkInFields, checkOutFields } from '@/lib/server/api/form-fields';
 import { formatDate, formatDateShort } from '@/lib/shared/format';
+import { shiftIsoDay } from '@/lib/shared/dates';
 // The one booking vocabulary. This row used to decide its own tone with a ternary that
 // silently rendered every unrecognised status as `info` — an "on the books" colour.
 import { bookingStatusTone } from '@/lib/shared/booking-status';
@@ -64,6 +65,12 @@ export function TodayBoard({ board }: { board: OperationsBoardView }) {
       <p className="sv-daylink">
         <Link href={`/admin/operations/calendar?month=${board.date.slice(0, 7)}&date=${board.date}`}>
           See the whole month&rsquo;s availability
+        </Link>
+        {/* The walk-in question, as a real one-night range: under the half-open interval
+            a stay arriving tonight departs tomorrow. `shiftIsoDay` is the shared serial
+            helper the day control beside this one already uses — not a second copy. */}
+        <Link href={`/admin/operations/availability?checkin=${board.date}&checkout=${shiftIsoDay(board.date, 1)}`}>
+          Find a unit for tonight
         </Link>
       </p>
 

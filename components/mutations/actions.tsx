@@ -25,6 +25,7 @@ import { useMutation } from './useMutation';
 
 export function NewRecordButton({
   label, title, endpoint, fields, submitLabel, successTemplate, idField, constants, wide, children,
+  onOpenChange,
 }: {
   /** Button text, e.g. "+ New Expense". */
   label: string;
@@ -38,18 +39,28 @@ export function NewRecordButton({
   constants?: Record<string, unknown>;
   wide?: boolean;
   children?: ReactNode;
+  /**
+   * Told when the drawer opens and closes. Presentation only — it exists so a list can
+   * mark WHICH row the open form belongs to, which a form floating over a list of four
+   * identical-looking units otherwise cannot say.
+   */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const setOpenState = useCallback((next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  }, [onOpenChange]);
   // Remount the form per opening: a reopened drawer is a NEW intent with a new
   // operation id — reusing the old one would replay the previous submission.
   const [intent, setIntent] = useState(0);
 
   return (
     <>
-      <Button variant="primary" onClick={() => { setIntent((n) => n + 1); setOpen(true); }}>
+      <Button variant="primary" onClick={() => { setIntent((n) => n + 1); setOpenState(true); }}>
         {label}
       </Button>
-      <Drawer open={open} onClose={() => setOpen(false)} title={title} wide={wide}>
+      <Drawer open={open} onClose={() => setOpenState(false)} title={title} wide={wide}>
         <MutationForm
           key={intent}
           endpoint={endpoint}
@@ -58,7 +69,7 @@ export function NewRecordButton({
           successTemplate={successTemplate}
           idField={idField}
           constants={constants}
-          onVerified={() => setOpen(false)}
+          onVerified={() => setOpenState(false)}
         >
           {children}
         </MutationForm>
