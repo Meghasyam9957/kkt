@@ -70,6 +70,7 @@ const detailRow = (over: Partial<OperationalBookingDetail> = {}): OperationalBoo
   adults: 2, children: 1, guests: 3, bookedOn: null,
   checkInTime: null, checkOutTime: null, earlyCheckIn: null, lateCheckout: null,
   guestVerification: null, damageReport: null, maintenanceRequired: null, notes: null,
+  unitState: { housekeeping: null, openMaintenance: 0, maintenancePriority: null, maintenanceHeadline: null },
   ...over,
 });
 

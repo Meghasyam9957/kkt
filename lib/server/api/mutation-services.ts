@@ -155,13 +155,32 @@ const defs: Record<string, MutationDefinition> = {
     action: 'reservation.checkIn', sheet: 'RESERVATIONS', kind: 'update',
     schema: S.ReservationCheckIn, idKey: 'BookingID',
     validate: (ctx) => reservationTransition(ctx, 'Checked In'),
-    toColumns: (i) => ({ BookingStatus: 'Checked In', CheckInTime: i.checkInTime }),
+    /* The transition, plus what the front desk observed while the guest stood there.
+       Undefined keys are stripped before the write, so a field nobody filled in leaves
+       the workbook's own cell exactly as it was. */
+    toColumns: (i) => ({
+      BookingStatus: 'Checked In',
+      CheckInTime: i.checkInTime,
+      GuestVerification: i.guestVerification,
+      EarlyCheckIn: i.earlyCheckIn,
+      Notes: i.notes,
+    }),
   },
   'reservation.checkOut': {
     action: 'reservation.checkOut', sheet: 'RESERVATIONS', kind: 'update',
     schema: S.ReservationCheckOut, idKey: 'BookingID',
     validate: (ctx) => reservationTransition(ctx, 'Checked Out'),
-    toColumns: (i) => ({ BookingStatus: 'Checked Out', CheckOutTime: i.checkOutTime }),
+    /* Departure records what the unit was left like — the two facts housekeeping and
+       maintenance need. No charge is computed for a late checkout and no deposit is
+       settled: those are business decisions, and neither has been made. */
+    toColumns: (i) => ({
+      BookingStatus: 'Checked Out',
+      CheckOutTime: i.checkOutTime,
+      LateCheckout: i.lateCheckout,
+      DamageReport: i.damageReport,
+      MaintenanceRequired: i.maintenanceRequired,
+      Notes: i.notes,
+    }),
   },
   'reservation.cancel': {
     action: 'reservation.cancel', sheet: 'RESERVATIONS', kind: 'update',

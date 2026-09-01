@@ -22,6 +22,7 @@ import {
   checkInFields, checkOutFields, cancelReservationFields, noShowFields,
   extendStayFields, editBookingFields,
 } from '@/lib/server/api/form-fields';
+import { formatDateShort } from '@/lib/shared/format';
 import type { OperationalBookingDetail } from '@/lib/data/views/role-projections';
 
 /**
@@ -50,6 +51,40 @@ const CLOSED_SENTENCE: Record<string, string> = {
 /** A booking that has reached a terminal status takes no further action. */
 function isOpen(status: string): boolean {
   return status === 'Inquiry' || status === 'Confirmed' || status === 'Checked In';
+}
+
+/**
+ * The stay, restated above the fields — who, where, how many, how long.
+ *
+ * Context only: nothing here is submitted. It exists because an arrival is confirmed by
+ * a person reading the booking back, and a form floating over a list cannot be checked
+ * against a row that is no longer on screen. Carries no figure, because the projection
+ * it is given has none.
+ */
+function StayContext({ booking }: { booking: OperationalBookingDetail }) {
+  const unit = booking.unitName || booking.propertyId;
+  const span = booking.checkIn && booking.checkOut
+    ? `${formatDateShort(booking.checkIn)} to ${formatDateShort(booking.checkOut)}`
+    : 'dates not recorded';
+  return (
+    <dl className="sv-staycontext">
+      <div><dt>Guest</dt><dd>{booking.guestDisplayName}</dd></div>
+      <div><dt>Unit</dt><dd>{unit}</dd></div>
+      <div>
+        <dt>Stay</dt>
+        <dd>{booking.nights} night{booking.nights === 1 ? '' : 's'} · {span}</dd>
+      </div>
+      <div>
+        <dt>Guests</dt>
+        <dd>{booking.adults} adult{booking.adults === 1 ? '' : 's'}
+          {booking.children > 0 ? `, ${booking.children} child${booking.children === 1 ? '' : 'ren'}` : ''}
+        </dd>
+      </div>
+      {booking.checkInTime ? (
+        <div><dt>Arrived</dt><dd>{booking.checkInTime}</dd></div>
+      ) : null}
+    </dl>
+  );
 }
 
 export function BookingActions({ booking }: { booking: OperationalBookingDetail }) {
@@ -85,9 +120,14 @@ export function BookingActions({ booking }: { booking: OperationalBookingDetail 
       {step === 'check-in' ? (
         <RowActionButton
           label="Check in" variant="primary" size="md"
+          /* A side drawer, as on Today: an arrival is done with the booking in front of
+             the person, and on a phone this is the bottom sheet the same code path
+             renders. A centred dialog put the guest's stay out of sight. */
+          surface="drawer"
           endpoint={`${base}/check-in`}
           confirmTitle={`Check in ${booking.guestDisplayName}`}
-          fields={checkInFields()}
+          fields={checkInFields(booking)}
+          context={<StayContext booking={booking} />}
           successTemplate={`${booking.guestDisplayName} is checked in.`}
         />
       ) : null}
@@ -95,9 +135,11 @@ export function BookingActions({ booking }: { booking: OperationalBookingDetail 
       {step === 'check-out' ? (
         <RowActionButton
           label="Check out" variant="primary" size="md"
+          surface="drawer"
           endpoint={`${base}/check-out`}
           confirmTitle={`Check out ${booking.guestDisplayName}`}
-          fields={checkOutFields()}
+          fields={checkOutFields(booking)}
+          context={<StayContext booking={booking} />}
           successTemplate={`${booking.guestDisplayName} is checked out — the unit needs a turnover.`}
         />
       ) : null}

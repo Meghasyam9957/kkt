@@ -244,7 +244,7 @@ function StayRow({ row, mode }: { row: ArrivalRow; mode: 'arrival' | 'departure'
             surface="drawer"
             endpoint={`/api/reservations/${row.bookingId}/check-in`}
             confirmTitle={`Check in ${row.guestDisplayName}`}
-            fields={checkInFields()}
+            fields={checkInFields(row)}
             context={<StayFacts row={row} />}
             successTemplate={`${row.guestDisplayName} is checked in.`}
           />
@@ -256,7 +256,7 @@ function StayRow({ row, mode }: { row: ArrivalRow; mode: 'arrival' | 'departure'
             surface="drawer"
             endpoint={`/api/reservations/${row.bookingId}/check-out`}
             confirmTitle={`Check out ${row.guestDisplayName}`}
-            fields={checkOutFields()}
+            fields={checkOutFields(row)}
             context={<StayFacts row={row} />}
             successTemplate={`${row.guestDisplayName} is checked out — the unit needs a turnover.`}
           />

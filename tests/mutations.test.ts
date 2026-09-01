@@ -41,57 +41,13 @@ import { ReadCache } from '@/lib/server/cache/read-cache';
 import { inputColumns, COLUMNS, SHEETS, DATA_ROW, columnIndex } from '@/lib/contract/contract.generated';
 import { isoToSerial } from '@/lib/shared/dates';
 import { USERS } from './support/harness';
+import { createWriteHarness, type WriteHarness } from './support/write-harness';
 
 const ROOT = path.resolve(__dirname, '..');
 
 /* ------------------------------------------------------------------ *
  * Harness: the full pipeline over in-memory backends
  * ------------------------------------------------------------------ */
-
-interface WriteHarness {
-  router: ApiRouter;
-  client: InMemorySheetsClient;
-  store: InMemoryOperationStore;
-  audit: InMemoryAuditSink;
-  cache: ReadCache;
-  deps: MutationDependencies;
-  request(userKey: keyof typeof USERS | null, method: string, path: string, body?: unknown):
-    Promise<{ status: number; body: any }>;
-}
-
-function createWriteHarness(overrides: Partial<MutationDependencies> = {}): WriteHarness {
-  const client = buildDemoSheetsClient();
-  const store = new InMemoryOperationStore();
-  const audit = new InMemoryAuditSink();
-  const auditService = new AuditLogger(audit);
-  const cache = new ReadCache({ ttlMs: 60_000 });
-  const deps: MutationDependencies = {
-    repos: createRepositories(client),
-    store,
-    allocator: new IdAllocator(new InMemorySequenceStore(1), auditService),
-    audit: auditService,
-    cache,
-    writesPermitted: true,
-    ...overrides,
-  };
-  const router = new ApiRouter({
-    authProvider: new InMemoryAuthProvider(Object.values(USERS)),
-    audit: auditService,
-  });
-  registerMutationHandlers(router, API_ROUTES, deps);
-
-  return {
-    router, client, store, audit, cache, deps,
-    async request(userKey, method, requestPath, body) {
-      const headers: Record<string, string> = {};
-      if (userKey) headers.authorization = `Bearer ${USERS[userKey]!.token}`;
-      const response = await router.dispatch({
-        method, path: requestPath, headers, body, query: {}, requestId: `req-${randomUUID().slice(0, 8)}`,
-      });
-      return { status: response.status, body: response.body as any };
-    },
-  };
-}
 
 const expensePayload = (operationId: string, extra: Record<string, unknown> = {}) => ({
   operationId,

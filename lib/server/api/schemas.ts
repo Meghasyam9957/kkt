@@ -72,12 +72,30 @@ export const ReservationUpdate = OperationEnvelope.extend({
   notes: z.string().max(500).optional(),
 }).strict();
 
-/** Check-in / check-out / cancel are status transitions with their own envelopes. */
+/**
+ * Check-in / check-out / cancel are status transitions with their own envelopes.
+ *
+ * Everything beside the transition is OPTIONAL, and an omitted field is not written at
+ * all (`stripUndefined`, mutations.ts). That is what lets a front desk record the arrival
+ * time now and the verification later without a blank overwriting what is already there.
+ *
+ * Every field below is a `role: in` column of 04_RESERVATIONS with a vocabulary the
+ * contract already owns — GuestVerification comes from the VERIFY list, not from here.
+ * NO FIGURE APPEARS: a late checkout is a fact about the stay, and any charge for one is
+ * a business decision this product has not been given.
+ */
 export const ReservationCheckIn = OperationEnvelope.extend({
   checkInTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  guestVerification: listEnum('VERIFY').optional(),
+  earlyCheckIn: z.boolean().optional(),
+  notes: z.string().max(500).optional(),
 }).strict();
 export const ReservationCheckOut = OperationEnvelope.extend({
   checkOutTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  lateCheckout: z.boolean().optional(),
+  damageReport: z.string().max(500).optional(),
+  maintenanceRequired: z.boolean().optional(),
+  notes: z.string().max(500).optional(),
 }).strict();
 export const ReservationCancel = OperationEnvelope.extend({
   reason: z.string().min(3).max(300),

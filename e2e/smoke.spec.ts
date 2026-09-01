@@ -805,6 +805,141 @@ test('a check-in runs the verified write path and the board re-reads', async ({ 
     .toBe(inHouseBefore + 1);
 });
 
+/* ------------------------------------------------------------------ *
+ * UI-7 — the stay: arrival, in house, departure
+ * ------------------------------------------------------------------ */
+
+/** A booking in the register that is currently at `status`, opened in its detail panel. */
+async function openBookingWithStatus(page: Page, status: string): Promise<string | null> {
+  await page.goto('/admin/operations/reservations');
+  await page.waitForSelector('.sv-bklink');
+  const row = page.locator('tbody tr').filter({ hasText: status }).first();
+  if (await row.count() === 0) return null;
+  const link = row.locator('a.sv-bklink').first();
+  const label = (await link.getAttribute('aria-label')) ?? '';
+  const reference = label.match(/BK-\d{4}-\d{4}/)?.[0] ?? null;
+  await link.click();
+  await expect(page.locator('.sv-drawer')).toBeVisible();
+  return reference;
+}
+
+test('a stay runs arrival to departure through the one detail panel', async ({ page }) => {
+  test.slow();
+  await signInAs(page, 'Demo Operations Manager');
+
+  const reference = await openBookingWithStatus(page, 'Confirmed');
+  if (!reference) test.skip(true, 'no confirmed booking in the current demo state');
+
+  /* ---- before: the panel says the guest is expected ---- */
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer.locator('.sv-stay')).toContainText('Arriving');
+  // An operations surface, so there is no figure anywhere on it.
+  await expect(drawer).not.toContainText('₹');
+
+  /* ---- arrival ---- */
+  await drawer.getByRole('button', { name: 'Check in' }).click();
+  const arrival = page.locator('.sv-drawer').last();
+  // The booking is in front of the person before they commit.
+  await expect(arrival.locator('.sv-staycontext')).toContainText('night');
+  await arrival.getByLabel('Arrival time').fill('14:35');
+  await arrival.getByLabel('ID checked?').selectOption('Verified');
+  await arrival.getByLabel('Early arrival').selectOption('true');
+  await arrival.getByRole('button', { name: /Check in/ }).click();
+
+  // Reported only after the server verified, and the panel re-reads from the workbook.
+  // By text, not by position: the arrival toast is still on screen when the departure
+  // one arrives, and "the last toast" is a race with the dismiss timer.
+  await expect(page.locator('.sv-toast', { hasText: 'is checked in' })).toBeVisible();
+  await expect(page.locator('.sv-stay')).toContainText('In house');
+  await expect(page.locator('.sv-stay')).toContainText('Arrived at 14:35');
+  await expect(page.locator('.sv-bkdetail')).toContainText('Verified');
+
+  /* ---- departure ---- */
+  await page.locator('.sv-bkdetail').getByRole('button', { name: 'Check out' }).click();
+  const departure = page.locator('.sv-drawer').last();
+  await departure.getByLabel('Departure time').fill('11:20');
+  await departure.getByLabel('Late departure').selectOption('true');
+  await departure.getByLabel('Damage found').fill('Chipped mug in the kitchen.');
+  await departure.getByLabel('Needs maintenance').selectOption('true');
+  await departure.getByRole('button', { name: /Check out/ }).click();
+
+  await expect(page.locator('.sv-toast', { hasText: 'is checked out' })).toBeVisible();
+  await expect(page.locator('.sv-stay')).toContainText('Stay complete');
+  await expect(page.locator('.sv-stay')).toContainText('Departed at 11:20');
+  const detail = page.locator('.sv-bkdetail');
+  await expect(detail).toContainText('Chipped mug in the kitchen.');
+  // Nothing further is offered: the transition table has nowhere left to go.
+  await expect(detail.getByRole('button', { name: 'Check in' })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Check out' })).toHaveCount(0);
+  // And still no money, after two writes.
+  await expect(detail).not.toContainText('₹');
+});
+
+test('the panel names the unit state without claiming the stay caused it', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  const reference = await openBookingWithStatus(page, 'Confirmed');
+  if (!reference) test.skip(true, 'no confirmed booking in the current demo state');
+
+  const headings = await page.locator('.sv-bkdetail__heading').allTextContents();
+  expect(headings).toContain('This unit, right now');
+  // Titled for the unit: the domain reads no booking-to-turnover link, so none is claimed.
+  await expect(page.locator('.sv-bkdetail')).toContainText('Open maintenance');
+});
+
+test('an arrival cannot be recorded twice from the panel', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  const reference = await openBookingWithStatus(page, 'Checked In');
+  if (!reference) test.skip(true, 'no in-house booking in the current demo state');
+
+  const detail = page.locator('.sv-bkdetail');
+  await expect(detail.locator('.sv-stay')).toContainText('In house');
+  // The one legal next step, and only that one.
+  await expect(detail.getByRole('button', { name: 'Check in' })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Check out' })).toHaveCount(1);
+});
+
+for (const width of [375, 390, 768, 1024, 1440] as const) {
+  test(`the arrival drawer is usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signInAs(page, 'Demo Operations Manager');
+
+    const reference = await openBookingWithStatus(page, 'Confirmed');
+    if (!reference) test.skip(true, 'no confirmed booking in the current demo state');
+
+    await page.locator('.sv-drawer').getByRole('button', { name: 'Check in' }).click();
+    const arrival = page.locator('.sv-drawer').last();
+    await expect(arrival).toBeVisible();
+
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `the arrival drawer must not scroll the page at ${width}px`)
+      .toBeLessThanOrEqual(0);
+
+    /*
+     * The confirm button is the reason the sheet is open, so it has to be a real target
+     * wherever a finger will reach it. The product's rule is `@media (pointer: coarse)`
+     * — 44px on any touch device at any width — plus the bottom-sheet treatment below
+     * 640px. On a desktop mouse it stays the design system's 40px, because one button
+     * taller than every other button in the product is not a design, it is a mistake.
+     */
+    const confirm = arrival.getByRole('button', { name: /^Check in$/ });
+    const box = (await confirm.boundingBox())!;
+    expect(box.height, 'the confirm button is a real target')
+      .toBeGreaterThanOrEqual(width <= 640 ? 44 : 40);
+    expect(box.x + box.width, 'the confirm button is inside the viewport')
+      .toBeLessThanOrEqual(width + 1);
+    if (width <= 640) {
+      // A bottom sheet on a phone: the action spans it rather than hiding in a corner.
+      expect(box.width).toBeGreaterThan(width * 0.7);
+    }
+
+    // Reachable and operable from the keyboard alone.
+    await arrival.getByLabel('Arrival time').focus();
+    const focused = await page.evaluate(() => document.activeElement?.getAttribute('type'));
+    expect(focused).toBe('time');
+  });
+}
+
 test('today is keyboard-operable with a visible focus ring', async ({ page }) => {
   await signInAs(page, 'Demo Operations Manager');
   await page.waitForSelector('.sv-oprow');

@@ -582,12 +582,15 @@ describe('bookings workspace . the detail panel', () => {
     expect(container.querySelector('.sv-bkdetail')).toBeNull();
   });
 
-  it('carries the four sections a front office needs, in order', async () => {
+  it('carries the sections a front office needs, in order', async () => {
     const id = await firstBookingId();
     const { container } = renderDetail(await detailFor(id), id);
     const headings = [...container.querySelectorAll('.sv-bkdetail__heading')]
       .map((h) => h.textContent);
-    expect(headings).toEqual(['Booking', 'Guest', 'Stay', 'Operations']);
+    /* UI-7 added the unit's own live state as a fifth section. It is LAST and it is
+       titled for the unit, not the stay: the workbook holds no booking-to-turnover link
+       the domain reads, so it must not read as something this booking caused. */
+    expect(headings).toEqual(['Booking', 'Guest', 'Stay', 'Operations', 'This unit, right now']);
   });
 
   it('shows the stay facts the list has no room for', async () => {

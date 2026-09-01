@@ -2025,3 +2025,55 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 @media (pointer: coarse) {
   .sv-availlink { min-height: 44px; }
 }
+
+/* ====================================================================
+ * UI-7 — THE STAY: arrival, in-house, departure
+ * ==================================================================== */
+
+/* The first thing the panel says: where this stay IS, in front-office words. The state
+   is the TEXT, so the tone colour is reinforcement and never the message. */
+.sv-stay {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-5);
+  background: var(--surface-sunken);
+  border-radius: var(--r-2);
+  border-left: 3px solid var(--line-strong);
+}
+.sv-stay__state {
+  font-size: var(--t-label); font-weight: 700;
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  color: var(--text-muted);
+}
+.sv-stay__line { font-size: var(--t-body); color: var(--text-primary); }
+
+/* One border colour per status, matching the pill vocabulary the lists already use. */
+.sv-stay--checked-in { border-left-color: var(--good-fg); }
+.sv-stay--checked-in .sv-stay__state { color: var(--good-fg); }
+.sv-stay--confirmed { border-left-color: var(--brand-green); }
+.sv-stay--cancelled,
+.sv-stay--no-show { border-left-color: var(--bad-fg); }
+.sv-stay--cancelled .sv-stay__state,
+.sv-stay--no-show .sv-stay__state { color: var(--bad-fg); }
+
+/* The booking restated above the arrival/departure fields. Read-only by construction —
+   nothing in here is a control, and nothing in here is submitted. */
+.sv-staycontext {
+  display: grid; gap: var(--s-2) var(--s-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+}
+.sv-staycontext dt {
+  font-size: var(--t-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted);
+}
+.sv-staycontext dd { font-size: var(--t-small); color: var(--text-primary); margin-top: 2px; }
+
+/*
+ * On a phone the write drawer is a bottom sheet, and its confirm button is the whole
+ * reason the sheet is open. Right-aligned and 40px tall it is a target somebody has to
+ * aim for one-handed at a front desk; here it spans the sheet and clears 44px.
+ */
+@media (max-width: 640px) {
+  .sv-drawer .sv-mutation-form__actions { flex-direction: column-reverse; }
+  .sv-drawer .sv-mutation-form__actions .sv-btn { width: 100%; min-height: 44px; }
+}

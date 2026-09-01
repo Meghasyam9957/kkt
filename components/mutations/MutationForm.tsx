@@ -28,7 +28,13 @@ export interface FieldOption { value: string; label?: string }
 export interface FieldSpec {
   name: string;
   label: string;
-  type: 'text' | 'textarea' | 'currency' | 'number' | 'date' | 'time' | 'select';
+  /**
+   * `boolean` renders as Yes/No with a blank third option meaning "leave it as it is".
+   * The workbook's Early In / Late Out / Maint. Req. columns are `bool`, so the wire
+   * value is a real boolean rather than the string "Yes" — the column type and the
+   * payload type say the same thing.
+   */
+  type: 'text' | 'textarea' | 'currency' | 'number' | 'date' | 'time' | 'select' | 'boolean';
   options?: FieldOption[];
   required?: boolean;
   help?: string;
@@ -62,6 +68,8 @@ function coerce(spec: FieldSpec, raw: string): unknown {
   switch (spec.type) {
     case 'currency':
     case 'number': return Number(raw);
+    // '' was already returned as undefined above, so only a real choice reaches here.
+    case 'boolean': return raw === 'true';
     default: return raw;
   }
 }
@@ -147,6 +155,16 @@ function renderControl(
           {(spec.options ?? []).map((o) => (
             <option key={o.value} value={o.value}>{o.label ?? o.value}</option>
           ))}
+        </Select>
+      );
+    case 'boolean':
+      return (
+        <Select {...common} value={value} onChange={(e) => onChange(e.target.value)}>
+          {/* Blank is not "No". Leaving it alone must leave the cell alone — the panel
+              renders an unrecorded flag as "Not recorded", and so must the form. */}
+          <option value="" disabled={spec.required}>{spec.placeholder ?? 'Leave unchanged'}</option>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
         </Select>
       );
     case 'textarea':

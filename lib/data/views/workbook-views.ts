@@ -66,6 +66,7 @@ import type {
   DashboardView, ReportFilters, KpiValue, ReservationRow, LedgerRow, CapexRow, CashFlowRow,
   PnlView, PnlLine, SettingsView, InvestorPreviewView, OperationsToday, TrendPoint,
   PropertyBoardRow, UnitStatus, OperationsBoardView, UrgentItem, UrgentSeverity, BookingDetailRow,
+  UnitOperationalState,
   CalendarView, CalendarUnitRow, CalendarCell, CalendarStay, CalendarDayState,
   AvailabilityQuery, AvailabilitySearchView, AvailabilityUnit, AvailabilityConflict,
   AvailabilityProblem, PropertyOption,
@@ -456,6 +457,30 @@ export class WorkbookViews {
   }
 
   /**
+   * What a UNIT is doing right now — the turnover and the tickets on it.
+   *
+   * Keyed on PropertyID only. It is not a claim about any stay: 13_HOUSEKEEPING carries a
+   * BookingID column, but the domain record does not read it, so there is no
+   * booking-to-turnover relationship to report and none is invented. Statuses are passed
+   * through verbatim rather than reduced to a verdict, so this can never disagree with
+   * the housekeeping and maintenance boards it is drawn from.
+   */
+  private unitOperationalState(propertyId: string): UnitOperationalState {
+    const turnover = this.ops.housekeeping.find(
+      (t) => t.propertyId === propertyId && OPEN_HOUSEKEEPING_STATUSES.includes(t.status));
+    const tickets = this.openMaintenanceTickets()
+      .filter((t) => t.propertyId === propertyId)
+      .sort((a, b) => PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority));
+
+    return {
+      housekeeping: turnover?.status ?? null,
+      openMaintenance: tickets.length,
+      maintenancePriority: tickets[0]?.priority ?? null,
+      maintenanceHeadline: tickets[0]?.description ?? null,
+    };
+  }
+
+  /**
    * TODAY counters — every one derived from a record, none authored. A counter the source
    * genuinely cannot supply is listed in `unavailable` so the UI shows "not tracked"
    * rather than a zero that reads like a real business outcome.
@@ -598,6 +623,7 @@ export class WorkbookViews {
       status: booking.BookingStatus,
       checkIn: booking.CheckInDate === null ? null : serialToIso(booking.CheckInDate),
       checkOut: booking.CheckOutDate === null ? null : serialToIso(booking.CheckOutDate),
+      notes: booking.Notes && booking.Notes.trim() !== '' ? booking.Notes : null,
     });
 
     const arrivals = this.workbook.reservations
@@ -857,6 +883,7 @@ export class WorkbookViews {
       damageReport: text(booking.DamageReport),
       maintenanceRequired: flag(booking.MaintenanceRequired),
       notes: text(booking.Notes),
+      unitState: this.unitOperationalState(booking.PropertyID),
     };
   }
 

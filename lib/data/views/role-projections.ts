@@ -19,7 +19,7 @@
  *     a financial field there is a type error, not a review comment.
  */
 import type {
-  PropertyBoardRow, ReservationRow, UnitStatus, BookingDetailRow,
+  PropertyBoardRow, ReservationRow, UnitStatus, BookingDetailRow, UnitOperationalState,
 } from '@/lib/data/providers/types';
 
 /* ------------------------------------------------------------------ *
@@ -151,6 +151,11 @@ export interface OperationalBookingDetail {
   damageReport: string | null;
   maintenanceRequired: boolean | null;
   notes: string | null;
+  /**
+   * The unit's own live state. Carries no figure and no guest fact, so it crosses the
+   * operational boundary intact — it is turnover and ticket status, nothing more.
+   */
+  unitState: UnitOperationalState;
 }
 
 /** The SAME withheld set as the list row — one rule, not two that can drift apart. */
@@ -182,6 +187,7 @@ export function operationalBookingDetail(
     damageReport: row.damageReport,
     maintenanceRequired: row.maintenanceRequired,
     notes: row.notes,
+    unitState: row.unitState,
   };
 }
 

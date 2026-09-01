@@ -15,7 +15,7 @@ import { useCallback } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Drawer } from '@/components/ui/overlay';
 import { StatusPill, EmptyState } from '@/components/ui/primitives';
-import { formatDate } from '@/lib/shared/format';
+import { formatDate, formatDateShort } from '@/lib/shared/format';
 import { bookingStatusTone } from '@/lib/shared/booking-status';
 import type { OperationalBookingDetail } from '@/lib/data/views/role-projections';
 
@@ -63,6 +63,8 @@ export function BookingDetailDrawer({ detail, requestedId, actions }: {
   return (
     <Drawer open onClose={close} title={`${detail.guestDisplayName} · ${detail.bookingId}`} wide>
       <div className="sv-bkdetail">
+        <StayBanner detail={detail} />
+
         <Section title="Booking">
           <Fact label="Reference" value={detail.bookingId} mono />
           <Fact label="Platform" value={detail.platform} />
@@ -108,6 +110,25 @@ export function BookingDetailDrawer({ detail, requestedId, actions }: {
           <Fact label="Notes" value={detail.notes} />
         </Section>
 
+        {/* THE UNIT, not the stay. The workbook holds no booking-to-turnover link that
+            the domain reads, so this is deliberately labelled as the unit's own state
+            rather than presented as something this booking caused. */}
+        <Section title="This unit, right now">
+          <Fact label="Turnover" value={detail.unitState.housekeeping} />
+          <div className="sv-bkdetail__fact">
+            <dt>Open maintenance</dt>
+            <dd>
+              {detail.unitState.openMaintenance === 0
+                ? 'None open'
+                : `${detail.unitState.openMaintenance} open`}
+              {detail.unitState.maintenancePriority
+                ? ` · ${detail.unitState.maintenancePriority} priority`
+                : ''}
+            </dd>
+          </div>
+          <Fact label="Most pressing" value={detail.unitState.maintenanceHeadline} />
+        </Section>
+
         {actions ? (
           <section className="sv-bkdetail__section">
             <h3 className="sv-bkdetail__heading">Actions</h3>
@@ -116,6 +137,65 @@ export function BookingDetailDrawer({ detail, requestedId, actions }: {
         ) : null}
       </div>
     </Drawer>
+  );
+}
+
+/**
+ * WHERE THE STAY IS, in the words a front desk uses.
+ *
+ * A presentation of the booking's EXISTING status — no new state vocabulary. "Checked In"
+ * is the workbook's word and stays in the Booking section beside the reference; "In
+ * house" is what the person at the desk says about the same fact, and it is what they
+ * need to read first.
+ *
+ * The sentence beneath is assembled only from what is actually recorded. An arrival with
+ * no time says so rather than inventing one, because "arrived" without a time is still
+ * true and "arrived at —" is not a sentence.
+ */
+const STAY_HEADLINE: Record<string, string> = {
+  'Inquiry': 'Enquiry',
+  'Confirmed': 'Arriving',
+  'Checked In': 'In house',
+  'Checked Out': 'Stay complete',
+  'Cancelled': 'Cancelled',
+  'No Show': 'Did not arrive',
+};
+
+/** A CSS-safe modifier for a status that contains a space. */
+function statusModifier(status: string): string {
+  return status.toLowerCase().replace(/[^a-z]+/g, '-');
+}
+
+function StayBanner({ detail }: { detail: OperationalBookingDetail }) {
+  const unit = detail.unitName || detail.propertyId;
+  const nights = `${detail.nights} night${detail.nights === 1 ? '' : 's'}`;
+  const span = detail.checkIn && detail.checkOut
+    ? `${formatDateShort(detail.checkIn)} to ${formatDateShort(detail.checkOut)}`
+    : null;
+
+  let line: string;
+  switch (detail.bookingStatus) {
+    case 'Checked In':
+      line = detail.checkInTime
+        ? `Arrived at ${detail.checkInTime}. Departs ${detail.checkOut ? formatDate(detail.checkOut) : 'on a date not recorded'}.`
+        : `Arrival time not recorded. Departs ${detail.checkOut ? formatDate(detail.checkOut) : 'on a date not recorded'}.`;
+      break;
+    case 'Checked Out':
+      line = detail.checkOutTime
+        ? `Departed at ${detail.checkOutTime}. ${nights} in ${unit}.`
+        : `Departure time not recorded. ${nights} in ${unit}.`;
+      break;
+    default:
+      line = span ? `${nights} in ${unit}, ${span}.` : `${nights} in ${unit}.`;
+  }
+
+  return (
+    <p className={`sv-stay sv-stay--${statusModifier(detail.bookingStatus)} m-reveal`}>
+      <span className="sv-stay__state">
+        {STAY_HEADLINE[detail.bookingStatus] ?? detail.bookingStatus}
+      </span>
+      <span className="sv-stay__line">{line}</span>
+    </p>
   );
 }
 

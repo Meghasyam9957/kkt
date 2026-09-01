@@ -68,6 +68,7 @@ const booking = (over: Partial<OperationalBookingDetail> = {}): OperationalBooki
   bookedOn: null, checkIn: '2027-02-10', checkOut: '2027-02-13', nights: 3,
   checkInTime: null, checkOutTime: null, earlyCheckIn: null, lateCheckout: null,
   guestVerification: null, damageReport: null, maintenanceRequired: null, notes: null,
+  unitState: { housekeeping: null, openMaintenance: 0, maintenancePriority: null, maintenanceHeadline: null },
   ...over,
 });
 

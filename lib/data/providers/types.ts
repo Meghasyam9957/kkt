@@ -183,6 +183,12 @@ export interface ArrivalRow {
    */
   checkIn: string | null;
   checkOut: string | null;
+  /**
+   * The booking's own notes. Carried so the arrival drawer can EDIT them rather than
+   * offer an empty box that overwrites — the write replaces the cell, and a blank field
+   * beside existing notes deletes them the first time anyone types in it.
+   */
+  notes: string | null;
 }
 
 export interface CleaningRow {
@@ -326,6 +332,31 @@ export interface BookingDetailRow extends ReservationRow {
   damageReport: string | null;
   maintenanceRequired: boolean | null;
   notes: string | null;
+  /** What the UNIT is doing right now. See `UnitOperationalState`. */
+  unitState: UnitOperationalState;
+}
+
+/**
+ * The unit's own operational state, at the moment of reading.
+ *
+ * Keyed on PropertyID and nothing else. It describes THE UNIT, not this stay: the
+ * workbook does carry a BookingID on 13_HOUSEKEEPING, but the domain record does not read
+ * it (`FinalStatus is the turnover's own state` — repositories/index.ts), so no
+ * booking-to-turnover link exists to report and none is invented here. The panel says
+ * "this unit, right now" in as many words.
+ *
+ * `InspectionStatus` is absent for the same reason: the repository deliberately reads
+ * FinalStatus as the task's status, and 'Failed Inspection' is one of its values, so the
+ * inspection is already folded into `housekeeping` rather than available separately.
+ */
+export interface UnitOperationalState {
+  /** Open turnover status, verbatim from the housekeeping record. Null when none is open. */
+  housekeeping: string | null;
+  /** How many maintenance tickets are still open on this unit. */
+  openMaintenance: number;
+  /** The most pressing open ticket, verbatim. Null when there are none. */
+  maintenancePriority: string | null;
+  maintenanceHeadline: string | null;
 }
 
 /* ------------------------------------------------------------------ *

@@ -32,6 +32,8 @@ import { roleHasCapability, FINANCIAL_CAPABILITIES, ROLES, type Role } from '@/l
 import { TodayBoard } from '@/components/operations/TodayBoard';
 import { RowActionButton } from '@/components/mutations/actions';
 import { TodayDateControl } from '@/components/operations/TodayDateControl';
+import { checkInFields, checkOutFields } from '@/lib/server/api/form-fields';
+import { codeOf } from './support/source';
 import { ToastProvider } from '@/components/ui/toast';
 import type { OperationsBoardView } from '@/lib/data/providers/types';
 
@@ -659,10 +661,27 @@ describe('today · language', () => {
   });
 
   it('the check-in and check-out drawers collect no commercial term', () => {
-    // No payment, deposit, late fee or cancellation charge exists in this product; a
-    // front-office screen must not be where one gets invented.
-    const fields = read('lib/server/api/form-fields.ts');
-    const checkIn = fields.slice(fields.indexOf('export function checkInFields'), fields.indexOf('export function markCleanFields'));
-    expect(checkIn).not.toMatch(/amount|payment|deposit|charge|fee|refund/i);
+    /*
+     * No payment, deposit, late fee or cancellation charge exists in this product; a
+     * front-office screen must not be where one gets invented.
+     *
+     * Asserted against the SPECS, not against the source text. UI-7 added help lines that
+     * say a late departure is recorded and nothing is charged for it — prose that states
+     * the rule, which a raw-source scan reads as breaking it. A guard that punishes its
+     * own explanation teaches the next reader to delete the explanation.
+     */
+    const commercial = /amount|payment|deposit|charge|fee|refund|price|rate|tax|commission/i;
+    for (const field of [...checkInFields({ notes: null }), ...checkOutFields({ notes: null })]) {
+      expect(field.name, `${field.name} (name)`).not.toMatch(commercial);
+      expect(field.label, `${field.name} (label)`).not.toMatch(commercial);
+      expect(field.placeholder ?? '', `${field.name} (placeholder)`).not.toMatch(commercial);
+      // The one type that could only ever mean money.
+      expect(field.type, `${field.name} (type)`).not.toBe('currency');
+    }
+    // And no money control is constructed in that half of the file either.
+    const fields = codeOf(read('lib/server/api/form-fields.ts'));
+    const stay = fields.slice(fields.indexOf('export function checkInFields'),
+      fields.indexOf('export function markCleanFields'));
+    expect(stay).not.toMatch(/currency/i);
   });
 });

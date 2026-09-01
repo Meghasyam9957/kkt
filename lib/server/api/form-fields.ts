@@ -270,22 +270,85 @@ export function editBookingFields(current: {
  * exists in this product, and inventing one on a front-office screen would be inventing
  * a commercial term.
  */
-export function checkInFields(): FieldSpec[] {
+/**
+ * ARRIVAL — what a front desk actually records while the guest is standing there.
+ *
+ * Every field is optional and every blank is left alone: the transition is the action,
+ * and the rest is what happened to be observed. A half-filled arrival is a real arrival.
+ *
+ * `notes` is offered ONLY when the booking's current notes can be prefilled. The write
+ * replaces the cell, so an empty box beside existing notes would quietly delete them the
+ * first time somebody typed in it. Prefilled, the person edits what is already there —
+ * the same shape `editBookingFields` uses for the same reason.
+ *
+ * NO MONEY, and no deposit: a deposit is a business decision this product has not been
+ * given, and inventing a field for one would be inventing the decision.
+ */
+export function checkInFields(current?: { notes: string | null }): FieldSpec[] {
   return [
     {
       name: 'checkInTime', label: 'Arrival time', type: 'time',
-      help: 'Optional. Leave blank if it is not being recorded.',
+      help: 'Recorded on the booking. Leave blank if nobody noted it.',
     },
+    {
+      name: 'guestVerification', label: 'ID checked?', type: 'select',
+      options: list('VERIFY'),
+      help: 'Whether identity was verified at the desk. No document is stored anywhere.',
+    },
+    {
+      name: 'earlyCheckIn', label: 'Early arrival', type: 'boolean',
+      help: 'Arrived before the standard time. Recorded as a fact — nothing is charged.',
+    },
+    ...notesField(current, 'Anything the next person on the desk should know.'),
   ];
 }
 
-export function checkOutFields(): FieldSpec[] {
+/**
+ * DEPARTURE — the two facts housekeeping and maintenance need, and the time it happened.
+ *
+ * `damageReport` is free text on the booking, not a claim and not a charge. Blank stays
+ * blank: the detail panel renders an empty damage report as "Not recorded" rather than
+ * as a clean bill, so an unasked question must not be answered here either.
+ *
+ * NO refund, NO deposit settlement, NO late-checkout fee. `lateCheckout` records that it
+ * happened; what it costs is a business decision that has not been made.
+ */
+export function checkOutFields(current?: { notes: string | null }): FieldSpec[] {
   return [
     {
       name: 'checkOutTime', label: 'Departure time', type: 'time',
-      help: 'Optional. Leave blank if it is not being recorded.',
+      help: 'Recorded on the booking. Leave blank if nobody noted it.',
     },
+    {
+      name: 'lateCheckout', label: 'Late departure', type: 'boolean',
+      help: 'Left after the standard time. Recorded as a fact — nothing is charged.',
+    },
+    {
+      name: 'damageReport', label: 'Damage found', type: 'textarea',
+      placeholder: 'Leave blank if there is none to report',
+      help: 'What the unit was left like. Blank means nobody has said — not that it is clear.',
+    },
+    {
+      name: 'maintenanceRequired', label: 'Needs maintenance', type: 'boolean',
+      help: 'Flags the booking. Raise the ticket itself on the Maintenance board.',
+    },
+    ...notesField(current, 'Anything housekeeping or the next guest should know.'),
   ];
+}
+
+/**
+ * The booking's notes, editable — but only where the current value can be shown.
+ *
+ * Offering an empty box that OVERWRITES is how notes get lost; there is no append in the
+ * write pipeline (`toColumns` sees the request, never the row), so the honest control is
+ * one that starts from what is already recorded.
+ */
+function notesField(current: { notes: string | null } | undefined, help: string): FieldSpec[] {
+  if (!current) return [];
+  return [{
+    name: 'notes', label: 'Notes', type: 'textarea', help,
+    ...(current.notes ? { defaultValue: current.notes } : {}),
+  }];
 }
 
 export function markCleanFields(): FieldSpec[] {
