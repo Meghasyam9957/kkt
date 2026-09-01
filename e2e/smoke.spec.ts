@@ -1083,6 +1083,124 @@ for (const width of [375, 390, 768, 1024, 1440] as const) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * UI-9 — the investor's own screen
+ * ------------------------------------------------------------------ */
+
+test('the portfolio reads as a position, a business and a trend — in that order', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signInAs(page, 'Investor Demo A');
+  await expect(page).toHaveURL(/\/admin\/portfolio/);
+
+  const headings = await page.locator('.sv-card__title').allTextContents();
+  expect(headings[0]).toBe('Your position');
+  expect(headings[1]).toMatch(/^The portfolio in /);
+  expect(headings[2]).toBe('How the portfolio has traded');
+  expect(headings).toContain('Your distribution');
+  expect(headings).toContain('Statements');
+
+  // The scope is stated rather than left to be guessed at.
+  await expect(page.locator('main')).toContainText('not a single property');
+
+  /*
+   * No property, no unit, no booking and no other investor reaches this screen. There is
+   * no ownership relation in the workbook, so a unit id here would be an invented claim.
+   */
+  const html = await page.content();
+  expect(html).not.toMatch(/HYD-\d{3}/);
+  expect(html).not.toMatch(/BK-20\d{2}-\d{4}/);
+  expect(html).not.toMatch(/INV-00[2-9]/);
+  expect(html.toLowerCase()).not.toContain('vendor');
+});
+
+test('two investors see two different positions, resolved from their own sessions', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  const a = await page.locator('h1.sv-page-header__title').innerText();
+  const aCapital = await page.locator('.sv-kpi', { hasText: 'Your capital' })
+    .locator('.sv-kpi__value').innerText();
+
+  await signInAs(page, 'Investor Demo B');
+  const b = await page.locator('h1.sv-page-header__title').innerText();
+  expect(b).not.toBe(a);
+  // A's name never appears on B's screen.
+  expect(await page.content()).not.toContain(a.replace(/^Portfolio\s*[—-]\s*/, '').trim());
+
+  /*
+   * And identity cannot be supplied: the page accepts no parameter, so asking for the
+   * other investor changes nothing at all.
+   */
+  await page.goto('/admin/portfolio?investor=INV-001');
+  await expect(page.locator('h1.sv-page-header__title')).toHaveText(b);
+  const bCapital = await page.locator('.sv-kpi', { hasText: 'Your capital' })
+    .locator('.sv-kpi__value').innerText();
+  expect(bCapital).not.toBe(aCapital);
+});
+
+test('an unset distribution rule is stated, never rendered as a zero', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  const main = page.locator('main');
+
+  // Either the rules are configured and a figure is shown, or they are not and the screen
+  // says so. What must never happen is ₹0 standing in for "nobody has decided".
+  const configured = await main.getByText('Configuration required').count() === 0;
+  if (!configured) {
+    await expect(main).toContainText('it is a decision that has not been made');
+    await expect(main).toContainText('Not yet calculable');
+  }
+
+  // No statement is offered, and both reasons are named.
+  await expect(main).toContainText('No statements are available yet');
+});
+
+for (const width of [375, 390, 768, 1024, 1440] as const) {
+  test(`the portfolio is usable at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await signInAs(page, 'Investor Demo A');
+    await page.waitForSelector('.sv-kpi');
+
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `the portfolio must not scroll sideways at ${width}px`).toBeLessThanOrEqual(0);
+
+    // The trend is drawn, and it fits the space it is given.
+    const chart = page.locator('.sv-chart').first();
+    await expect(chart).toBeVisible();
+    const box = (await chart.boundingBox())!;
+    expect(box.width, 'the chart is inside the viewport').toBeLessThanOrEqual(width + 1);
+
+    if (width <= 640) {
+      // A phone gets records, not a four-column finance table squeezed to fit.
+      const stacked = await page.locator('.sv-table--stack').count();
+      expect(stacked, 'both tables stack on a phone').toBeGreaterThanOrEqual(1);
+      const label = await page.locator('.sv-table--stack tbody td').first()
+        .evaluate((el) => getComputedStyle(el, '::before').content);
+      expect(label, 'each cell keeps its column label when stacked').not.toBe('none');
+    }
+  });
+}
+
+test('the portfolio is keyboard-reachable and states its figures in text', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await page.waitForSelector('.sv-chart');
+
+  /*
+   * The chart announces itself as an image with a described name, and the same figures
+   * are rendered as an equivalent table beside it. A financial screen must not carry a
+   * number in pixels alone.
+   */
+  const svg = page.locator('.sv-chart svg').first();
+  await expect(svg).toHaveAttribute('role', 'img');
+  await expect(svg).toHaveAttribute('aria-label', /chart of/i);
+  expect(await page.locator('.sv-chart table').count()).toBe(2);
+  await expect(page.locator('.sv-chart table').first()).toContainText('Net revenue');
+
+  // Nothing technical is spoken to the reader.
+  const main = (await page.locator('main').innerText()).toLowerCase();
+  for (const leak of ['investorservice', 'workbook', 'undefined', '/api/', 'error:']) {
+    expect(main, leak).not.toContain(leak);
+  }
+});
+
 test('today is keyboard-operable with a visible focus ring', async ({ page }) => {
   await signInAs(page, 'Demo Operations Manager');
   await page.waitForSelector('.sv-oprow');

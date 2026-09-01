@@ -2113,3 +2113,18 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 @media (max-width: 640px) {
   .sv-table--stack .sv-btn, .sv-table--stack .sv-btn--sm { min-height: 44px; }
 }
+
+/* ====================================================================
+ * UI-9 — THE INVESTOR'S OWN SCREEN
+ * ==================================================================== */
+
+/* A qualifier under a figure: "your share within the pool", "not yet calculable".
+   A financial number a reader can misread is worse than one they cannot see. */
+.sv-kpi__note {
+  margin-top: var(--s-2);
+  font-size: var(--t-label); line-height: 1.4;
+  color: var(--text-muted);
+}
+
+/* The two trend charts sit one under the other and need air between them. */
+.sv-card__body > .sv-chart + .sv-chart { margin-top: var(--s-5); }
