@@ -210,7 +210,16 @@ export function RevenueTrendChart({ points, title }: { points: Point[]; title: s
               label={`${p.label}: ${formatCurrency(p.value)}`}
               onActivate={() => setHover(i)} onClear={() => setHover(null)} />
             {i % labelStride === 0 || i === points.length - 1 ? (
-              <text x={x(i)} y={H - 12} textAnchor="middle" className="sv-chart__tick">{p.label}</text>
+              /* The END labels are anchored inward. THIS chart spans the full inner
+                 width, so its last point sits at exactly `W - PAD_R` and a centred label
+                 there hangs half outside the viewBox — the year renders as "Feb 202".
+                 The bar charts below do not need it: their points sit half a pitch in
+                 from each edge already. */
+              <text
+                x={x(i)} y={H - 12}
+                textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}
+                className="sv-chart__tick"
+              >{p.label}</text>
             ) : null}
           </g>
         ))}
