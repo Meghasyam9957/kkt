@@ -13,7 +13,7 @@
 import { StatusPill, Card, CardHeader, CardBody, type Tone } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { RowActionButton } from '@/components/mutations/actions';
-import { formatDateShort } from '@/lib/shared/format';
+import { formatDate, formatDateShort } from '@/lib/shared/format';
 // The one booking vocabulary. This file used to carry its own copy, which disagreed
 // with the finance ledger's about what a cancellation looks like.
 import { bookingStatusTone } from '@/lib/shared/booking-status';
@@ -113,7 +113,31 @@ function ReservationActions({ row }: { row: OperationalReservationRow }) {
  * Arrivals / departures (check-in and check-out screens)
  * ------------------------------------------------------------------ */
 
-export function ArrivalsTable({ rows, mode }: { rows: ArrivalRow[]; mode: 'checkin' | 'checkout' }) {
+/**
+ * Arrivals or departures for ONE day.
+ *
+ * `date` and `isOperationalDay` are REQUIRED, and that is the point of the signature.
+ * This table used to title itself "Today's arrivals" unconditionally while its page
+ * honoured `?date=` — so `/admin/operations/checkins?date=2027-02-20` presented another
+ * day's list as today's. A caller now cannot render it without saying which day it is
+ * showing, so the label and the rows can no longer drift apart.
+ */
+export function ArrivalsTable({ rows, mode, date, isOperationalDay }: {
+  rows: ArrivalRow[];
+  mode: 'checkin' | 'checkout';
+  /** The day these movements belong to — the board's own `date`, never a browser clock. */
+  date: string;
+  /** True when that day IS the source's operational day, which is what licenses "today". */
+  isOperationalDay: boolean;
+}) {
+  const noun = mode === 'checkin' ? 'arrivals' : 'departures';
+  // "Today" is used only when it is true. Otherwise the day is named outright, because a
+  // list headed "today" that is showing last Tuesday is worse than no heading at all.
+  const when = isOperationalDay ? 'today' : formatDate(date);
+  const title = isOperationalDay
+    ? `Today's ${noun}`
+    : `${noun === 'arrivals' ? 'Arrivals' : 'Departures'} — ${formatDate(date)}`;
+
   const columns: Column<ArrivalRow>[] = [
     { key: 'id', header: 'Booking', render: (r) => <code className="numeric">{r.bookingId}</code> },
     { key: 'property', header: 'Property', render: (r) => r.propertyId },
@@ -141,18 +165,18 @@ export function ArrivalsTable({ rows, mode }: { rows: ArrivalRow[]; mode: 'check
   return (
     <Card>
       <CardHeader
-        title={mode === 'checkin' ? "Today's arrivals" : "Today's departures"}
+        title={title}
         subtitle={mode === 'checkin'
-          ? 'Guests expected today. Check them in as they arrive.'
-          : 'Guests leaving today. Check them out as they go — housekeeping follows.'}
+          ? `Guests arriving ${when}. Check them in as they reach the house.`
+          : `Guests leaving ${when}. Check them out as they go — housekeeping follows.`}
         action={<span className="sv-muted">{rows.length}</span>}
       />
       <CardBody className="sv-card__body--flush">
         <DataTable
           columns={columns} rows={rows}
-          caption={mode === 'checkin' ? 'Arrivals' : 'Departures'}
+          caption={`${noun === 'arrivals' ? 'Arrivals' : 'Departures'} for ${formatDate(date)}`}
           getRowKey={(r) => r.bookingId}
-          emptyTitle={mode === 'checkin' ? 'No arrivals today' : 'No departures today'}
+          emptyTitle={`No ${noun} ${isOperationalDay ? 'today' : `on ${formatDate(date)}`}`}
           emptyMessage="A quiet day on this front."
         />
       </CardBody>

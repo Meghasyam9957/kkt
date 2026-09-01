@@ -24,6 +24,10 @@ import {
 } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 
 import { ToastProvider } from '@/components/ui/toast';
+import { FixtureDashboardDataProvider } from '@/lib/data/providers/fixture-provider';
+import { resolveFilters } from '@/lib/shared/page-helpers';
+import { formatDate } from '@/lib/shared/format';
+import { shiftIsoDay } from '@/lib/shared/dates';
 import { OpsReservationsTable, ArrivalsTable } from '@/components/pages/OpsTables';
 import { FinancialReservationsTable } from '@/components/pages/RegisterTables';
 import {
@@ -32,11 +36,27 @@ import {
 import {
   OCCUPANCY_STATUSES, CANCELLED_STATUSES, type BookingStatus,
 } from '@/lib/shared/domain';
-import type { ReservationRow, ArrivalRow } from '@/lib/data/providers/types';
+import type {
+  ReservationRow, ArrivalRow, OperationsBoardView,
+} from '@/lib/data/providers/types';
 import type { OperationalReservationRow } from '@/lib/data/views/role-projections';
 
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+/**
+ * Source with its comments removed.
+ *
+ * Every scan below is an assertion about CODE. Without this, explaining a defect in a
+ * doc comment ("this table used to title itself ...") would fail the very test that
+ * guards against the defect — which teaches the next reader to delete the explanation
+ * rather than keep the guard.
+ */
+function codeOf(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')      // block comments, JSDoc included
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');  // line comments, sparing protocol slashes
+}
 
 /** Every source file a booking status could be given a colour in. */
 function uiSourceFiles(): string[] {
@@ -95,6 +115,16 @@ const arrivalRow = (over: Partial<ArrivalRow> = {}): ArrivalRow => ({
   nights: 3, guests: 2, platform: 'Airbnb', status: 'Confirmed',
   checkIn: '2027-02-10', checkOut: '2027-02-13', ...over,
 });
+
+const provider = new FixtureDashboardDataProvider({ now: () => new Date('2027-01-19T10:00:00Z') });
+
+/** The real operations board, for the day asked for (or the source's own day). */
+async function board(date?: string): Promise<OperationsBoardView> {
+  const months = await provider.getAvailableMonths();
+  const month = months[months.length - 1]!;
+  const { data } = await provider.getOperations({ month, ...(date ? { date } : {}) });
+  return data;
+}
 
 /** The tone a rendered pill actually carries, read off the class the design system sets. */
 function toneOfPill(container: HTMLElement, label: string): string {
@@ -161,7 +191,10 @@ describe('bookings · status vocabulary', () => {
       cleanup();
 
       const arrivals = renderUi(
-        createElement(ArrivalsTable, { rows: [arrivalRow({ status })], mode: 'checkin' as const }),
+        createElement(ArrivalsTable, {
+          rows: [arrivalRow({ status })], mode: 'checkin' as const,
+          date: '2027-02-10', isOperationalDay: true,
+        }),
       );
       expect(toneOfPill(arrivals.container, status), `arrivals · ${status}`).toBe(expected);
       cleanup();
@@ -192,7 +225,7 @@ describe('bookings · status vocabulary', () => {
 
     for (const file of uiSourceFiles()) {
       if (file === 'lib/shared/booking-status.ts') continue;
-      read(file).split('\n').forEach((line, i) => {
+      codeOf(read(file)).split('\n').forEach((line, i) => {
         if (STATUS.test(line) && TONE.test(line)) offenders.push(`${file}:${i + 1}`);
       });
     }
@@ -206,6 +239,134 @@ describe('bookings · status vocabulary', () => {
       'components/operations/TodayBoard.tsx',
     ]) {
       expect(read(file), file).toContain("from '@/lib/shared/booking-status'");
+    }
+  });
+});
+
+/* ================================================================== *
+ * MILESTONE 2 . THE DAY A MOVEMENT LIST IS ACTUALLY SHOWING
+ * ================================================================== */
+
+describe('bookings . arrivals and departures name their own day', () => {
+  it("says today only when the day IS the source operational day", async () => {
+    const view = await board();
+    expect(view.isOperationalDay).toBe(true);
+
+    const { container } = renderUi(createElement(ArrivalsTable, {
+      rows: view.arrivals, mode: 'checkin' as const,
+      date: view.date, isOperationalDay: view.isOperationalDay,
+    }));
+    expect(within(container).getByText("Today\'s arrivals")).toBeInTheDocument();
+  });
+
+  it('names the day outright when the reader has stepped back one', async () => {
+    const today = (await board()).operationalDate;
+    const yesterday = shiftIsoDay(today, -1);
+    const view = await board(yesterday);
+
+    expect(view.date).toBe(yesterday);
+    expect(view.isOperationalDay).toBe(false);
+
+    const { container } = renderUi(createElement(ArrivalsTable, {
+      rows: view.arrivals, mode: 'checkin' as const,
+      date: view.date, isOperationalDay: view.isOperationalDay,
+    }));
+
+    expect(within(container).getByText(`Arrivals \u2014 ${formatDate(yesterday)}`)).toBeInTheDocument();
+    expect(container.textContent).not.toContain("Today\'s");
+  });
+
+  it('does the same for departures, on an arbitrary date', async () => {
+    const view = await board('2027-02-20');
+    expect(view.date).toBe('2027-02-20');
+
+    const { container } = renderUi(createElement(ArrivalsTable, {
+      rows: view.departures, mode: 'checkout' as const,
+      date: view.date, isOperationalDay: view.isOperationalDay,
+    }));
+
+    expect(within(container).getByText(`Departures \u2014 ${formatDate('2027-02-20')}`)).toBeInTheDocument();
+    expect(container.textContent).not.toContain("Today\'s");
+    expect(container.textContent).toContain('20 Feb 2027');
+  });
+
+  it('carries the day into the subtitle and the empty state', async () => {
+    const view = await board('2027-02-20');
+    const { container } = renderUi(createElement(ArrivalsTable, {
+      rows: [], mode: 'checkin' as const,
+      date: view.date, isOperationalDay: view.isOperationalDay,
+    }));
+
+    const day = formatDate('2027-02-20');
+    // The instruction stays; the false claim about "today" goes.
+    expect(container.textContent).toContain(`Guests arriving ${day}`);
+    // "No arrivals today" on a browsed day is the same lie, only quieter.
+    expect(within(container).getByText(`No arrivals on ${day}`)).toBeInTheDocument();
+  });
+
+  it('names the day in the accessible table caption a screen reader announces', async () => {
+    const view = await board('2027-02-20');
+    const { container } = renderUi(createElement(ArrivalsTable, {
+      rows: view.arrivals.length ? view.arrivals : [arrivalRow()], mode: 'checkin' as const,
+      date: view.date, isOperationalDay: view.isOperationalDay,
+    }));
+    const caption = container.querySelector('caption');
+    expect(caption?.textContent).toBe(`Arrivals for ${formatDate('2027-02-20')}`);
+  });
+
+  it('round-trips ?date= from the URL through the filters to the rendered heading', async () => {
+    // The whole path the browser actually takes: search param -> resolveFilters ->
+    // provider -> board.date -> heading. A break anywhere in it fails here.
+    const filters = await resolveFilters({ date: '2027-02-20' });
+    expect(filters.date).toBe('2027-02-20');
+
+    const { data } = await provider.getOperations(filters);
+    expect(data.date).toBe('2027-02-20');
+    expect(data.isOperationalDay).toBe(false);
+
+    const { container } = renderUi(createElement(ArrivalsTable, {
+      rows: data.arrivals, mode: 'checkin' as const,
+      date: data.date, isOperationalDay: data.isOperationalDay,
+    }));
+    expect(within(container).getByText(`Arrivals \u2014 ${formatDate('2027-02-20')}`)).toBeInTheDocument();
+  });
+
+  it('falls back to the operational day when the URL carries a date that cannot exist', async () => {
+    // Date semantics are unchanged by this milestone: a malformed value still falls back
+    // rather than reaching a query, and the heading then truthfully says today.
+    const view = await board('2027-02-31');
+    expect(view.date).toBe(view.operationalDate);
+    expect(view.isOperationalDay).toBe(true);
+
+    const { container } = renderUi(createElement(ArrivalsTable, {
+      rows: view.arrivals, mode: 'checkin' as const,
+      date: view.date, isOperationalDay: view.isOperationalDay,
+    }));
+    expect(within(container).getByText("Today\'s arrivals")).toBeInTheDocument();
+  });
+
+  it('no movement list can hardcode the word today again', () => {
+    // The table cannot be rendered without being told which day it shows (required
+    // props), and no screen may re-assert "today" as a literal heading.
+    for (const file of uiSourceFiles()) {
+      const src = codeOf(read(file));
+      expect(src, `${file} hardcodes a day it has not been told`)
+        .not.toMatch(/["'`]Today\'s (arrivals|departures)["'`]/);
+    }
+    // The one legitimate use is conditional on the board saying so.
+    expect(read('components/pages/OpsTables.tsx')).toContain('isOperationalDay');
+  });
+
+  it('the check-in and check-out pages hand the board own day to the table', () => {
+    for (const file of [
+      'app/admin/operations/checkins/page.tsx',
+      'app/admin/operations/checkouts/page.tsx',
+    ]) {
+      const src = read(file);
+      expect(src, file).toContain('date={board.date}');
+      expect(src, file).toContain('isOperationalDay={board.isOperationalDay}');
+      // The page header renders before the fetch, so it must not claim a day either.
+      expect(src, file).not.toMatch(/description="Today\'s/);
     }
   });
 });
