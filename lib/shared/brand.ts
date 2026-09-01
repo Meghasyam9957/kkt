@@ -127,7 +127,22 @@ export const BRAND_ASSET_SPECS = {
     /** Vector first when supplied; the PNG is the guaranteed master. */
     candidates: ['/brand/makam-logo.svg', '/brand/makam-logo.png'],
     contexts: ['sidebar header', 'sign-in screen', 'printed statements'],
-    /** Rendered height in the app shell, in px. Width follows the intrinsic ratio. */
+    /**
+     * Rendered height in the app shell, in px. Width follows the intrinsic ratio.
+     *
+     * Left at 40, which fits every context with room to spare: the widest demand is the
+     * mobile drawer's brand row, where the 44px close control and a 12px gap share ~200px
+     * with the lockup (the rail's scrollbar narrows it further than the 248px rail
+     * suggests). At 40 the lockup is 120px and never shrinks, so the box always matches
+     * the file's own 2048x682 ratio.
+     *
+     * Worth knowing when judging the result: the delivered wordmark carries ~35%
+     * transparent padding above and below its letterforms, so only 29% of this height is
+     * ink — about 12px on screen. Raising this number is the lever if the brand should
+     * read larger, but the ceiling is ~47px before the drawer row starts squeezing it;
+     * a tighter-cropped export would buy far more. Not changed here, because that is a
+     * brand decision rather than a wiring one.
+     */
     renderHeight: 40,
     minHeight: 28,
   },

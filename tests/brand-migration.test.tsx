@@ -24,6 +24,7 @@ import {
 import { PathnameContext } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 
 import { BRAND, BRAND_ASSET_SPECS, type BrandAssetSet } from '@/lib/shared/brand';
+import { measureBrandAsset, resolveBrandAssets, __resetBrandAssetCache } from '@/lib/server/brand/assets';
 import { MakamLogo, MakamMark } from '@/components/shell/Logo';
 import { AppShell } from '@/components/shell/AppShell';
 import { NAVIGATION } from '@/lib/shared/navigation';
@@ -70,7 +71,7 @@ function renderShell(role: 'ADMIN' | 'OPERATIONS' | 'INVESTOR', pathname: string
   );
 }
 
-beforeEach(() => cleanup());
+beforeEach(() => { cleanup(); __resetBrandAssetCache(); });
 
 /* ================================================================== *
  * 1 · One source for the name
@@ -178,6 +179,68 @@ describe('brand · no stale user-facing reference survives', () => {
         expect(value, `${file}: ${value}`).not.toMatch(/srivillu/i);
       }
     }
+  });
+});
+
+/* ================================================================== *
+ * 3b · The official artwork, as delivered
+ * ================================================================== */
+
+describe('brand · the supplied MAKAM artwork', () => {
+  const LOGO = path.join(ROOT, 'public', 'brand', 'makam-logo.svg');
+
+  it('the official logo is installed where the contract expects it', () => {
+    expect(fs.existsSync(LOGO)).toBe(true);
+    expect(BRAND_ASSET_SPECS.logo.candidates).toContain('/brand/makam-logo.svg');
+  });
+
+  it('the app measures the file rather than assuming a shape', () => {
+    // The ratio must come from the artwork; a hardcoded one is how logos get stretched.
+    const svg = fs.readFileSync(LOGO, 'utf8').slice(0, 4000);
+    const viewBox = /viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(svg);
+    expect(viewBox, 'the delivered SVG must declare a viewBox').not.toBeNull();
+    const [w, h] = [Number(viewBox![1]), Number(viewBox![2])];
+    expect(w).toBe(2048);
+    expect(h).toBe(682);
+    const asset = measureBrandAsset('/brand/makam-logo.svg');
+    expect(asset).not.toBeNull();
+    expect(asset!.aspectRatio).toBeCloseTo(w / h, 6);
+  });
+
+  it('no mark was supplied, and none was invented', () => {
+    /*
+     * The artwork is a wordmark: no badge, no monogram. Fabricating a mark by cropping a
+     * letter would be inventing brand geometry, so the compact slot stays empty and the
+     * documented placeholder handles it.
+     */
+    for (const candidate of ['makam-mark.svg', 'makam-mark.png']) {
+      expect(fs.existsSync(path.join(ROOT, 'public', 'brand', candidate)), candidate).toBe(false);
+    }
+    const assets = resolveBrandAssets();
+    expect(assets.logo, 'the logo resolves').not.toBeNull();
+    expect(assets.mark, 'the mark is genuinely absent').toBeNull();
+  });
+
+  it('the collapsed rail uses the compact slot, not a squeezed lockup', () => {
+    // A 3:1 wordmark in a 64px rail renders as an unreadable sliver otherwise.
+    expect(read('components/shell/AppShell.tsx')).toContain('compact={collapsed}');
+  });
+
+  it('the lockup fits its tightest context without shrinking', () => {
+    /*
+     * The binding constraint is the mobile drawer's brand row, which also carries the
+     * 44px close control. A shrunk flex item would letterbox the image inside a box no
+     * longer matching the file's ratio, so the rendered width must stay under budget.
+     */
+    const asset = measureBrandAsset('/brand/makam-logo.svg')!;
+    const width = BRAND_ASSET_SPECS.logo.renderHeight * asset.aspectRatio;
+    const tightestBudget = 200 - 44 - 12;      // rail inner width, close control, gap
+    expect(width).toBeLessThan(tightestBudget);
+  });
+
+  it('the artwork is byte-identical to what was supplied — nothing was re-encoded', () => {
+    // 512757 bytes as delivered. A different size means the file was touched.
+    expect(fs.statSync(LOGO).size).toBe(512757);
   });
 });
 

@@ -41,22 +41,47 @@ for (const width of WIDTHS) {
 }
 
 /* ------------------------------------------------------------------ *
- * Logo visibility — the cream-on-white regression, permanently pinned
+ * Brand mark — the official artwork, rendered as a file and never stretched
+ *
+ * These replace the cream-on-white colour checks that guarded the TYPOGRAPHIC
+ * lockup. That lockup is the fallback now: with official artwork on disk the
+ * shell renders the file itself, so `.sv-logo__word` is correctly absent and
+ * the thing worth pinning is that the image is there, named, and undistorted.
  * ------------------------------------------------------------------ */
-test('the wordmark is legible on the sign-in card (not cream on white)', async ({ page }) => {
+async function assertBrandImage(page: Page, scope: string) {
+  const img = page.locator(`${scope} img.sv-logo__image`).first();
+  await expect(img).toBeVisible();
+  await expect(img).toHaveAttribute('alt', 'MAKAM Home Stays');
+  await expect(img).toHaveAttribute('src', '/brand/makam-logo.svg');
+
+  const box = await img.evaluate((el) => {
+    const image = el as HTMLImageElement;
+    const r = image.getBoundingClientRect();
+    return {
+      w: r.width, h: r.height,
+      natural: image.naturalWidth / image.naturalHeight,
+      rendered: r.width / r.height,
+    };
+  });
+  // The box must match the FILE's own ratio: that is what makes stretching impossible.
+  expect(Math.abs(box.rendered - box.natural) / box.natural,
+    `${scope}: logo must keep its intrinsic ratio`).toBeLessThan(0.005);
+  expect(box.w, `${scope}: logo must actually be laid out`).toBeGreaterThan(0);
+}
+
+test('the official logo renders on the sign-in card', async ({ page }) => {
   await page.goto('/signin');
-  const word = page.locator('.sv-logo__word').first();
-  await expect(word).toBeVisible();
-  const color = await word.evaluate((el) => getComputedStyle(el).color);
-  expect(color, 'wordmark must be olive ink on light surfaces').toBe('rgb(79, 95, 44)');
+  await assertBrandImage(page, '.sv-signin');
 });
 
-test('the wordmark is olive on the light rail (M-UI-2 shell)', async ({ page }) => {
+test('the official logo renders in the rail, undistorted', async ({ page }) => {
   await signInAs(page, 'Demo Administrator');
-  const word = page.locator('.sv-sidebar .sv-logo__word').first();
-  await expect(word).toBeVisible();
-  // One lockup treatment everywhere: the cream-on-dark variant died with the dark rail.
-  expect(await word.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(79, 95, 44)');
+  await assertBrandImage(page, '.sv-sidebar');
+});
+
+test('the investor shell carries the same official logo', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await assertBrandImage(page, '.sv-invmast');
 });
 
 /* ------------------------------------------------------------------ *

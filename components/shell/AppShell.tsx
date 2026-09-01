@@ -139,7 +139,10 @@ export function AppShell({
         aria-label="Primary navigation"
       >
         <div className="sv-sidebar__brand">
-          <MakamLogo assets={brandAssets} />
+          {/* Compact when the rail is collapsed to 64px. The full lockup is a 3:1
+              wordmark: left to itself it is squeezed to a ~32px sliver there, because no
+              standalone MAKAM mark has been supplied for the compact slot. */}
+          <MakamLogo assets={brandAssets} compact={collapsed} />
           {/* The drawer's own exit, inside the trapped subtree — so dismissal never
               depends on the scrim or on a hardware Escape key. Drawer-only by CSS. */}
           {mobileOpen ? (
