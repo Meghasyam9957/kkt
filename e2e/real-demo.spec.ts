@@ -3,10 +3,12 @@
  *
  * These tests run only when the app under test is actually reading the real demo
  * workbook (APP_ENV=demo, LIVE_DATA_ENABLED=true, DEMO_* credentials configured). The
- * gate is read from the running app itself — the sign-in screen names its data source —
- * so a fixtures-backed process can never quietly "pass" this suite: every test SKIPS
- * with PENDING until the live environment exists. No in-memory provider is exercised
- * here by construction.
+ * gate is asked of the running app itself — the demonstration controls page states which
+ * of the two demo shapes it is — so a fixtures-backed process can never quietly "pass"
+ * this suite: every test SKIPS with PENDING until the live environment exists. No
+ * in-memory provider is exercised here by construction. docs/DEMO_PROVISIONING.md makes
+ * the same promise in words: "Without the demo workbook live, every test in this suite
+ * skips as PENDING rather than passing against fixtures."
  *
  * Coverage, per the Phase D brief:
  *   1–4   admin / operations / investor A / investor B sign-in
@@ -38,7 +40,12 @@ test.describe.configure({ mode: 'serial' });
  * Environment gate + shared state (serial mode makes this determinate)
  * ------------------------------------------------------------------ */
 
-let live = false;
+/**
+ * Whether the LIVE demo workbook backs this deployment. Resolved once, on first use.
+ * Null until asked — the question needs a signed-in admin, so it cannot be answered in
+ * `beforeAll`.
+ */
+let liveDemoWorkbook: boolean | null = null;
 let passwordAuth = false;
 /** The workbook's latest trading month (ISO), read from the dashboard's filter. */
 let month = '';
@@ -72,17 +79,48 @@ const ACCOUNTS = {
 
 test.beforeAll(async ({ request }) => {
   const html = await (await request.get('/signin')).text();
-  // Fixtures label themselves "(fixtures)"; the live demo workbook does not.
-  live = html.includes('Demo Workbook') && !html.includes('(fixtures)');
+  // Which sign-in the deployment offers IS a DOM fact: the passwordless chooser exists
+  // only while Supabase is unconfigured. That signal has not rotted.
   passwordAuth = !html.includes('sv-signin__identities');
 });
 
 const PENDING = 'PENDING — the live demo workbook is not this deployment\'s data source '
-  + '(fixtures active). Configure DEMO_* credentials and LIVE_DATA_ENABLED=true; see '
-  + 'docs/DEMO_PROVISIONING.md.';
+  + '(fixtures active). Configure DEMO_* credentials and LIVE_DATA_ENABLED=true, then '
+  + 'capture the seed snapshot; see docs/DEMO_PROVISIONING.md.';
 
-function requireLive(): void {
-  test.skip(!live, PENDING);
+/**
+ * Is the live demo workbook REALLY this deployment's data source?
+ *
+ * Asked of the application, once, and cached for this serial run.
+ *
+ * The previous gate read the sign-in page and looked for a "(fixtures)" suffix on the
+ * data-source label. That suffix was deliberately deleted from `publicEnvironmentInfo` —
+ * "developer vocabulary leaking into every header" — and `tests/foundation.test.tsx` now
+ * pins its absence, so the string this suite was waiting for can never appear again. Both
+ * demo shapes label themselves "Demo Workbook", exactly as DEMO_PROVISIONING.md says they
+ * do. The gate therefore stood permanently open: nineteen tests passed against fixtures
+ * while claiming to prove the live workbook, and the twentieth failed on the one thing
+ * fixtures genuinely do not have — a seed snapshot.
+ *
+ * The demonstration controls page is the app's own answer, and it cannot rot the same
+ * way: it renders the "Live demo workbook" card if and only if
+ * `resolved.sheets !== null && isLiveDataEnabled()` — the very condition
+ * (`liveDemoActive`) every live-only demo operation is gated on, seed capture included. A
+ * fixtures deployment renders the scenario switcher instead. Outside demo the route does
+ * not exist at all, and an absent heading reads as "not live" — the safe direction: this
+ * gate can refuse a live run, but it can never admit a fixtures one.
+ */
+async function requireLive(page: Page): Promise<void> {
+  if (liveDemoWorkbook === null) {
+    // Needs an admin: `demo.control` is theirs. When that password is missing `signIn`
+    // skips with instructions and the question stays unanswered — correctly, because
+    // without it nothing about the live environment can be verified at all.
+    await signIn(page, 'admin');
+    await page.goto('/admin/demo');
+    liveDemoWorkbook =
+      (await page.getByRole('heading', { name: 'Live demo workbook' }).count()) > 0;
+  }
+  test.skip(!liveDemoWorkbook, PENDING);
 }
 
 async function signIn(page: Page, who: keyof typeof ACCOUNTS): Promise<void> {
@@ -133,7 +171,7 @@ const kpiValue = async (page: Page, label: string): Promise<number> => {
  * ================================================================== */
 
 test('01 admin sign-in reaches a calculated dashboard', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'admin');
   await page.goto('/admin/dashboard');
   await expect(page.locator('.sv-kpi__value').first()).toBeVisible();
@@ -144,7 +182,7 @@ test('01 admin sign-in reaches a calculated dashboard', async ({ page }) => {
 });
 
 test('02 operations sign-in sees the board and no finance', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   const sidebar = page.locator('.sv-sidebar');
   await expect(sidebar).toContainText('Today');
@@ -162,7 +200,7 @@ test('02 operations sign-in sees the board and no finance', async ({ page }) => 
  * and the ID of the other one never appears.
  */
 test('03 investor A sees their own portfolio', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'investorA');
   await page.waitForURL(/\/admin\/portfolio/);
   investorAName = await portfolioName(page);
@@ -172,7 +210,7 @@ test('03 investor A sees their own portfolio', async ({ page }) => {
 });
 
 test('04 investor B sees their own portfolio', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'investorB');
   await page.waitForURL(/\/admin\/portfolio/);
   investorBName = await portfolioName(page);
@@ -191,7 +229,7 @@ test('04 investor B sees their own portfolio', async ({ page }) => {
  * ================================================================== */
 
 test('05 create a reservation in the real workbook', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   await page.goto(`/admin/operations/reservations?month=${month}`);
 
@@ -211,7 +249,7 @@ test('05 create a reservation in the real workbook', async ({ page }) => {
 });
 
 test('06 a duplicate reservation submit lands exactly ONE business row', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   await page.goto(`/admin/operations/reservations?month=${month}`);
   const rowsBefore = await page.locator('tbody tr').count();
@@ -234,7 +272,7 @@ test('06 a duplicate reservation submit lands exactly ONE business row', async (
 });
 
 test('07 the scripted ₹4,321 expense goes through the drawer', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'admin');
   await page.goto(`/admin/finance/expenses?month=${month}`);
   const rowsBefore = await page.locator('tbody tr').count();
@@ -263,7 +301,7 @@ test('07 the scripted ₹4,321 expense goes through the drawer', async ({ page }
  * ================================================================== */
 
 test('08 CAPEX lands in the register', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'admin');
   await page.goto('/admin/dashboard');
   const property = await firstSeededProperty(page);
@@ -280,7 +318,7 @@ test('08 CAPEX lands in the register', async ({ page }) => {
 });
 
 test('09 a maintenance issue appears on the board and resolves', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   await page.goto('/admin/operations/maintenance');
 
@@ -307,7 +345,7 @@ test('09 a maintenance issue appears on the board and resolves', async ({ page }
 });
 
 test('10 an inventory movement updates the register', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   await page.goto('/admin/operations/inventory');
   const firstRow = page.locator('tbody tr').first();
@@ -324,7 +362,7 @@ test('10 an inventory movement updates the register', async ({ page }) => {
 });
 
 test('11 a housekeeping task is created and completed', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   await page.goto('/admin/dashboard').catch(() => { /* operations land on the board */ });
   const property = await firstSeededProperty(page);
@@ -349,7 +387,7 @@ test('11 a housekeeping task is created and completed', async ({ page }) => {
  * ================================================================== */
 
 test('12 check-in flips the booking on the real board', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   expect(lifecycleBookingId, 'test 05 must have created the booking').toBeTruthy();
   await signIn(page, 'operations');
   await page.goto(`/admin/operations/reservations?month=${month}`);
@@ -364,7 +402,7 @@ test('12 check-in flips the booking on the real board', async ({ page }) => {
 });
 
 test('13 check-out completes the stay', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   expect(lifecycleBookingId, 'test 05 must have created the booking').toBeTruthy();
   await signIn(page, 'operations');
   await page.goto(`/admin/operations/reservations?month=${month}`);
@@ -378,7 +416,7 @@ test('13 check-out completes the stay', async ({ page }) => {
 });
 
 test('14 cancelling requires a reason and keeps the row', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   await page.goto(`/admin/operations/reservations?month=${month}`);
   const property = await firstSeededProperty(page);
@@ -413,7 +451,7 @@ test('14 cancelling requires a reason and keeps the row', async ({ page }) => {
  * ================================================================== */
 
 test('15 investor A cannot read investor B', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   expect(investorAName && investorBName, 'tests 3 and 4 must have captured both names')
     .toBeTruthy();
 
@@ -432,7 +470,7 @@ test('15 investor A cannot read investor B', async ({ page }) => {
 });
 
 test('16 operations cannot create finance records', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'operations');
   const res = await postJson(page, '/api/expenses', {
     operationId: randomUUID(), date: `${month}-18`, propertyId: 'ANY',
@@ -444,7 +482,7 @@ test('16 operations cannot create finance records', async ({ page }) => {
 });
 
 test('17 calculated-column injection is refused by the live pipeline', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'admin');
   const property = await firstSeededProperty(page);
   const res = await postJson(page, '/api/expenses', {
@@ -460,7 +498,7 @@ test('17 calculated-column injection is refused by the live pipeline', async ({ 
  * ================================================================== */
 
 test('18 the dashboard reflects a web-created expense: +₹4,321 exactly', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   test.slow();
   await signIn(page, 'admin');
   await page.goto(`/admin/dashboard?month=${month}`);
@@ -486,7 +524,7 @@ test('18 the dashboard reflects a web-created expense: +₹4,321 exactly', async
 });
 
 test('19 saved data survives a full browser reload', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   await signIn(page, 'admin');
   const property = await firstSeededProperty(page);
   const res = await postJson(page, '/api/expenses', {
@@ -511,7 +549,7 @@ test('19 saved data survives a full browser reload', async ({ page }) => {
  * ================================================================== */
 
 test('20 the reset removes demo writes and restores the seed', async ({ page }) => {
-  requireLive();
+  await requireLive(page);
   test.slow();
   await signIn(page, 'admin');
 

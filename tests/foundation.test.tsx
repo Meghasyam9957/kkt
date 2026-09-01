@@ -441,6 +441,17 @@ describe('vocabulary', () => {
     expect(codeOnly(read('lib/shared/environment.ts'))).not.toContain('(fixtures)');
   });
 
+  it('and no test gate is still waiting for that deleted suffix', () => {
+    /*
+     * The other half of the rule above. The real-demo suite used to decide whether the
+     * LIVE demo workbook was present by looking for "(fixtures)" in the sign-in page —
+     * so deleting the suffix silently opened the gate, and nineteen tests spent several
+     * milestones passing against fixtures while claiming to prove the live workbook.
+     * A string that the product is forbidden to emit cannot be something a gate waits for.
+     */
+    expect(codeOnly(read('e2e/real-demo.spec.ts'))).not.toContain('(fixtures)');
+  });
+
   it('no roadmap badge survives in a screen a client sees', () => {
     expect(read('app/admin/investors/reports/page.tsx')).not.toContain('Phase 7</Badge>');
   });
