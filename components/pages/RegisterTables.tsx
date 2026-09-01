@@ -11,6 +11,9 @@
 import { Card, CardHeader, CardBody, StatusPill, type Tone } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { formatCurrency, formatPercent, formatDateShort, formatMonthLong } from '@/lib/shared/format';
+// The one booking vocabulary (lib/shared/booking-status.ts). The ledger used to keep its
+// own map, on which a cancellation read `warn` while the operations register read `bad`.
+import { bookingStatusTone } from '@/lib/shared/booking-status';
 import type { PropertyBoardRow, ReservationRow, UnitStatus } from '@/lib/data/providers/types';
 import type { OperationalPropertyRow, OperationalReservationRow } from '@/lib/data/views/role-projections';
 
@@ -105,10 +108,6 @@ function ListingPill({ status }: { status: string }) {
  * Reservations — financial projection (management)
  * ------------------------------------------------------------------ */
 
-const BOOKING_TONE: Record<string, Tone> = {
-  'Checked In': 'good', 'Checked Out': 'neutral', Confirmed: 'info',
-  Cancelled: 'warn', 'No Show': 'bad', Inquiry: 'warn',
-};
 const PAYOUT_TONE: Record<string, Tone> = {
   Received: 'good', Partial: 'info', Pending: 'warn', Awaiting: 'warn', '—': 'neutral',
 };
@@ -123,7 +122,7 @@ export function FinancialReservationsTable({ rows, period }: { rows: Reservation
     { key: 'property', header: 'Property', render: (r) => r.propertyId },
     {
       key: 'status', header: 'Status',
-      render: (r) => <StatusPill tone={BOOKING_TONE[r.bookingStatus] ?? 'neutral'}>{r.bookingStatus}</StatusPill>,
+      render: (r) => <StatusPill tone={bookingStatusTone(r.bookingStatus)}>{r.bookingStatus}</StatusPill>,
     },
     { key: 'guest', header: 'Guest', render: (r) => r.guestDisplayName },
     { key: 'checkin', header: 'Check-in', render: (r) => formatDateShort(r.checkIn) },

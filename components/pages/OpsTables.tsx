@@ -14,6 +14,9 @@ import { StatusPill, Card, CardHeader, CardBody, type Tone } from '@/components/
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { RowActionButton } from '@/components/mutations/actions';
 import { formatDateShort } from '@/lib/shared/format';
+// The one booking vocabulary. This file used to carry its own copy, which disagreed
+// with the finance ledger's about what a cancellation looks like.
+import { bookingStatusTone } from '@/lib/shared/booking-status';
 import {
   resolveMaintenanceFields, markCleanFields, cancelReservationFields,
 } from '@/lib/server/api/form-fields';
@@ -24,10 +27,6 @@ import type {
 // so this table cannot render one even by mistake (lib/data/views/role-projections.ts).
 import type { OperationalReservationRow } from '@/lib/data/views/role-projections';
 
-const BOOKING_TONE: Record<string, Tone> = {
-  Confirmed: 'info', 'Checked In': 'good', 'Checked Out': 'neutral',
-  Inquiry: 'warn', Cancelled: 'bad', 'No Show': 'bad',
-};
 const HK_TONE: Record<string, Tone> = {
   Completed: 'good', 'In Progress': 'info', Assigned: 'info',
   Pending: 'warn', 'Failed Inspection': 'bad',
@@ -55,7 +54,7 @@ export function OpsReservationsTable({ rows }: { rows: OperationalReservationRow
     { key: 'platform', header: 'Platform', render: (r) => r.platform },
     {
       key: 'status', header: 'Status',
-      render: (r) => <StatusPill tone={BOOKING_TONE[r.bookingStatus] ?? 'neutral'}>{r.bookingStatus}</StatusPill>,
+      render: (r) => <StatusPill tone={bookingStatusTone(r.bookingStatus)}>{r.bookingStatus}</StatusPill>,
     },
     {
       key: 'actions', header: 'Actions',
@@ -124,7 +123,7 @@ export function ArrivalsTable({ rows, mode }: { rows: ArrivalRow[]; mode: 'check
     { key: 'platform', header: 'Platform', render: (r) => r.platform },
     {
       key: 'status', header: 'Status',
-      render: (r) => <StatusPill tone={BOOKING_TONE[r.status] ?? 'neutral'}>{r.status}</StatusPill>,
+      render: (r) => <StatusPill tone={bookingStatusTone(r.status)}>{r.status}</StatusPill>,
     },
     {
       key: 'action', header: 'Action',

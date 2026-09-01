@@ -17,6 +17,9 @@ import { Card, CardHeader, CardBody, StatusPill, EmptyState, type Tone } from '@
 import { RowActionButton } from '@/components/mutations/actions';
 import { markCleanFields, checkInFields, checkOutFields } from '@/lib/server/api/form-fields';
 import { formatDate, formatDateShort } from '@/lib/shared/format';
+// The one booking vocabulary. This row used to decide its own tone with a ternary that
+// silently rendered every unrecognised status as `info` — an "on the books" colour.
+import { bookingStatusTone } from '@/lib/shared/booking-status';
 import { TodayDateControl } from './TodayDateControl';
 import type {
   OperationsBoardView, ArrivalRow, CleaningRow, UrgentItem,
@@ -214,9 +217,7 @@ function StayRow({ row, mode }: { row: ArrivalRow; mode: 'arrival' | 'departure'
       </div>
 
       <div className="sv-oprow__state">
-        <StatusPill tone={row.status === 'Checked In' ? 'good' : row.status === 'Checked Out' ? 'neutral' : 'info'}>
-          {row.status}
-        </StatusPill>
+        <StatusPill tone={bookingStatusTone(row.status)}>{row.status}</StatusPill>
       </div>
 
       <div className="sv-oprow__action">
