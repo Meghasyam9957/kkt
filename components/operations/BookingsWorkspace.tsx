@@ -65,18 +65,25 @@ export interface BookingsWorkspaceProps {
   detail?: ReactNode;
 }
 
-/** The one legal next step for a booking, or null when the stay is over. */
-function primaryAction(status: string): 'check-in' | 'check-out' | null {
+/**
+ * The one legal next step for a booking, from the SAME progression the server enforces
+ * (Inquiry → Confirmed → Checked In → Checked Out). Null once the stay is over.
+ */
+function primaryAction(status: string): 'confirm' | 'check-in' | 'check-out' | null {
+  if (status === 'Inquiry') return 'confirm';
   if (status === 'Confirmed') return 'check-in';
   if (status === 'Checked In') return 'check-out';
   return null;
 }
 
-/** What to say in the action cell when there is nothing left to do. */
+/**
+ * What the action cell says when there is nothing left to do.
+ *
+ * "Departed" adds something the status pill beside it does not. Repeating "Cancelled" in
+ * the next column adds nothing — the pill already said it, in colour, with a dot.
+ */
 function restingLabel(status: string): string {
-  if (status === 'Checked Out') return 'Departed';
-  if (status === 'Inquiry') return 'Not confirmed';
-  return status;
+  return status === 'Checked Out' ? 'Departed' : '—';
 }
 
 export function BookingsWorkspace({
@@ -367,7 +374,15 @@ function BookingRowAction({ row, checkInFields, checkOutFields }: {
 
   return (
     <span className="sv-bkactions">
-      {next === 'check-in' ? (
+      {next === 'confirm' ? (
+        <RowActionButton
+          label="Confirm" variant="primary" size="md" method="PATCH"
+          endpoint={base}
+          /* The transition IS the action; there is nothing for a person to restate. */
+          constants={{ bookingStatus: 'Confirmed' }}
+          successTemplate={`${row.bookingId} confirmed.`}
+        />
+      ) : next === 'check-in' ? (
         <RowActionButton
           label="Check in" variant="primary" size="md" surface="drawer"
           endpoint={`${base}/check-in`}

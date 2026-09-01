@@ -1,7 +1,6 @@
+import { redirect } from 'next/navigation';
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { FinancialReservationsTable } from '@/components/pages/RegisterTables';
-import { OpsReservationsTable } from '@/components/pages/OpsTables';
-import { operationalReservationRows } from '@/lib/data/views/role-projections';
 import { roleSeesFinancialFigures } from '@/lib/shared/roles';
 import { NewRecordButton } from '@/components/mutations/actions';
 import { reservationFields } from '@/lib/server/api/form-fields';
@@ -53,27 +52,51 @@ async function NewValuedBookingAction() {
  * /admin/operations/reservations; this one is under Finance and is where a booking's
  * value is entered.
  *
- * A role with no financial capability may still open it directly — the capability is
- * `reservations.read`, because the underlying rows are the same — and gets the
- * OPERATIONAL projection: booking values and payout fields are stripped on the server
- * before render, and the screen says where the money lives instead of showing it.
+ * A role with no financial capability that opens it directly is sent to the workspace,
+ * before any booking is read for them. It used to render them the operational
+ * projection — which is exactly what the workspace already is, so the two routes were
+ * one screen under two names.
  */
 export default async function BookingLedgerPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
+
+  /*
+   * A role with no financial capability is sent to the workspace instead — BEFORE any
+   * booking is read on their behalf.
+   *
+   * This screen used to render the operational projection for them: the same component,
+   * over the same rows, as the Bookings workspace. Two routes, two menu names, one
+   * screen. Redirecting is both the tidier answer and the stricter one — where the
+   * projection made sure no financial FIELD reached them, the redirect means no row
+   * from this route reaches them at all.
+   *
+   * The capability that guards the page stays `reservations.read`, because the rows are
+   * the same rows; what differs is which presentation of them a role is sent to.
+   */
+  const access = await checkPageAccess('reservations.read');
+  if (access.allowed && !roleSeesFinancialFigures(access.session.role)) {
+    const query = new URLSearchParams();
+    for (const key of ['month', 'property', 'platform'] as const) {
+      if (params[key]) query.set(key, params[key]!);
+    }
+    const search = query.toString();
+    redirect(search
+      ? `/admin/operations/reservations?${search}`
+      : '/admin/operations/reservations');
+  }
+
   return (
     <ReadOnlyPage
       capability="reservations.read"
       title="Booking Ledger"
-      description={(viewer) => roleSeesFinancialFigures(viewer.role)
-        ? 'What each booking is worth: gross value, expected payout and where the money has got to. Guest names are minimised in this list view — contact details are never shown here.'
-        : 'Bookings arriving in the selected month. Guest names are minimised in this list view — payouts and revenue live on the finance screens.'}
+      description="What each booking is worth: gross value, expected payout and where the money has got to. Guest names are minimised in this list view — contact details are never shown here."
       searchParams={params}
       fetcher={(provider, filters) => provider.getReservations(filters)}
       actions={<NewValuedBookingAction />}
     >
-      {(rows, envelope, viewer) => (roleSeesFinancialFigures(viewer.role)
-        ? <FinancialReservationsTable rows={rows} period={envelope.meta.period} />
-        : <OpsReservationsTable rows={operationalReservationRows(rows)} />)}
+      {(rows, envelope) => (
+        <FinancialReservationsTable rows={rows} period={envelope.meta.period} />
+      )}
     </ReadOnlyPage>
   );
 }

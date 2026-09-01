@@ -333,9 +333,14 @@ test('operations opens the unit register without financial columns or values', a
   expect(content).not.toMatch(/netRevenue|directOperatingExpenses|revPar/);
 });
 
-test('operations opens reservations without money — and the API serves figures to nobody', async ({ page }) => {
+test('operations opens the ledger and is sent to the workspace — no figures anywhere', async ({ page }) => {
   await signInAs(page, 'Demo Operations Manager');
+  // UI-4: the money-blind role is redirected BEFORE any booking is read for them,
+  // rather than served the operational projection of a second, duplicate screen.
   await page.goto('/admin/reservations?month=2027-01');
+  await expect(page).toHaveURL(/\/admin\/operations\/reservations/);
+  // The filters travel across, so the reader lands where they were looking.
+  await expect(page).toHaveURL(/month=2027-01/);
   await page.waitForSelector('.sv-table');
 
   const main = page.locator('main');
@@ -403,7 +408,54 @@ test('operations navigation says Bookings once and never shows the booking ledge
   expect(labels.filter((l) => l === 'Bookings')).toHaveLength(1);
   expect(labels).not.toContain('Booking Ledger');
   expect(labels).not.toContain('Reservations');
+  // UI-4: half of Today each, so they are entry points and not menu entries.
+  expect(labels).not.toContain('Check-ins');
+  expect(labels).not.toContain('Check-outs');
   expect(labels.join(' ')).not.toMatch(/Revenue|Expenses|P&L|Investors|Settings/);
+});
+
+test('the retired movement routes still work, and carry the day with them', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+
+  // Not deleted — redirected. A bookmark must not break because a screen was merged.
+  await page.goto('/admin/operations/checkins?date=2027-02-20');
+  await expect(page).toHaveURL(/\/admin\/operations\/today\?date=2027-02-20/);
+  await expect(page.locator('main')).toContainText('20 Feb 2027');
+
+  await page.goto('/admin/operations/checkouts');
+  await expect(page).toHaveURL(/\/admin\/operations\/today$/);
+  await expect(page.locator('main')).toContainText('Departures');
+});
+
+test('a booking opens at its own address, and Back closes it', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/reservations');
+  await page.waitForSelector('.sv-table');
+
+  const first = page.locator('a.sv-bklink').first();
+  const reference = (await first.innerText()).trim();
+  await first.click();
+
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toContainText(reference);
+  await expect(page).toHaveURL(new RegExp(`booking=${reference}`));
+
+  // No money on an operations surface, in the panel as on the list.
+  await expect(drawer).not.toContainText('₹');
+  await expect(drawer).not.toContainText('Payout');
+  expect(await page.content()).not.toMatch(/grossValue|expectedPayout|actualPayout/);
+
+  await page.goBack();
+  await expect(page.locator('.sv-drawer')).toHaveCount(0);
+});
+
+test('an unknown booking reference says so instead of showing an empty panel', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/reservations?booking=BK-9999-9999');
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toContainText('No booking BK-9999-9999');
 });
 
 test('admin navigation is honest: one Settings, a Booking Ledger under Finance, no aliases', async ({ page }) => {

@@ -1,5 +1,5 @@
 /**
- * OPERATIONS TABLES — the daybook's registers, with their actions.
+ * OPERATIONS TABLES — housekeeping, maintenance, inventory and guest requests.
  *
  * Server components (rendered inside ops pages) that emit client action buttons per
  * row. Money never appears here: the operations surfaces show what needs DOING —
@@ -9,23 +9,22 @@
  * server validates transitions, so an illegal action comes back as a readable 422
  * (surfaced in the toast) rather than being hidden client-side. Buttons are still only
  * OFFERED where they make sense, to keep the board calm.
+ *
+ * The two BOOKING tables that used to live here are gone. `OpsReservationsTable` was a
+ * second rendering of the Bookings workspace and `ArrivalsTable` a second rendering of
+ * half the Today board — both over the same payloads as the screens they duplicated,
+ * and both drifting from them (they disagreed about a cancellation's severity, and
+ * about which day they were showing). One booking list and one movements board now
+ * render every booking in the product.
  */
 import { StatusPill, Card, CardHeader, CardBody, type Tone } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { RowActionButton } from '@/components/mutations/actions';
-import { formatDate, formatDateShort } from '@/lib/shared/format';
-// The one booking vocabulary. This file used to carry its own copy, which disagreed
-// with the finance ledger's about what a cancellation looks like.
-import { bookingStatusTone } from '@/lib/shared/booking-status';
-import {
-  resolveMaintenanceFields, markCleanFields, cancelReservationFields,
-} from '@/lib/server/api/form-fields';
+import { formatDateShort } from '@/lib/shared/format';
+import { resolveMaintenanceFields, markCleanFields } from '@/lib/server/api/form-fields';
 import type {
-  ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow,
+  CleaningRow, MaintenanceRow, StockRow, GuestRequestRow,
 } from '@/lib/data/providers/types';
-// The PROJECTED row type, not the full one: payout figures do not exist on these props,
-// so this table cannot render one even by mistake (lib/data/views/role-projections.ts).
-import type { OperationalReservationRow } from '@/lib/data/views/role-projections';
 
 const HK_TONE: Record<string, Tone> = {
   Completed: 'good', 'In Progress': 'info', Assigned: 'info',
@@ -38,151 +37,6 @@ const MNT_TONE: Record<string, Tone> = {
 const PRIORITY_TONE: Record<string, Tone> = {
   Critical: 'bad', High: 'warn', Medium: 'info', Low: 'neutral',
 };
-
-/* ------------------------------------------------------------------ *
- * Reservations (operational columns only — no payout figures here)
- * ------------------------------------------------------------------ */
-
-export function OpsReservationsTable({ rows }: { rows: OperationalReservationRow[] }) {
-  const columns: Column<OperationalReservationRow>[] = [
-    { key: 'id', header: 'Booking', render: (r) => <code className="numeric">{r.bookingId}</code> },
-    { key: 'property', header: 'Property', render: (r) => r.propertyId },
-    { key: 'guest', header: 'Guest', render: (r) => r.guestDisplayName },
-    { key: 'in', header: 'Check-in', render: (r) => formatDateShort(r.checkIn) },
-    { key: 'out', header: 'Check-out', render: (r) => formatDateShort(r.checkOut) },
-    { key: 'nights', header: 'Nights', numeric: true, render: (r) => String(r.nights || '—') },
-    { key: 'platform', header: 'Platform', render: (r) => r.platform },
-    {
-      key: 'status', header: 'Status',
-      render: (r) => <StatusPill tone={bookingStatusTone(r.bookingStatus)}>{r.bookingStatus}</StatusPill>,
-    },
-    {
-      key: 'actions', header: 'Actions',
-      render: (r) => <ReservationActions row={r} />,
-    },
-  ];
-  return (
-    <Card>
-      <CardHeader
-        title="Reservations"
-        subtitle="Operational view — payouts and revenue live on the finance screens."
-        action={<span className="sv-muted">{rows.length} booking{rows.length === 1 ? '' : 's'}</span>}
-      />
-      <CardBody className="sv-card__body--flush">
-        <DataTable
-          columns={columns} rows={rows} caption="Reservations register"
-          getRowKey={(r) => r.bookingId} emptyTitle="No reservations this month"
-          emptyMessage="Try a different month, or create the booking."
-        />
-      </CardBody>
-    </Card>
-  );
-}
-
-/** Which lifecycle actions a booking legally offers. The SERVER re-checks on submit —
- *  this only keeps dead buttons off the board. */
-function ReservationActions({ row }: { row: OperationalReservationRow }) {
-  const base = `/api/reservations/${row.bookingId}`;
-  return (
-    <span className="sv-row-actions">
-      {row.bookingStatus === 'Confirmed' ? (
-        <RowActionButton
-          label="Check In" endpoint={`${base}/check-in`}
-          successTemplate={`${row.bookingId} checked in.`}
-        />
-      ) : null}
-      {row.bookingStatus === 'Checked In' ? (
-        <RowActionButton
-          label="Check Out" endpoint={`${base}/check-out`}
-          successTemplate={`${row.bookingId} checked out.`}
-        />
-      ) : null}
-      {row.bookingStatus === 'Confirmed' || row.bookingStatus === 'Inquiry' ? (
-        <RowActionButton
-          label="Cancel" endpoint={`${base}/cancel`} variant="danger"
-          confirmTitle={`Cancel ${row.bookingId}?`}
-          fields={cancelReservationFields()}
-          successTemplate={`${row.bookingId} cancelled — the row remains in the ledger.`}
-        />
-      ) : null}
-    </span>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * Arrivals / departures (check-in and check-out screens)
- * ------------------------------------------------------------------ */
-
-/**
- * Arrivals or departures for ONE day.
- *
- * `date` and `isOperationalDay` are REQUIRED, and that is the point of the signature.
- * This table used to title itself "Today's arrivals" unconditionally while its page
- * honoured `?date=` — so `/admin/operations/checkins?date=2027-02-20` presented another
- * day's list as today's. A caller now cannot render it without saying which day it is
- * showing, so the label and the rows can no longer drift apart.
- */
-export function ArrivalsTable({ rows, mode, date, isOperationalDay }: {
-  rows: ArrivalRow[];
-  mode: 'checkin' | 'checkout';
-  /** The day these movements belong to — the board's own `date`, never a browser clock. */
-  date: string;
-  /** True when that day IS the source's operational day, which is what licenses "today". */
-  isOperationalDay: boolean;
-}) {
-  const noun = mode === 'checkin' ? 'arrivals' : 'departures';
-  // "Today" is used only when it is true. Otherwise the day is named outright, because a
-  // list headed "today" that is showing last Tuesday is worse than no heading at all.
-  const when = isOperationalDay ? 'today' : formatDate(date);
-  const title = isOperationalDay
-    ? `Today's ${noun}`
-    : `${noun === 'arrivals' ? 'Arrivals' : 'Departures'} — ${formatDate(date)}`;
-
-  const columns: Column<ArrivalRow>[] = [
-    { key: 'id', header: 'Booking', render: (r) => <code className="numeric">{r.bookingId}</code> },
-    { key: 'property', header: 'Property', render: (r) => r.propertyId },
-    { key: 'guest', header: 'Guest', render: (r) => r.guestDisplayName },
-    { key: 'nights', header: 'Nights', numeric: true, render: (r) => String(r.nights) },
-    { key: 'guests', header: 'Guests', numeric: true, render: (r) => String(r.guests) },
-    { key: 'platform', header: 'Platform', render: (r) => r.platform },
-    {
-      key: 'status', header: 'Status',
-      render: (r) => <StatusPill tone={bookingStatusTone(r.status)}>{r.status}</StatusPill>,
-    },
-    {
-      key: 'action', header: 'Action',
-      render: (r) => (mode === 'checkin'
-        ? (r.status === 'Confirmed'
-          ? <RowActionButton label="Check In" endpoint={`/api/reservations/${r.bookingId}/check-in`}
-              successTemplate={`${r.bookingId} checked in.`} />
-          : <span className="sv-muted">—</span>)
-        : (r.status === 'Checked In'
-          ? <RowActionButton label="Check Out" endpoint={`/api/reservations/${r.bookingId}/check-out`}
-              successTemplate={`${r.bookingId} checked out.`} />
-          : <span className="sv-muted">—</span>)),
-    },
-  ];
-  return (
-    <Card>
-      <CardHeader
-        title={title}
-        subtitle={mode === 'checkin'
-          ? `Guests arriving ${when}. Check them in as they reach the house.`
-          : `Guests leaving ${when}. Check them out as they go — housekeeping follows.`}
-        action={<span className="sv-muted">{rows.length}</span>}
-      />
-      <CardBody className="sv-card__body--flush">
-        <DataTable
-          columns={columns} rows={rows}
-          caption={`${noun === 'arrivals' ? 'Arrivals' : 'Departures'} for ${formatDate(date)}`}
-          getRowKey={(r) => r.bookingId}
-          emptyTitle={`No ${noun} ${isOperationalDay ? 'today' : `on ${formatDate(date)}`}`}
-          emptyMessage="A quiet day on this front."
-        />
-      </CardBody>
-    </Card>
-  );
-}
 
 /* ------------------------------------------------------------------ *
  * Housekeeping

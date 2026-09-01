@@ -27,11 +27,14 @@ import { ROLES, roleSeesFinancialFigures, type Role } from '@/lib/shared/roles';
 import {
   FinancialPropertyTable, OperationalPropertyTable, FinancialReservationsTable,
 } from '@/components/pages/RegisterTables';
-import { OpsReservationsTable } from '@/components/pages/OpsTables';
+import { BookingsWorkspace } from '@/components/operations/BookingsWorkspace';
 import { ToastProvider } from '@/components/ui/toast';
 import {
   AppRouterContext, type AppRouterInstance,
 } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import {
+  PathnameContext, SearchParamsContext,
+} from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 import { createHarness, USERS } from './support/harness';
 
 const ROOT = process.cwd();
@@ -63,9 +66,13 @@ const inertRouter = {
 } as unknown as AppRouterInstance;
 
 function renderWithToasts(ui: Parameters<typeof render>[0]) {
+  // The workspace reads the URL to build its booking links and its scope toggle, so the
+  // app-router hooks need a home even for a pure column assertion.
   return render(createElement(
     AppRouterContext.Provider, { value: inertRouter },
-    createElement(ToastProvider, null, ui),
+    createElement(PathnameContext.Provider, { value: '/admin/operations/reservations' },
+      createElement(SearchParamsContext.Provider, { value: new URLSearchParams() },
+        createElement(ToastProvider, null, ui))),
   ));
 }
 
@@ -190,15 +197,23 @@ describe('rendered columns · properties', () => {
 });
 
 describe('rendered columns · reservations', () => {
-  it('the operational table renders no value, payout or rupee', async () => {
+  it('the operational workspace renders no value, payout or rupee', async () => {
     const { rows } = await fullReservationRows();
     const { container } = renderWithToasts(
-      createElement(OpsReservationsTable, { rows: operationalReservationRows(rows) }));
+      createElement(BookingsWorkspace, {
+        rows: operationalReservationRows(rows),
+        units: [], scope: 'month' as const, date: '2027-01-19',
+        isOperationalDay: true, periodLabel: 'Jan 2027',
+        checkInFields: [], checkOutFields: [],
+      }));
     const text = container.textContent ?? '';
     expect(text).not.toContain('₹');
     expect(text).not.toContain('Gross value');
     expect(text).not.toContain('Expected payout');
-    expect(text).not.toContain('Payout');
+    // "Payouts and revenue live on the finance screens" is a signpost, not a figure:
+    // it is the sentence that explains the absence, so it is checked as a whole.
+    expect(text.replace('Payouts and revenue live on the finance screens.', ''))
+      .not.toMatch(/Payout/);
     expect(text).toContain(rows[0]!.bookingId);
   });
 
@@ -231,12 +246,24 @@ describe('page wiring · a revert to the unprojected render fails here', () => {
     expect(source).toContain('operationalPropertyRows(rows)');
   });
 
-  it('/admin/reservations gives the financial table to the gate\'s TRUE branch only', () => {
+  it('/admin/reservations serves the money-blind role a REDIRECT, not a projection', () => {
+    /*
+     * Stronger than the projection it replaces. This route used to render OPERATIONS the
+     * operational table — which is exactly what the Bookings workspace already is, so
+     * the two routes were one screen under two names. Sending them to the workspace
+     * before the fetch means no booking is read from this route on their behalf at all.
+     *
+     * The ORDER is what this pins: a redirect decided after the page had already
+     * fetched would be a redirect that still read the rows.
+     */
     const source = pageSource('app/admin/reservations/page.tsx');
-    expect(source).toContain('roleSeesFinancialFigures');
-    expect(source).toMatch(
-      /roleSeesFinancialFigures\(viewer\.role\)[\s\S]{0,80}\?\s*<FinancialReservationsTable[\s\S]{0,160}:\s*<OpsReservationsTable/);
-    expect(source).toContain('operationalReservationRows(rows)');
+    expect(source).toContain('!roleSeesFinancialFigures(access.session.role)');
+    expect(source.indexOf('redirect(')).toBeGreaterThan(-1);
+    expect(source.indexOf('redirect(')).toBeLessThan(source.indexOf('<ReadOnlyPage'));
+    expect(source).toContain('/admin/operations/reservations');
+    // Only the financial table remains, with no branch left to get the wrong way round.
+    expect(source).toContain('<FinancialReservationsTable');
+    expect(source).not.toContain('OpsReservationsTable');
   });
 
   it('the operations reservations screen projects for every role', () => {
@@ -244,10 +271,17 @@ describe('page wiring · a revert to the unprojected render fails here', () => {
     expect(source).toContain('operationalReservationRows');
   });
 
-  it('the operations table takes the projected type, so a financial cell cannot typecheck', () => {
+  it('the workspace takes the projected type, so a financial cell cannot typecheck', () => {
     const source = fs.readFileSync(
-      path.join(ROOT, 'components/pages/OpsTables.tsx'), 'utf8');
+      path.join(ROOT, 'components/operations/BookingsWorkspace.tsx'), 'utf8');
     expect(source).toContain('rows: OperationalReservationRow[]');
+    expect(codeOnly(source)).not.toMatch(/grossValue|expectedPayout|actualPayout|payoutStatus/);
+  });
+
+  it('the detail panel takes the projected type too — the same guard, one layer down', () => {
+    const source = fs.readFileSync(
+      path.join(ROOT, 'components/operations/BookingDetailDrawer.tsx'), 'utf8');
+    expect(source).toContain('OperationalBookingDetail');
     expect(codeOnly(source)).not.toMatch(/grossValue|expectedPayout|actualPayout|payoutStatus/);
   });
 });

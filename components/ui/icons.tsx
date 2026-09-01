@@ -100,8 +100,6 @@ export const NAV_ICONS: Readonly<Record<string, IconName>> = {
   'Booking Ledger': 'reservation',
   Today: 'today',
   Bookings: 'reservation',
-  'Check-ins': 'guest',
-  'Check-outs': 'guest',
   Housekeeping: 'housekeeping',
   Maintenance: 'maintenance',
   Inventory: 'inventory',

@@ -49,7 +49,26 @@ function declaredCapability(source: string): string | null {
 /** Pages that legitimately declare nothing because they only redirect elsewhere. */
 function isRedirectOnly(source: string): boolean {
   const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  return code.includes('redirect(') && !code.includes('<');
+  /*
+   * "Renders nothing" used to be tested as "contains no `<`", which a redirect page
+   * with a typed signature fails on `Promise<SearchParams>` alone. JSX always closes —
+   * `</Tag>` or `/>` — and a type parameter never does, so that is the tell.
+   */
+  return code.includes('redirect(') && !/<\/|\/>/.test(code);
+}
+
+/**
+ * Where a redirect-only page sends the reader.
+ *
+ * Every /admin path the file names, not just the one directly after `redirect(` — a
+ * redirect that picks between a bare path and one carrying the reader's filters is
+ * still a redirect, and both destinations have to be guarded.
+ */
+function redirectTargets(source: string): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const paths = [...code.matchAll(/[`'"](\/admin\/[^`'"?\s]*)/g)]
+    .map((m) => m[1]!.replace(/\/$/, ''));
+  return [...new Set(paths)];
 }
 
 const PAGES = adminPages();
@@ -68,6 +87,27 @@ describe('page access · every admin page says who may see it', () => {
 
     // This is the assertion that would have caught the original defect.
     expect(unguarded).toEqual([]);
+  });
+
+  it('a page that only redirects sends the reader somewhere that IS guarded', () => {
+    /*
+     * The exemption above is "guarded by its destination", and this is what makes that
+     * sentence true rather than hopeful: a redirect-only page pointing at an unguarded
+     * screen would otherwise slip through both assertions.
+     */
+    const guarded = new Map(PAGES.map(({ route, file }) =>
+      [route, declaredCapability(fs.readFileSync(file, 'utf8'))]));
+
+    for (const { route, file } of PAGES) {
+      const source = fs.readFileSync(file, 'utf8');
+      if (!isRedirectOnly(source)) continue;
+      const targets = redirectTargets(source);
+      expect(targets.length, `${route} must name where it sends the reader`).toBeGreaterThan(0);
+      for (const target of targets) {
+        expect(guarded.has(target), `${route} -> ${target} is not a known page`).toBe(true);
+        expect(guarded.get(target), `${route} -> ${target} declares no capability`).toBeTruthy();
+      }
+    }
   });
 
   it('no role is shown a menu entry it cannot open', () => {

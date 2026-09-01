@@ -104,6 +104,17 @@ describe('canonical bookings', () => {
     expect(labels).toContain('Bookings');
     expect(labels).not.toContain('Booking Ledger');
   });
+
+  it('carries no menu entry that is an alias of another screen', () => {
+    // "Check-ins" and "Check-outs" were half of Today each. Their routes still work and
+    // redirect there; as MENU entries they would have been three labels for one screen,
+    // which is the aliasing this navigation was cleaned of in Phase C.
+    const hrefs = allItems.map((i) => i.href);
+    expect(new Set(hrefs).size, 'every menu entry points at a distinct screen')
+      .toBe(hrefs.length);
+    expect(allItems.map((i) => i.label)).not.toContain('Check-ins');
+    expect(allItems.map((i) => i.label)).not.toContain('Check-outs');
+  });
 });
 
 /* ================================================================== *
@@ -113,7 +124,7 @@ describe('canonical bookings', () => {
 describe('role menus', () => {
   it('operations: operational screens only, nothing financial, no settings', () => {
     const labels = forRole('OPERATIONS').flatMap((s) => s.items.map((i) => i.label));
-    for (const expected of ['Today', 'Bookings', 'Check-ins', 'Check-outs', 'Housekeeping', 'Maintenance', 'Inventory', 'Guest Requests', 'Properties']) {
+    for (const expected of ['Today', 'Bookings', 'Housekeeping', 'Maintenance', 'Inventory', 'Guest Requests', 'Properties']) {
       expect(labels, expected).toContain(expected);
     }
     for (const hidden of ['Dashboard', 'Revenue', 'Booking Ledger', 'Expenses', 'CAPEX', 'Cash Flow', 'P&L', 'Investors', 'Distributions', 'Reports', 'Performance', 'Forecast', 'Settings', 'MAKAM Copilot']) {

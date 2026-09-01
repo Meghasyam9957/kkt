@@ -1,17 +1,17 @@
 /**
- * UI-4 — THE BOOKING WORKSPACE.
+ * UI-4 — THE BOOKING VOCABULARY AND THE CONSOLIDATED ROUTES.
  *
- * One suite for the booking domain's user-facing behaviour: the status vocabulary, the
- * day labels on the arrival and departure views, the workspace's search/filter/sort, the
- * URL-addressable detail drawer, and the lifecycle actions.
+ * Two things this suite holds still:
  *
- * These tests stand guard over the two rules the milestone brief refused to relax:
- * OPERATIONS receives no financial booking field, and no full guest name is disclosed
- * anywhere. Where a regression could reintroduce either, there is an assertion that fails
- * on it — verified by deliberately making the regression and watching the test go red.
+ *   1. ONE status vocabulary. Three implementations of the status-to-tone map existed
+ *      and two disagreed about a cancellation, so the severity of a booking depended on
+ *      which menu entry you had used to look at it.
+ *   2. ONE rendering of each booking concept. `/checkins`, `/checkouts` and the
+ *      operational half of `/admin/reservations` were second renderings of screens that
+ *      already existed; all three now hand the reader to the real one.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, within, cleanup } from '@testing-library/react';
+import { render, within, cleanup } from '@testing-library/react';
 import { createElement, type ReactElement } from 'react';
 
 import {
@@ -22,48 +22,36 @@ import {
 } from 'next/dist/shared/lib/hooks-client-context.shared-runtime';
 
 import { ToastProvider } from '@/components/ui/toast';
-import { FixtureDashboardDataProvider } from '@/lib/data/providers/fixture-provider';
-import { resolveFilters } from '@/lib/shared/page-helpers';
-import { formatDate } from '@/lib/shared/format';
-import { shiftIsoDay } from '@/lib/shared/dates';
-import { OpsReservationsTable, ArrivalsTable } from '@/components/pages/OpsTables';
+import { BookingsWorkspace } from '@/components/operations/BookingsWorkspace';
+import { BookingDetailDrawer } from '@/components/operations/BookingDetailDrawer';
 import { FinancialReservationsTable } from '@/components/pages/RegisterTables';
-import {
-  BOOKING_STATUS_TONE, bookingStatusTone,
-} from '@/lib/shared/booking-status';
-import {
-  OCCUPANCY_STATUSES, CANCELLED_STATUSES, type BookingStatus,
-} from '@/lib/shared/domain';
+import { BOOKING_STATUS_TONE, bookingStatusTone } from '@/lib/shared/booking-status';
+import { OCCUPANCY_STATUSES, CANCELLED_STATUSES, type BookingStatus } from '@/lib/shared/domain';
+import { NAVIGATION, breadcrumbFor } from '@/lib/shared/navigation';
+import type { ReservationRow, PropertyOption } from '@/lib/data/providers/types';
 import type {
-  ReservationRow, ArrivalRow, OperationsBoardView,
-} from '@/lib/data/providers/types';
-import type { OperationalReservationRow } from '@/lib/data/views/role-projections';
-
+  OperationalReservationRow, OperationalBookingDetail,
+} from '@/lib/data/views/role-projections';
 import { readSource as read, codeOf, uiSourceFiles } from './support/source';
 
 const replaced: string[] = [];
-const refresh = vi.fn();
 const router = {
   push: () => {}, back: () => {}, forward: () => {}, prefetch: () => {},
-  refresh,
+  refresh: () => {},
   replace: (href: string) => { replaced.push(href); },
 } as unknown as AppRouterInstance;
 
-function renderUi(ui: ReactElement, { search = '', pathname = '/admin/operations/reservations' } = {}) {
+function renderUi(ui: ReactElement, search = '') {
   return render(
     createElement(AppRouterContext.Provider, { value: router },
-      createElement(PathnameContext.Provider, { value: pathname },
+      createElement(PathnameContext.Provider, { value: '/admin/operations/reservations' },
         createElement(SearchParamsContext.Provider, { value: new URLSearchParams(search) },
           createElement(ToastProvider, null, ui)))),
   );
 }
 
-beforeEach(() => { replaced.length = 0; refresh.mockClear(); cleanup(); });
-afterEach(() => { vi.restoreAllMocks(); });
-
-/* ------------------------------------------------------------------ *
- * Row builders — the shapes the real provider returns.
- * ------------------------------------------------------------------ */
+const UNITS: PropertyOption[] = [{ id: 'HYD-501', name: '5th Floor — 2 BHK' }];
+const FIELDS = [{ name: 'checkInTime', label: 'Arrival time', type: 'time' as const }];
 
 const opsRow = (over: Partial<OperationalReservationRow> = {}): OperationalReservationRow => ({
   bookingId: 'BK-2027-0001', platform: 'Airbnb', propertyId: 'HYD-501',
@@ -77,42 +65,66 @@ const financialRow = (over: Partial<ReservationRow> = {}): ReservationRow => ({
   ...over,
 });
 
-const arrivalRow = (over: Partial<ArrivalRow> = {}): ArrivalRow => ({
-  bookingId: 'BK-2027-0001', propertyId: 'HYD-501', guestDisplayName: 'Priya S.',
-  nights: 3, guests: 2, platform: 'Airbnb', status: 'Confirmed',
-  checkIn: '2027-02-10', checkOut: '2027-02-13', ...over,
+const detailRow = (over: Partial<OperationalBookingDetail> = {}): OperationalBookingDetail => ({
+  ...opsRow(), platformRef: 'AI100001', unitName: '5th Floor — 2 BHK',
+  adults: 2, children: 1, guests: 3, bookedOn: null,
+  checkInTime: null, checkOutTime: null, earlyCheckIn: null, lateCheckout: null,
+  guestVerification: null, damageReport: null, maintenanceRequired: null, notes: null,
+  ...over,
 });
-
-const provider = new FixtureDashboardDataProvider({ now: () => new Date('2027-01-19T10:00:00Z') });
-
-/** The real operations board, for the day asked for (or the source's own day). */
-async function board(date?: string): Promise<OperationsBoardView> {
-  const months = await provider.getAvailableMonths();
-  const month = months[months.length - 1]!;
-  const { data } = await provider.getOperations({ month, ...(date ? { date } : {}) });
-  return data;
-}
 
 /** The tone a rendered pill actually carries, read off the class the design system sets. */
 function toneOfPill(container: HTMLElement, label: string): string {
-  const pill = within(container).getByText(label).closest('.sv-pill');
-  if (!pill) throw new Error(`no status pill rendered for "${label}"`);
-  const tone = Array.from(pill.classList).find((c) => c.startsWith('sv-pill--'));
-  if (!tone) throw new Error(`pill for "${label}" carries no tone class`);
-  return tone.replace('sv-pill--', '');
+  // Scoped to pills: the status word can legitimately appear elsewhere on a screen.
+  const pills = [...container.querySelectorAll('.sv-pill')]
+    .filter((el) => el.textContent?.trim() === label);
+  if (pills.length === 0) throw new Error(`no status pill rendered for "${label}"`);
+  const tones = new Set(pills.map((pill) => {
+    const tone = [...pill.classList].find((c) => c.startsWith('sv-pill--'));
+    if (!tone) throw new Error(`pill for "${label}" carries no tone class`);
+    return tone.replace('sv-pill--', '');
+  }));
+  if (tones.size > 1) throw new Error(`"${label}" rendered with ${tones.size} tones on one screen`);
+  return [...tones][0]!;
 }
 
+/** Every surface in the product that renders a booking's status. */
+function renderEverySurface(status: BookingStatus): Array<{ where: string; tone: string }> {
+  const out: Array<{ where: string; tone: string }> = [];
+
+  const workspace = renderUi(createElement(BookingsWorkspace, {
+    rows: [opsRow({ bookingStatus: status })], units: UNITS, scope: 'month' as const,
+    date: '2027-02-19', isOperationalDay: true, periodLabel: 'Feb 2027',
+    checkInFields: FIELDS, checkOutFields: FIELDS,
+  }));
+  out.push({ where: 'workspace', tone: toneOfPill(workspace.container, status) });
+  cleanup();
+
+  const detail = renderUi(createElement(BookingDetailDrawer, {
+    detail: detailRow({ bookingStatus: status }), requestedId: 'BK-2027-0001',
+  }));
+  out.push({ where: 'detail panel', tone: toneOfPill(detail.container, status) });
+  cleanup();
+
+  const ledger = renderUi(createElement(FinancialReservationsTable, {
+    rows: [financialRow({ bookingStatus: status })], period: '2027-02',
+  }));
+  out.push({ where: 'booking ledger', tone: toneOfPill(ledger.container, status) });
+  cleanup();
+
+  return out;
+}
+
+beforeEach(() => { replaced.length = 0; cleanup(); });
+afterEach(() => { vi.restoreAllMocks(); });
+
 /* ================================================================== *
- * MILESTONE 1 · ONE BOOKING STATUS VOCABULARY
+ * ONE BOOKING STATUS VOCABULARY
  * ================================================================== */
 
 describe('bookings · status vocabulary', () => {
   it('covers every booking status the domain declares, and invents none', () => {
-    // The union is the contract's BOOKING_STATUS list, mirrored in domain.ts. A status
-    // with no tone would fall through to `neutral` and look finished when it is not.
-    const declared: BookingStatus[] = [
-      ...OCCUPANCY_STATUSES, ...CANCELLED_STATUSES, 'Inquiry',
-    ];
+    const declared: BookingStatus[] = [...OCCUPANCY_STATUSES, ...CANCELLED_STATUSES, 'Inquiry'];
     for (const status of declared) {
       expect(BOOKING_STATUS_TONE[status], status).toBeDefined();
     }
@@ -120,65 +132,25 @@ describe('bookings · status vocabulary', () => {
   });
 
   it('gives the two LOST-booking statuses the same tone — they are one domain class', () => {
-    // CANCELLED_STATUSES groups Cancelled and No Show as bookings V1 counts as lost.
-    // Splitting them across two hues is what the old duplicate maps did.
     const tones = new Set(CANCELLED_STATUSES.map((s) => bookingStatusTone(s)));
     expect(tones.size).toBe(1);
     expect([...tones][0]).toBe('bad');
   });
 
-  it('renders a cancelled booking identically on the operations register and the ledger', () => {
-    // The exact defect the milestone was opened for: `bad` on one screen, `warn` on the
-    // other, so the severity of a cancellation depended on which menu entry you used.
-    const ops = renderUi(
-      createElement(OpsReservationsTable, { rows: [opsRow({ bookingStatus: 'Cancelled' })] }),
-    );
-    const opsTone = toneOfPill(ops.container, 'Cancelled');
-    cleanup();
-
-    const ledger = renderUi(
-      createElement(FinancialReservationsTable, {
-        rows: [financialRow({ bookingStatus: 'Cancelled' })], period: '2027-02',
-      }),
-    );
-    const ledgerTone = toneOfPill(ledger.container, 'Cancelled');
-
-    expect(opsTone).toBe(ledgerTone);
-    expect(opsTone).toBe('bad');
-  });
-
-  it('agrees across every booking surface, status by status', () => {
+  it('agrees on every surface, status by status', () => {
+    // The exact defect this was opened for: a cancellation read `bad` on the operations
+    // register and `warn` on the finance ledger, so its severity depended on the route.
     for (const status of Object.keys(BOOKING_STATUS_TONE) as BookingStatus[]) {
       const expected = BOOKING_STATUS_TONE[status];
-
-      const ops = renderUi(
-        createElement(OpsReservationsTable, { rows: [opsRow({ bookingStatus: status })] }),
-      );
-      expect(toneOfPill(ops.container, status), `ops register · ${status}`).toBe(expected);
-      cleanup();
-
-      const arrivals = renderUi(
-        createElement(ArrivalsTable, {
-          rows: [arrivalRow({ status })], mode: 'checkin' as const,
-          date: '2027-02-10', isOperationalDay: true,
-        }),
-      );
-      expect(toneOfPill(arrivals.container, status), `arrivals · ${status}`).toBe(expected);
-      cleanup();
-
-      const ledger = renderUi(
-        createElement(FinancialReservationsTable, {
-          rows: [financialRow({ bookingStatus: status })], period: '2027-02',
-        }),
-      );
-      expect(toneOfPill(ledger.container, status), `ledger · ${status}`).toBe(expected);
-      cleanup();
+      for (const { where, tone } of renderEverySurface(status)) {
+        expect(tone, `${where} · ${status}`).toBe(expected);
+      }
     }
   });
 
-  it('renders an unrecognised status quietly instead of borrowing another status\'s meaning', () => {
-    // The workbook is the source of this vocabulary and a cell can be hand-typed. The
-    // old Today ternary sent anything unknown to `info` — the "on the books" colour.
+  it('renders an unrecognised status quietly instead of borrowing another meaning', () => {
+    // The workbook owns this vocabulary and a cell can be hand-typed. The old Today
+    // ternary sent anything unknown to `info` — the "on the books" colour.
     expect(bookingStatusTone('Provisional')).toBe('neutral');
     expect(bookingStatusTone('')).toBe('neutral');
   });
@@ -199,11 +171,12 @@ describe('bookings · status vocabulary', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('every booking table reaches for the shared vocabulary rather than its own', () => {
+  it('every booking surface reaches for the shared vocabulary rather than its own', () => {
     for (const file of [
-      'components/pages/OpsTables.tsx',
-      'components/pages/RegisterTables.tsx',
+      'components/operations/BookingsWorkspace.tsx',
+      'components/operations/BookingDetailDrawer.tsx',
       'components/operations/TodayBoard.tsx',
+      'components/pages/RegisterTables.tsx',
     ]) {
       expect(read(file), file).toContain("from '@/lib/shared/booking-status'");
     }
@@ -211,129 +184,102 @@ describe('bookings · status vocabulary', () => {
 });
 
 /* ================================================================== *
- * MILESTONE 2 . THE DAY A MOVEMENT LIST IS ACTUALLY SHOWING
+ * ONE RENDERING PER BOOKING CONCEPT
  * ================================================================== */
 
-describe('bookings . arrivals and departures name their own day', () => {
-  it("says today only when the day IS the source operational day", async () => {
-    const view = await board();
-    expect(view.isOperationalDay).toBe(true);
+describe('bookings · the duplicate screens are gone', () => {
+  it('renders bookings in exactly two places: the workspace and the movements board', () => {
+    // OpsReservationsTable was a second rendering of the workspace; ArrivalsTable was a
+    // second rendering of half the Today board. Both drifted from the screens they
+    // duplicated — about a cancellation's severity, and about which day they showed.
+    const ops = read('components/pages/OpsTables.tsx');
+    expect(ops).not.toContain('export function OpsReservationsTable');
+    expect(ops).not.toContain('export function ArrivalsTable');
 
-    const { container } = renderUi(createElement(ArrivalsTable, {
-      rows: view.arrivals, mode: 'checkin' as const,
-      date: view.date, isOperationalDay: view.isOperationalDay,
-    }));
-    expect(within(container).getByText("Today\'s arrivals")).toBeInTheDocument();
-  });
-
-  it('names the day outright when the reader has stepped back one', async () => {
-    const today = (await board()).operationalDate;
-    const yesterday = shiftIsoDay(today, -1);
-    const view = await board(yesterday);
-
-    expect(view.date).toBe(yesterday);
-    expect(view.isOperationalDay).toBe(false);
-
-    const { container } = renderUi(createElement(ArrivalsTable, {
-      rows: view.arrivals, mode: 'checkin' as const,
-      date: view.date, isOperationalDay: view.isOperationalDay,
-    }));
-
-    expect(within(container).getByText(`Arrivals \u2014 ${formatDate(yesterday)}`)).toBeInTheDocument();
-    expect(container.textContent).not.toContain("Today\'s");
-  });
-
-  it('does the same for departures, on an arbitrary date', async () => {
-    const view = await board('2027-02-20');
-    expect(view.date).toBe('2027-02-20');
-
-    const { container } = renderUi(createElement(ArrivalsTable, {
-      rows: view.departures, mode: 'checkout' as const,
-      date: view.date, isOperationalDay: view.isOperationalDay,
-    }));
-
-    expect(within(container).getByText(`Departures \u2014 ${formatDate('2027-02-20')}`)).toBeInTheDocument();
-    expect(container.textContent).not.toContain("Today\'s");
-    expect(container.textContent).toContain('20 Feb 2027');
-  });
-
-  it('carries the day into the subtitle and the empty state', async () => {
-    const view = await board('2027-02-20');
-    const { container } = renderUi(createElement(ArrivalsTable, {
-      rows: [], mode: 'checkin' as const,
-      date: view.date, isOperationalDay: view.isOperationalDay,
-    }));
-
-    const day = formatDate('2027-02-20');
-    // The instruction stays; the false claim about "today" goes.
-    expect(container.textContent).toContain(`Guests arriving ${day}`);
-    // "No arrivals today" on a browsed day is the same lie, only quieter.
-    expect(within(container).getByText(`No arrivals on ${day}`)).toBeInTheDocument();
-  });
-
-  it('names the day in the accessible table caption a screen reader announces', async () => {
-    const view = await board('2027-02-20');
-    const { container } = renderUi(createElement(ArrivalsTable, {
-      rows: view.arrivals.length ? view.arrivals : [arrivalRow()], mode: 'checkin' as const,
-      date: view.date, isOperationalDay: view.isOperationalDay,
-    }));
-    const caption = container.querySelector('caption');
-    expect(caption?.textContent).toBe(`Arrivals for ${formatDate('2027-02-20')}`);
-  });
-
-  it('round-trips ?date= from the URL through the filters to the rendered heading', async () => {
-    // The whole path the browser actually takes: search param -> resolveFilters ->
-    // provider -> board.date -> heading. A break anywhere in it fails here.
-    const filters = await resolveFilters({ date: '2027-02-20' });
-    expect(filters.date).toBe('2027-02-20');
-
-    const { data } = await provider.getOperations(filters);
-    expect(data.date).toBe('2027-02-20');
-    expect(data.isOperationalDay).toBe(false);
-
-    const { container } = renderUi(createElement(ArrivalsTable, {
-      rows: data.arrivals, mode: 'checkin' as const,
-      date: data.date, isOperationalDay: data.isOperationalDay,
-    }));
-    expect(within(container).getByText(`Arrivals \u2014 ${formatDate('2027-02-20')}`)).toBeInTheDocument();
-  });
-
-  it('falls back to the operational day when the URL carries a date that cannot exist', async () => {
-    // Date semantics are unchanged by this milestone: a malformed value still falls back
-    // rather than reaching a query, and the heading then truthfully says today.
-    const view = await board('2027-02-31');
-    expect(view.date).toBe(view.operationalDate);
-    expect(view.isOperationalDay).toBe(true);
-
-    const { container } = renderUi(createElement(ArrivalsTable, {
-      rows: view.arrivals, mode: 'checkin' as const,
-      date: view.date, isOperationalDay: view.isOperationalDay,
-    }));
-    expect(within(container).getByText("Today\'s arrivals")).toBeInTheDocument();
-  });
-
-  it('no movement list can hardcode the word today again', () => {
-    // The table cannot be rendered without being told which day it shows (required
-    // props), and no screen may re-assert "today" as a literal heading.
+    // And nothing anywhere still reaches for them.
     for (const file of uiSourceFiles()) {
       const src = codeOf(read(file));
-      expect(src, `${file} hardcodes a day it has not been told`)
-        .not.toMatch(/["'`]Today\'s (arrivals|departures)["'`]/);
+      expect(src, file).not.toMatch(/\bOpsReservationsTable\b/);
+      expect(src, file).not.toMatch(/\bArrivalsTable\b/);
     }
-    // The one legitimate use is conditional on the board saying so.
-    expect(read('components/pages/OpsTables.tsx')).toContain('isOperationalDay');
   });
 
-  it('the check-in and check-out pages hand the board own day to the table', () => {
+  it('keeps /checkins and /checkouts as routes — bookmarks must not break', () => {
+    // Not deleted, redirected: the functionality moved to a screen that already did
+    // more, and an old link still lands somewhere sensible.
     for (const file of [
       'app/admin/operations/checkins/page.tsx',
       'app/admin/operations/checkouts/page.tsx',
     ]) {
       const src = read(file);
-      expect(src, file).toContain('date={board.date}');
-      expect(src, file).toContain('isOperationalDay={board.isOperationalDay}');
-      // The page header renders before the fetch, so it must not claim a day either.
-      expect(src, file).not.toMatch(/description="Today\'s/);
+      expect(src, file).toContain('redirect(');
+      expect(src, file).toContain('/admin/operations/today');
+      // The day and the property travel with the reader.
+      expect(src, file).toContain("query.set('date'");
+      expect(src, file).toContain("query.set('property'");
     }
+  });
+
+  it('sends a money-blind role to the workspace BEFORE reading a booking for them', () => {
+    const src = read('app/admin/reservations/page.tsx');
+    // The redirect is decided before ReadOnlyPage is even constructed, so no row from
+    // this route is fetched on their behalf at all — stricter than projecting one.
+    const redirectAt = src.indexOf('redirect(');
+    const pageAt = src.indexOf('<ReadOnlyPage');
+    expect(redirectAt).toBeGreaterThan(-1);
+    expect(redirectAt).toBeLessThan(pageAt);
+    expect(src).toContain('!roleSeesFinancialFigures(access.session.role)');
+    expect(src).toContain('/admin/operations/reservations');
+    // No second booking table under this route any more.
+    expect(src).not.toContain('OpsReservationsTable');
+  });
+
+  it('drops the two menu entries that would now be aliases of Today', () => {
+    const labels = NAVIGATION.flatMap((s) => s.items).map((i) => i.label);
+    expect(labels).not.toContain('Check-ins');
+    expect(labels).not.toContain('Check-outs');
+    // Three labels pointing at one screen is the aliasing this menu was cleaned of.
+    const hrefs = NAVIGATION.flatMap((s) => s.items).map((i) => i.href);
+    expect(hrefs.filter((h) => h === '/admin/operations/today')).toHaveLength(1);
+  });
+
+  it('leaves exactly one menu entry per booking screen, each named for what it is', () => {
+    const items = NAVIGATION.flatMap((s) => s.items);
+    const booking = items.filter((i) => /reservations$/.test(i.href));
+    expect(booking.map((i) => `${i.label} -> ${i.href}`).sort()).toEqual([
+      'Booking Ledger -> /admin/reservations',
+      'Bookings -> /admin/operations/reservations',
+    ]);
+    // The working screen is open to every role that works bookings; the money view
+    // follows a financial capability.
+    expect(items.find((i) => i.label === 'Bookings')!.capability).toBe('reservations.read');
+    expect(items.find((i) => i.label === 'Booking Ledger')!.capability).toBe('revenue.read');
+  });
+
+  it('names the workspace the same way in the menu and in the breadcrumb', () => {
+    // Before UI-4 the menu said "Bookings", the breadcrumb said "Bookings", and the
+    // page heading said "Reservations" — one screen, two vocabularies.
+    const trail = breadcrumbFor('/admin/operations/reservations');
+    expect(trail.map((c) => c.label)).toEqual(['Admin', 'Operations', 'Bookings']);
+    expect(read('app/admin/operations/reservations/page.tsx')).toContain('title="Bookings"');
+
+    expect(breadcrumbFor('/admin/reservations').map((c) => c.label))
+      .toEqual(['Admin', 'Booking Ledger']);
+    expect(read('app/admin/reservations/page.tsx')).toContain('title="Booking Ledger"');
+  });
+
+  it('retires the word "Reservations" from every user-facing heading', () => {
+    // Kept where it is real — the sheet, the route, the API, the capability — and gone
+    // from the words a person reads.
+    for (const file of [
+      'app/admin/operations/reservations/page.tsx',
+      'app/admin/reservations/page.tsx',
+    ]) {
+      const src = read(file);
+      expect(src, file).not.toMatch(/title=["']Reservations["']/);
+      expect(src, file).not.toMatch(/title: 'Reservations —/);
+    }
+    expect(NAVIGATION.flatMap((s) => s.items).map((i) => i.label))
+      .not.toContain('Reservations');
   });
 });

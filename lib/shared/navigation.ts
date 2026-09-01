@@ -46,12 +46,16 @@ export const NAVIGATION: NavSection[] = [
     title: 'Operations',
     items: [
       { label: 'Today', href: '/admin/operations/today', capability: 'operations.view' },
-      // Real routes since Phase C — no more aliases, so exactly one item is ever active.
-      // "Bookings" is the WORKING reservations register (create, check in, check out,
-      // cancel); Property ▸ Reservations remains the read-only financial register.
+      // THE booking screen: search it, open a booking, run its lifecycle. Finance ▸
+      // Booking Ledger is the financial view of the same rows, and the only other
+      // place a booking is rendered anywhere in the product.
       { label: 'Bookings', href: '/admin/operations/reservations', capability: 'reservations.read' },
-      { label: 'Check-ins', href: '/admin/operations/checkins', capability: 'operations.view' },
-      { label: 'Check-outs', href: '/admin/operations/checkouts', capability: 'operations.view' },
+      /*
+       * "Check-ins" and "Check-outs" are gone as menu entries, not as routes. They were
+       * half of Today each, rendered by a second component over the same payload; both
+       * paths now redirect to Today, and three menu labels pointing at one screen is the
+       * aliasing this menu was cleaned of in Phase C.
+       */
       { label: 'Housekeeping', href: '/admin/operations/housekeeping', capability: 'housekeeping.read' },
       { label: 'Maintenance', href: '/admin/operations/maintenance', capability: 'maintenance.read' },
       { label: 'Inventory', href: '/admin/operations/inventory', capability: 'inventory.read' },
@@ -63,12 +67,14 @@ export const NAVIGATION: NavSection[] = [
     items: [
       { label: 'Revenue', href: '/admin/finance/revenue', capability: 'revenue.read' },
       /*
-       * "Bookings" is the ONE user-facing booking concept, and it lives under
-       * Operations (the working screen). This entry is the financial VIEW of the same
-       * bookings — gross value and expected payout — so it sits with the money screens
-       * under a ledger name, and its menu visibility follows a financial capability.
-       * The page itself keeps `reservations.read` plus the role projection, so a
-       * direct visit by operations still renders the money-free columns.
+       * The financial VIEW of the bookings under Operations ▸ Bookings — gross value,
+       * expected payout, payout status — so it sits with the money screens under a
+       * ledger name, and its menu visibility follows a financial capability.
+       *
+       * The page keeps `reservations.read`, because the rows are the same rows, and
+       * sends a role with no financial capability to the workspace before reading a
+       * booking for them. It used to render them the operational projection instead,
+       * which made this route a second copy of the workspace under a second name.
        */
       { label: 'Booking Ledger', href: '/admin/reservations', capability: 'revenue.read' },
       { label: 'Expenses', href: '/admin/finance/expenses', capability: 'expenses.read' },
