@@ -24,7 +24,13 @@ async function signInAs(page: Page, label: string): Promise<void> {
   await page.goto('/signin');
   await page.getByRole('button', { name: new RegExp(label) }).click();
   await page.waitForURL(/\/admin\/(dashboard|portfolio|operations)/);
-  await page.waitForSelector('.sv-sidebar');
+  /*
+   * `main#main`, not `.sv-sidebar`: the investor shell has no sidebar, so waiting for
+   * one made every investor sign-in time out — which silently disabled the assertion
+   * below that INVESTOR is refused by every mutation endpoint. The smoke suite was
+   * corrected for this when the investor shell landed; this one was missed.
+   */
+  await page.waitForSelector('main#main');
 }
 
 const expensePayload = (overrides: Record<string, unknown> = {}) => ({
@@ -193,28 +199,35 @@ test('reservation · create → check in → check out, each verified on the boa
   await signInAs(page, 'Demo Operations Manager');
   await page.goto(`/admin/operations/reservations?month=${MONTH}`);
 
-  await page.getByRole('button', { name: '+ New Reservation' }).click();
+  await page.getByRole('button', { name: '+ New Booking' }).click();
   const drawer = page.locator('.sv-drawer');
   await drawer.getByLabel(/^Property/).selectOption('HYD-601');
-  await drawer.getByLabel("Platform *", { exact: true }).selectOption('Direct');
+  await drawer.getByLabel('Platform *', { exact: true }).selectOption('Direct');
   await drawer.getByLabel(/^Guest name/).fill('Playwright Lifecycle Guest');
   await drawer.getByLabel(/^Booked on/).fill(`${MONTH}-01`);
   await drawer.getByLabel(/^Check-in/).fill(`${MONTH}-20`);
   await drawer.getByLabel(/^Check-out/).fill(`${MONTH}-22`);
+  // UI-4: no money on this surface. A role with no financial capability does not
+  // author a booking's value, so the fields are absent rather than skipped.
+  await expect(drawer.getByLabel(/Base rate|Room revenue|Cleaning fee/)).toHaveCount(0);
   await drawer.locator('button[type=submit]').click();
 
   const toast = page.locator('.sv-toast--success .sv-toast__title').first();
   await expect(toast).toContainText(/BK-\d{4}-\d{4} created/);
   const bookingId = (await toast.textContent())!.match(/BK-\d{4}-\d{4}/)![0];
 
-  // The new booking's row offers Check In; run the lifecycle from the board.
+  // ONE action per row: the booking's legal next step, and nothing competing with it.
   const row = page.locator('tbody tr', { hasText: bookingId });
-  await row.getByRole('button', { name: 'Check In' }).click();
+  await expect(row.getByRole('button')).toHaveCount(1);
+
+  await row.getByRole('button', { name: 'Check in' }).click();
+  await page.locator('.sv-drawer button[type=submit]').click();
   await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'checked in' }))
     .toBeVisible();
   await expect(row.locator('.sv-pill')).toContainText('Checked In');
 
-  await row.getByRole('button', { name: 'Check Out' }).click();
+  await row.getByRole('button', { name: 'Check out' }).click();
+  await page.locator('.sv-drawer button[type=submit]').click();
   await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'checked out' }))
     .toBeVisible();
   await expect(row.locator('.sv-pill')).toContainText('Checked Out');
@@ -224,10 +237,10 @@ test('reservation · validation failure is spelled out (check-out before check-i
   await signInAs(page, 'Demo Operations Manager');
   await page.goto(`/admin/operations/reservations?month=${MONTH}`);
 
-  await page.getByRole('button', { name: '+ New Reservation' }).click();
+  await page.getByRole('button', { name: '+ New Booking' }).click();
   const drawer = page.locator('.sv-drawer');
   await drawer.getByLabel(/^Property/).selectOption('HYD-601');
-  await drawer.getByLabel("Platform *", { exact: true }).selectOption('Direct');
+  await drawer.getByLabel('Platform *', { exact: true }).selectOption('Direct');
   await drawer.getByLabel(/^Guest name/).fill('Backwards Dates');
   await drawer.getByLabel(/^Booked on/).fill(`${MONTH}-01`);
   await drawer.getByLabel(/^Check-in/).fill(`${MONTH}-22`);
@@ -242,7 +255,7 @@ test('reservation · validation failure is spelled out (check-out before check-i
 test('reservation · cancel requires a reason and leaves the row in place', async ({ page }) => {
   await signInAs(page, 'Demo Operations Manager');
   await page.goto('/admin/dashboard');
-  // Create via API (same pipeline), cancel via the board UI.
+  // Create via API (same pipeline), cancel through the booking's detail panel.
   const created = await postJson(page, '/api/reservations', {
     operationId: randomUUID(), platform: 'Direct', propertyId: 'HYD-602',
     bookingDate: `${MONTH}-01`, guestName: 'Cancel Me', adults: 2, children: 0,
@@ -251,16 +264,48 @@ test('reservation · cancel requires a reason and leaves the row in place', asyn
   expect(created.status()).toBe(200);
   const bookingId = (await created.json()).record.BookingID as string;
 
-  await page.goto(`/admin/operations/reservations?month=${MONTH}`);
-  const row = page.locator('tbody tr', { hasText: bookingId });
-  await row.getByRole('button', { name: 'Cancel' }).click();
+  // UI-4: the secondary actions moved off the row and into the detail panel, which is
+  // addressed by the booking's own reference.
+  await page.goto(`/admin/operations/reservations?month=${MONTH}&booking=${bookingId}`);
+  const panel = page.locator('.sv-drawer');
+  await expect(panel).toBeVisible();
+  await panel.getByRole('button', { name: 'Cancel booking' }).click();
+
   const dialog = page.locator('.sv-modal');
   await dialog.getByLabel(/Why is this booking/).fill('Guest called to cancel — Playwright test');
   await dialog.locator('button[type=submit]').click();
 
   await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'cancelled' }))
     .toBeVisible();
+  // The row remains, with its new status — a cancellation is a transition, not a delete.
+  const row = page.locator('tbody tr', { hasText: bookingId });
   await expect(row.locator('.sv-pill')).toContainText('Cancelled');
+});
+
+test('reservation · a no-show is recorded as its own status, not as a cancellation', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/dashboard');
+  const created = await postJson(page, '/api/reservations', {
+    operationId: randomUUID(), platform: 'Direct', propertyId: 'HYD-602',
+    bookingDate: `${MONTH}-01`, guestName: 'Never Arrived', adults: 1, children: 0,
+    checkInDate: `${MONTH}-26`, checkOutDate: `${MONTH}-28`,
+  });
+  expect(created.status()).toBe(200);
+  const bookingId = (await created.json()).record.BookingID as string;
+
+  await page.goto(`/admin/operations/reservations?month=${MONTH}&booking=${bookingId}`);
+  const panel = page.locator('.sv-drawer');
+  await panel.getByRole('button', { name: 'Mark no-show' }).click();
+
+  const dialog = page.locator('.sv-modal');
+  await dialog.getByLabel(/What happened/).fill('Guest did not arrive — Playwright test');
+  await dialog.locator('button[type=submit]').click();
+
+  await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'no-show' }))
+    .toBeVisible();
+  // The flag is the only thing separating this from a cancellation on the wire.
+  const row = page.locator('tbody tr', { hasText: bookingId });
+  await expect(row.locator('.sv-pill')).toContainText('No Show');
 });
 
 /* ================================================================== *

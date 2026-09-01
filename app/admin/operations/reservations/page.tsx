@@ -31,7 +31,7 @@ async function NewBookingAction() {
        */
       fields={reservationFields(propertyIds, platforms, { withValues: false })}
       submitLabel="Create booking"
-      successTemplate="{id} created — totals and payout are calculated by the workbook."
+      successTemplate="{id} created — the workbook calculates the rest."
       idField="BookingID"
       wide
     />

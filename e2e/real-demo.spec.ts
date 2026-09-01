@@ -44,6 +44,24 @@ let passwordAuth = false;
 let month = '';
 /** Booking created in test 5; checked in/out in tests 12–13. */
 let lifecycleBookingId = '';
+/**
+ * How each investor's own portfolio names them, captured from the page in tests 3 and 4
+ * and cross-checked for isolation in test 15.
+ *
+ * Read from the screen rather than hard-coded, because this suite runs against the
+ * BUSINESS's own investor register: the names in it are theirs, and a test that pins
+ * "Anand Rao" passes only against the fixture that happens to seed him.
+ */
+let investorAName = '';
+let investorBName = '';
+
+/** The name the portfolio greets the signed-in investor by. */
+async function portfolioName(page: Page): Promise<string> {
+  const heading = await page.locator('h1.sv-page-header__title').innerText();
+  const name = heading.replace(/^Portfolio\s*[—-]\s*/, '').trim();
+  expect(name, 'the portfolio must name the investor it belongs to').not.toBe('');
+  return name;
+}
 
 const ACCOUNTS = {
   admin:      { chooser: 'Demo Administrator',      email: 'admin.demo@srivillu.demo',      passwordVar: 'DEMO_E2E_ADMIN_PASSWORD' },
@@ -81,7 +99,14 @@ async function signIn(page: Page, who: keyof typeof ACCOUNTS): Promise<void> {
     await page.getByRole('button', { name: new RegExp(account.chooser) }).click();
   }
   await page.waitForURL(/\/admin\/(dashboard|portfolio|operations)/);
-  await page.waitForSelector('.sv-sidebar');
+  /*
+   * `main#main`, not `.sv-sidebar`: the investor shell is a masthead with no sidebar, so
+   * waiting for one hung on every investor sign-in. In a SERIAL suite that took the
+   * whole file down from test 3 onward — the isolation checks this suite exists for
+   * included. The smoke suite was corrected when the investor shell landed; this file
+   * and the write suite were missed.
+   */
+  await page.waitForSelector('main#main');
 }
 
 async function postJson(page: Page, path: string, body: unknown): Promise<APIResponse> {
@@ -127,18 +152,38 @@ test('02 operations sign-in sees the board and no finance', async ({ page }) => 
   await expect(sidebar).not.toContainText('P&L');
 });
 
+/*
+ * These three tests used to assert that the raw investor ID appeared on screen. The
+ * portfolio names the person instead — showing someone their own internal key is not
+ * what a portfolio is for — so the assertion had been stale since that screen was
+ * built, and invisible behind a sign-in helper that hung on the investor shell.
+ *
+ * They now assert what they always meant: each investor is shown THEIR OWN position,
+ * and the ID of the other one never appears.
+ */
 test('03 investor A sees their own portfolio', async ({ page }) => {
   requireLive();
   await signIn(page, 'investorA');
   await page.waitForURL(/\/admin\/portfolio/);
-  await expect(page.locator('main')).toContainText('INV-001');
+  investorAName = await portfolioName(page);
+  const main = page.locator('main');
+  await expect(main).toContainText('Your capital');
+  await expect(main).not.toContainText('INV-002');
 });
 
 test('04 investor B sees their own portfolio', async ({ page }) => {
   requireLive();
   await signIn(page, 'investorB');
   await page.waitForURL(/\/admin\/portfolio/);
-  await expect(page.locator('main')).toContainText('INV-002');
+  investorBName = await portfolioName(page);
+  const main = page.locator('main');
+  await expect(main).toContainText('Your capital');
+  await expect(main).not.toContainText('INV-001');
+
+  // Two accounts, two registers. If both resolved to the same investor the isolation
+  // check below would compare a name against itself and pass on nothing.
+  expect(investorBName, 'the two demo investors must be different people')
+    .not.toBe(investorAName);
 });
 
 /* ================================================================== *
@@ -150,7 +195,7 @@ test('05 create a reservation in the real workbook', async ({ page }) => {
   await signIn(page, 'operations');
   await page.goto(`/admin/operations/reservations?month=${month}`);
 
-  await page.getByRole('button', { name: '+ New Reservation' }).click();
+  await page.getByRole('button', { name: '+ New Booking' }).click();
   const drawer = page.locator('.sv-drawer');
   await selectFirstOption(drawer, /^Property/);
   await selectFirstOption(drawer, /^Platform \*/);
@@ -171,7 +216,7 @@ test('06 a duplicate reservation submit lands exactly ONE business row', async (
   await page.goto(`/admin/operations/reservations?month=${month}`);
   const rowsBefore = await page.locator('tbody tr').count();
 
-  await page.getByRole('button', { name: '+ New Reservation' }).click();
+  await page.getByRole('button', { name: '+ New Booking' }).click();
   const drawer = page.locator('.sv-drawer');
   await selectFirstOption(drawer, /^Property/);
   await selectFirstOption(drawer, /^Platform \*/);
@@ -310,7 +355,9 @@ test('12 check-in flips the booking on the real board', async ({ page }) => {
   await page.goto(`/admin/operations/reservations?month=${month}`);
 
   const row = page.locator('tbody tr', { hasText: lifecycleBookingId });
-  await row.getByRole('button', { name: 'Check In' }).click();
+  // UI-4: one action per row, and it puts the booking in front of the person first.
+  await row.getByRole('button', { name: 'Check in' }).click();
+  await page.locator('.sv-drawer button[type=submit]').click();
   await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'checked in' }))
     .toBeVisible({ timeout: 30_000 });
   await expect(row.locator('.sv-pill')).toContainText('Checked In');
@@ -323,7 +370,8 @@ test('13 check-out completes the stay', async ({ page }) => {
   await page.goto(`/admin/operations/reservations?month=${month}`);
 
   const row = page.locator('tbody tr', { hasText: lifecycleBookingId });
-  await row.getByRole('button', { name: 'Check Out' }).click();
+  await row.getByRole('button', { name: 'Check out' }).click();
+  await page.locator('.sv-drawer button[type=submit]').click();
   await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'checked out' }))
     .toBeVisible({ timeout: 30_000 });
   await expect(row.locator('.sv-pill')).toContainText('Checked Out');
@@ -343,15 +391,20 @@ test('14 cancelling requires a reason and keeps the row', async ({ page }) => {
   expect(created.status()).toBe(200);
   const bookingId = (await created.json()).record.BookingID as string;
 
-  await page.goto(`/admin/operations/reservations?month=${month}`);
-  const row = page.locator('tbody tr', { hasText: bookingId });
-  await row.getByRole('button', { name: 'Cancel' }).click();
+  // UI-4: the row carries the one legal next step; cancel and no-show live in the
+  // booking's detail panel, which is addressed by its own reference.
+  await page.goto(`/admin/operations/reservations?month=${month}&booking=${bookingId}`);
+  const panel = page.locator('.sv-drawer');
+  await expect(panel).toBeVisible();
+  await panel.getByRole('button', { name: 'Cancel booking' }).click();
+
   const dialog = page.locator('.sv-modal');
   await dialog.getByLabel(/Why is this booking/).fill('Guest cancelled — Phase D suite');
   await dialog.locator('button[type=submit]').click();
 
   await expect(page.locator('.sv-toast--success .sv-toast__title', { hasText: 'cancelled' }))
     .toBeVisible({ timeout: 30_000 });
+  const row = page.locator('tbody tr', { hasText: bookingId });
   await expect(row.locator('.sv-pill')).toContainText('Cancelled');
 });
 
@@ -361,15 +414,21 @@ test('14 cancelling requires a reason and keeps the row', async ({ page }) => {
 
 test('15 investor A cannot read investor B', async ({ page }) => {
   requireLive();
+  expect(investorAName && investorBName, 'tests 3 and 4 must have captured both names')
+    .toBeTruthy();
+
   await signIn(page, 'investorA');
   await page.waitForURL(/\/admin\/portfolio/);
-  await expect(page.locator('main')).toContainText('INV-001');
-  await expect(page.locator('main')).not.toContainText('INV-002');
+  const main = page.locator('main');
+  await expect(main).toContainText(investorAName);
+  await expect(main).not.toContainText(investorBName);
+  await expect(main).not.toContainText('INV-002');
 
   // The identity is server-resolved; a tampered query string changes nothing.
   await page.goto('/admin/portfolio?investorId=INV-002');
-  await expect(page.locator('main')).toContainText('INV-001');
-  await expect(page.locator('main')).not.toContainText('INV-002');
+  await expect(main).toContainText(investorAName);
+  await expect(main).not.toContainText(investorBName);
+  await expect(main).not.toContainText('INV-002');
 });
 
 test('16 operations cannot create finance records', async ({ page }) => {
@@ -410,10 +469,14 @@ test('18 the dashboard reflects a web-created expense: +₹4,321 exactly', async
   const property = await firstSeededProperty(page);
   const res = await postJson(page, '/api/expenses', {
     operationId: randomUUID(), date: `${month}-19`, propertyId: property,
-    expenseCategory: 'Variable Operating', description: 'Dashboard dataflow expense',
+    expenseCategory: 'Variable Operating',
+    // Required by ExpenseCreate. It was missing, so this write had always been refused
+    // 422 — invisibly, because the suite aborted at test 3 long before reaching here.
+    expenseSubcategory: 'Electricity',
+    description: 'Dashboard dataflow expense',
     amount: 4321, paymentStatus: 'Paid', paidDate: `${month}-19`,
   });
-  expect(res.status()).toBe(200);
+  expect(res.status(), JSON.stringify(await res.json())).toBe(200);
 
   // The verified write invalidated the read cache; the next render re-reads the
   // workbook, and the V1-semantics engine — not React — moves the figure.
@@ -428,10 +491,13 @@ test('19 saved data survives a full browser reload', async ({ page }) => {
   const property = await firstSeededProperty(page);
   const res = await postJson(page, '/api/expenses', {
     operationId: randomUUID(), date: `${month}-20`, propertyId: property,
-    expenseCategory: 'Variable Operating', description: 'Reload persistence expense',
+    expenseCategory: 'Variable Operating',
+    // Required by ExpenseCreate — missing here for the same reason as in test 18.
+    expenseSubcategory: 'Electricity',
+    description: 'Reload persistence expense',
     amount: 777, paymentStatus: 'Paid', paidDate: `${month}-20`,
   });
-  expect(res.status()).toBe(200);
+  expect(res.status(), JSON.stringify(await res.json())).toBe(200);
   const id = (await res.json()).record.ExpenseID as string;
 
   await page.goto(`/admin/finance/expenses?month=${month}`);
@@ -461,10 +527,13 @@ test('20 the reset removes demo writes and restores the seed', async ({ page }) 
   const property = await firstSeededProperty(page);
   const res = await postJson(page, '/api/expenses', {
     operationId: randomUUID(), date: `${month}-21`, propertyId: property,
-    expenseCategory: 'Variable Operating', description: 'Reset marker expense',
+    expenseCategory: 'Variable Operating',
+    // Required by ExpenseCreate — missing here for the same reason as in tests 18 and 19.
+    expenseSubcategory: 'Electricity',
+    description: 'Reset marker expense',
     amount: 999, paymentStatus: 'Paid', paidDate: `${month}-21`,
   });
-  expect(res.status()).toBe(200);
+  expect(res.status(), JSON.stringify(await res.json())).toBe(200);
   const marker = (await res.json()).record.ExpenseID as string;
   await page.goto(`/admin/finance/expenses?month=${month}`);
   await expect(page.locator('tbody')).toContainText(marker);
@@ -483,7 +552,7 @@ test('20 the reset removes demo writes and restores the seed', async ({ page }) 
  *  the expense drawer; operations from the reservation drawer. */
 async function firstSeededProperty(page: Page): Promise<string> {
   const admin = { url: `/admin/finance/expenses?month=${month}`, button: '+ New Expense' };
-  const ops = { url: `/admin/operations/reservations?month=${month}`, button: '+ New Reservation' };
+  const ops = { url: `/admin/operations/reservations?month=${month}`, button: '+ New Booking' };
   for (const { url, button } of [admin, ops]) {
     await page.goto(url);
     if (!(await page.getByRole('button', { name: button }).count())) continue;
