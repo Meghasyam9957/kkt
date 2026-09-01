@@ -81,6 +81,7 @@ async function WorkspaceLoader({ rows, scope, params }: {
       date={board.data.date}
       isOperationalDay={board.data.isOperationalDay}
       periodLabel={formatMonthLong(filters.month)}
+      month={filters.month}
       checkInFields={checkInFields()}
       checkOutFields={checkOutFields()}
       detail={requested ? (

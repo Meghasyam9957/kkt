@@ -450,6 +450,70 @@ test('a booking opens at its own address, and Back closes it', async ({ page }) 
   await expect(page.locator('.sv-drawer')).toHaveCount(0);
 });
 
+/* ------------------------------------------------------------------ *
+ * UI-5 — the availability calendar
+ * ------------------------------------------------------------------ */
+
+test('the calendar shows units against days, and opens a booking from a bar', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/calendar');
+  await page.waitForSelector('.sv-caltable');
+
+  const units = await page.locator('.sv-caltable tbody tr').count();
+  expect(units).toBeGreaterThan(0);
+  const bar = page.locator('a.sv-calbar').first();
+  await expect(bar).toBeVisible();
+  const label = (await bar.getAttribute('aria-label'))!;
+  const reference = label.match(/BK-\d{4}-\d{4}/)![0];
+
+  await bar.click();
+
+  // The SAME panel the Bookings workspace opens, carrying the SAME booking. A calendar
+  // that imported the drawer but handed it nothing would say "not found" here.
+  const drawer = page.locator('.sv-drawer');
+  await expect(drawer).toBeVisible();
+  await expect(drawer).toContainText(reference);
+  await expect(drawer).not.toContainText('No booking');
+  await expect(page).toHaveURL(new RegExp(`booking=${reference}`));
+
+  // No money on an operations surface, in the grid or the panel.
+  await expect(page.locator('main')).not.toContainText('\u20b9');
+  expect(await page.content()).not.toMatch(/grossValue|expectedPayout|actualPayout/);
+});
+
+test('the calendar steps to a month with no bookings instead of snapping back', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  // A month past the trading year. The register clamps to months carrying revenue, and a
+  // calendar that did the same could never be used to look ahead — which is what it is for.
+  await page.goto('/admin/operations/calendar?month=2027-09');
+  await page.waitForSelector('.sv-caltable');
+
+  await expect(page.locator('.sv-calnav__month')).toContainText('September 2027');
+  await expect(page.locator('.sv-caltable__day')).toHaveCount(30);
+  await expect(page.locator('a.sv-calbar')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Back to this month/ })).toBeVisible();
+});
+
+test('a free day on the calendar leads to bookings for that unit', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  await page.goto('/admin/operations/calendar?month=2027-09');
+  await page.waitForSelector('.sv-caltable');
+
+  const free = page.locator('a.sv-calfree').first();
+  await expect(free).toHaveAttribute('aria-label', /is available on .+open bookings for this unit/);
+  await free.click();
+  await expect(page).toHaveURL(/\/admin\/operations\/reservations\?month=2027-09&property=HYD-/);
+});
+
+test('an investor is refused the calendar exactly as they are refused the register', async ({ page }) => {
+  await signInAs(page, 'Investor Demo A');
+  await page.goto('/admin/operations/calendar');
+  await expect(page.locator('h1')).toContainText('Not available');
+  await expect(page.locator('.sv-caltable')).toHaveCount(0);
+  // No booking reference reaches the response at all.
+  expect(await page.content()).not.toMatch(/BK-20\d{2}-\d{4}/);
+});
+
 test('an unknown booking reference says so instead of showing an empty panel', async ({ page }) => {
   await signInAs(page, 'Demo Operations Manager');
   await page.goto('/admin/operations/reservations?booking=BK-9999-9999');
@@ -662,5 +726,31 @@ for (const width of [375, 390, 768, 1024, 1440] as const) {
     const overflow = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `Today must not scroll sideways at ${width}px`).toBeLessThanOrEqual(0);
+  });
+
+  test(`the calendar does not scroll sideways at ${width}px`, async ({ page }) => {
+    /*
+     * The widest screen in the product: a month of columns against every unit. It
+     * overflowed the PAGE at 1024 until the shared table scroller was made a containing
+     * block — `.sv-visually-hidden` is absolutely positioned, so inside a scroller with
+     * no positioned ancestor it escaped the clipping entirely.
+     */
+    await page.setViewportSize({ width, height: 900 });
+    await signInAs(page, 'Demo Operations Manager');
+    await page.goto('/admin/operations/calendar');
+    // Below 900px the day view replaces the grid rather than squeezing it.
+    await page.waitForSelector(width >= 900 ? '.sv-caltable' : '.sv-calday__strip');
+
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `the calendar must not scroll sideways at ${width}px`).toBeLessThanOrEqual(0);
+
+    if (width < 900) {
+      // One thumb: the day pips and the row actions are real targets.
+      const pip = page.locator('.sv-calday__pip').first();
+      const box = await pip.boundingBox();
+      expect(box!.width, 'day pips are tappable').toBeGreaterThanOrEqual(44);
+      expect(box!.height, 'day pips are tappable').toBeGreaterThanOrEqual(44);
+    }
   });
 }

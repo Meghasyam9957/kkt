@@ -203,7 +203,7 @@ describe('rendered columns · reservations', () => {
       createElement(BookingsWorkspace, {
         rows: operationalReservationRows(rows),
         units: [], scope: 'month' as const, date: '2027-01-19',
-        isOperationalDay: true, periodLabel: 'Jan 2027',
+        isOperationalDay: true, periodLabel: 'Jan 2027', month: '2027-01',
         checkInFields: [], checkOutFields: [],
       }));
     const text = container.textContent ?? '';

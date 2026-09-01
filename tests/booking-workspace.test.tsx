@@ -88,7 +88,7 @@ async function workspace(over: Partial<Parameters<typeof BookingsWorkspace>[0]> 
   const rows = operationalReservationRows(await bookings());
   return renderUi(createElement(BookingsWorkspace, {
     rows, units: UNITS, scope: 'month' as const,
-    date: '2027-01-19', isOperationalDay: true, periodLabel: 'Jan 2027',
+    date: '2027-01-19', isOperationalDay: true, periodLabel: 'Jan 2027', month: '2027-01',
     checkInFields: FIELDS, checkOutFields: FIELDS,
     ...over,
   }));
@@ -668,7 +668,7 @@ describe('bookings workspace . the detail panel', () => {
     const rows = operationalReservationRows(await bookings());
     const { container } = renderUi(createElement(BookingsWorkspace, {
       rows, units: UNITS, scope: 'in-progress' as const,
-      date: '2027-01-19', isOperationalDay: true, periodLabel: 'Jan 2027',
+      date: '2027-01-19', isOperationalDay: true, periodLabel: 'Jan 2027', month: '2027-01',
       checkInFields: FIELDS, checkOutFields: FIELDS,
     }), 'scope=in-progress&platform=Airbnb');
 

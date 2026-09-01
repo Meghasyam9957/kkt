@@ -94,7 +94,7 @@ function renderEverySurface(status: BookingStatus): Array<{ where: string; tone:
 
   const workspace = renderUi(createElement(BookingsWorkspace, {
     rows: [opsRow({ bookingStatus: status })], units: UNITS, scope: 'month' as const,
-    date: '2027-02-19', isOperationalDay: true, periodLabel: 'Feb 2027',
+    date: '2027-02-19', isOperationalDay: true, periodLabel: 'Feb 2027', month: '2027-02',
     checkInFields: FIELDS, checkOutFields: FIELDS,
   }));
   out.push({ where: 'workspace', tone: toneOfPill(workspace.container, status) });

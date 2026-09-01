@@ -13,6 +13,7 @@
  * optimistic state, and an authoritative re-read after the server confirms. Nothing here
  * invents a booking state.
  */
+import Link from 'next/link';
 import { Card, CardHeader, CardBody, StatusPill, EmptyState, type Tone } from '@/components/ui/primitives';
 import { RowActionButton } from '@/components/mutations/actions';
 import { markCleanFields, checkInFields, checkOutFields } from '@/lib/server/api/form-fields';
@@ -58,6 +59,13 @@ export function TodayBoard({ board }: { board: OperationsBoardView }) {
     <>
       {/* ---------- 1 · Which day ---------- */}
       <TodayDateControl date={board.date} operationalDate={board.operationalDate} />
+
+      {/* The month around this day, for placing what comes next. */}
+      <p className="sv-daylink">
+        <Link href={`/admin/operations/calendar?month=${board.date.slice(0, 7)}&date=${board.date}`}>
+          See the whole month&rsquo;s availability
+        </Link>
+      </p>
 
       {!board.isOperationalDay ? (
         <p className="sv-daynote" role="status">

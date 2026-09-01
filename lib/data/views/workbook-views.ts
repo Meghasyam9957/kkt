@@ -17,10 +17,27 @@ import {
   computeMonthlySeries, computeByProperty, computeByPlatform, computeInvestorWaterfall,
   computeInvestorAllocations, monthPeriod, expectedPayout, bookingNights, grossBookingValue,
   revenueNet, expenseTotal, capexLineTotal, pendingReceivables, pendingPayables, fyMonthKeysFor,
-  activeUnitCount,
+  activeUnitCount, spansDay, stayCoversDay,
 } from '@/lib/server/analytics/kpi';
+
+/** Booking status -> what the calendar paints. Everything else is simply occupied. */
+const CALENDAR_STATE: Readonly<Record<string, CalendarDayState>> = {
+  'Confirmed': 'booked',
+  'Checked In': 'checked-in',
+  'Checked Out': 'checked-out',
+};
+
+/**
+ * Manual master statuses that mean the unit is not taking stays.
+ *
+ * From PROPERTY_STATUS, whose contract note reads "Manual base status (Available /
+ * Blocked / Maintenance)". It is UNDATED — there is no from/to anywhere in the workbook —
+ * so it labels the unit and never paints a day.
+ */
+const OUT_OF_SERVICE_STATUSES: readonly string[] = ['Blocked', 'Maintenance'];
 import {
   serialToIso, monthKeyOf, monthKeyToSerial, isoToSerial, edate, resolveBoardDate,
+  resolveMonthKey, shiftMonthKey, daysOfMonth, weekdayOf,
 } from '@/lib/shared/dates';
 import {
   forecastOccupancy, forecastRevenue, forecastCashFlow, forecastVsActual, usableHistory,
@@ -37,6 +54,7 @@ import type {
   DashboardView, ReportFilters, KpiValue, ReservationRow, LedgerRow, CapexRow, CashFlowRow,
   PnlView, PnlLine, SettingsView, InvestorPreviewView, OperationsToday, TrendPoint,
   PropertyBoardRow, UnitStatus, OperationsBoardView, UrgentItem, UrgentSeverity, BookingDetailRow,
+  CalendarView, CalendarUnitRow, CalendarCell, CalendarStay, CalendarDayState,
   ArrivalRow, CleaningRow, MaintenanceRow, StockRow, GuestRequestRow, InvestorRegisterRow, ForecastView,
 } from '@/lib/data/providers/types';
 
@@ -406,9 +424,11 @@ export class WorkbookViews {
     const today = isoToSerial(this.ops.today);
     const occupied = new Set<string>();
     for (const b of this.workbook.reservations) {
+      // "In the house right now" is a NARROWER question than "a stay that happened", so
+      // this keeps its own status set. The interval is the shared one — including the
+      // blank-date guard this site used to omit.
       if (b.BookingStatus !== 'Checked In' && b.BookingStatus !== 'Checked Out') continue;
-      if (b.CheckInDate === null || b.CheckOutDate === null) continue;
-      if (b.CheckInDate <= today && today < b.CheckOutDate) occupied.add(b.PropertyID);
+      if (spansDay(b.CheckInDate, b.CheckOutDate, today)) occupied.add(b.PropertyID);
     }
     return occupied.size;
   }
@@ -461,9 +481,9 @@ export class WorkbookViews {
       const urgentTicket = this.openMaintenanceTickets().find(
         (t) => t.propertyId === row.propertyId && (t.priority === 'Critical' || t.priority === 'High'));
       const stay = this.workbook.reservations.find((b) =>
-        b.PropertyID === row.propertyId && b.CheckInDate !== null && b.CheckOutDate !== null
-        && b.CheckInDate <= today && today < b.CheckOutDate
-        && (b.BookingStatus === 'Checked In' || b.BookingStatus === 'Checked Out'));
+        b.PropertyID === row.propertyId
+        && (b.BookingStatus === 'Checked In' || b.BookingStatus === 'Checked Out')
+        && spansDay(b.CheckInDate, b.CheckOutDate, today));
       const cleaning = this.ops.housekeeping.find(
         (t) => t.propertyId === row.propertyId && openCleaning.includes(t.status));
 
@@ -746,10 +766,7 @@ export class WorkbookViews {
     const selected = isoToSerial(resolveBoardDate(filters.date, this.ops.today));
     const inProgress = filters.scope === 'in-progress';
 
-    const covers = (b: ReservationRecord): boolean =>
-      b.CheckInDate !== null && b.CheckOutDate !== null
-      && b.CheckInDate <= selected && selected < b.CheckOutDate
-      && OCCUPANCY_STATUSES.includes(b.BookingStatus as (typeof OCCUPANCY_STATUSES)[number]);
+    const covers = (b: ReservationRecord): boolean => stayCoversDay(b, selected);
 
     const arrivesInMonth = (b: ReservationRecord): boolean =>
       b.CheckInDate !== null && b.CheckInDate >= period.start && b.CheckInDate < period.end;
@@ -826,6 +843,108 @@ export class WorkbookViews {
       damageReport: text(booking.DamageReport),
       maintenanceRequired: flag(booking.MaintenanceRequired),
       notes: text(booking.Notes),
+    };
+  }
+
+  /**
+   * THE AVAILABILITY CALENDAR — which unit is free, on which day.
+   *
+   * Every cell is derived from `stayCoversDay`, the one half-open interval the occupancy
+   * engine uses: arrival day counts, departure day does not. Nothing is stored, nothing
+   * is a second source of truth, and a cancellation occupies nothing because
+   * OCCUPANCY_STATUSES excludes it — so the unit reads FREE on those dates, which is the
+   * answer somebody placing a booking needs.
+   *
+   * The month is resolved WITHOUT `resolveMonth`. That helper clamps to months carrying
+   * revenue, which is right for a P&L and wrong here: looking at a month with no bookings
+   * yet is the entire reason to open a calendar.
+   */
+  calendar(filters: ReportFilters): CalendarView {
+    const month = resolveMonthKey(filters.month, this.ops.today.slice(0, 7));
+    const days = daysOfMonth(month);
+    const serials = days.map((d) => isoToSerial(d));
+    const selectedDate = resolveBoardDate(filters.date, this.ops.today);
+
+    const property = filters.propertyId ?? null;
+    const platform = filters.platform ?? null;
+
+    const units = this.workbook.properties
+      .filter((p) => p.PropertyID !== '')
+      .filter((p) => !property || p.PropertyID === property)
+      .map<CalendarUnitRow>((master) => {
+        const bookings = this.workbook.reservations
+          .filter((b) => b.PropertyID === master.PropertyID)
+          .filter((b) => !platform || b.Platform === platform);
+
+        const cells = serials.map<CalendarCell>((serial, i) => {
+          const holding = bookings.find((b) => stayCoversDay(b, serial));
+          return {
+            date: days[i]!,
+            state: holding ? CALENDAR_STATE[holding.BookingStatus] ?? 'booked' : 'available',
+            bookingId: holding?.BookingID ?? null,
+          };
+        });
+
+        /*
+         * Bars, built by walking the cells rather than the bookings: the run drawn is
+         * exactly the run painted, so a bar can never claim a day the grid shows free.
+         * A stay reaching outside the month is clipped here and says so.
+         */
+        const stays: CalendarStay[] = [];
+        for (let i = 0; i < cells.length; i += 1) {
+          const id = cells[i]!.bookingId;
+          if (id === null || (i > 0 && cells[i - 1]!.bookingId === id)) continue;
+          let end = i;
+          while (end + 1 < cells.length && cells[end + 1]!.bookingId === id) end += 1;
+
+          const booking = bookings.find((b) => b.BookingID === id)!;
+          const checkIn = booking.CheckInDate === null ? null : serialToIso(booking.CheckInDate);
+          const checkOut = booking.CheckOutDate === null ? null : serialToIso(booking.CheckOutDate);
+          stays.push({
+            bookingId: id,
+            guestDisplayName: minimizeGuestName(booking.GuestName),
+            platform: booking.Platform,
+            bookingStatus: booking.BookingStatus,
+            checkIn,
+            checkOut,
+            nights: bookingNights(booking),
+            fromDate: cells[i]!.date,
+            toDate: cells[end]!.date,
+            span: end - i + 1,
+            continuesBefore: booking.CheckInDate !== null && booking.CheckInDate < serials[0]!,
+            /*
+             * The departure day is NOT occupied, so a stay continues past the window only
+             * when it still holds the day after the last column. Comparing the checkout
+             * date to the last column instead marks a stay departing on the 1st of next
+             * month as clipped, when in truth it ends inside this one.
+             */
+            continuesAfter: booking.CheckOutDate !== null
+              && booking.CheckOutDate > serials[serials.length - 1]! + 1,
+          });
+          i = end;
+        }
+
+        return {
+          propertyId: master.PropertyID,
+          unitName: master.Unit,
+          propertyStatus: master.PropertyStatus,
+          outOfService: OUT_OF_SERVICE_STATUSES.includes(master.PropertyStatus),
+          cells,
+          stays,
+        };
+      });
+
+    return {
+      month,
+      previousMonth: shiftMonthKey(month, -1),
+      nextMonth: shiftMonthKey(month, 1),
+      days,
+      weekdays: days.map((d) => weekdayOf(d)),
+      units,
+      operationalDate: this.ops.today,
+      operationalMonth: this.ops.today.slice(0, 7) === month,
+      selectedDate,
+      selectedInMonth: selectedDate.slice(0, 7) === month,
     };
   }
 

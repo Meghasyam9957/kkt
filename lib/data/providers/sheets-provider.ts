@@ -29,6 +29,7 @@ import type {
   ReservationRow, LedgerRow, CapexRow, CashFlowRow, PnlView, SettingsView, InvestorPreviewView,
   ForecastView,
   BookingDetailRow,
+  CalendarView,
 } from './types';
 
 /** The workbook is one cache entry; the views slice it. One read serves every screen. */
@@ -176,6 +177,11 @@ export class GoogleSheetsDashboardDataProvider implements DashboardDataProvider 
   async getBookingDetail(bookingId: string): Promise<Envelope<BookingDetailRow | null>> {
     const { views, result } = await this.views();
     return this.wrap(views.bookingDetail(bookingId), result, views.resolveMonth(''));
+  }
+
+  async getCalendar(filters: ReportFilters): Promise<Envelope<CalendarView>> {
+    const { views, result } = await this.views();
+    return this.wrap(views.calendar(filters), result, views.resolveMonth(filters.month));
   }
 
   async getRevenue(filters: ReportFilters): Promise<Envelope<LedgerRow[]>> {

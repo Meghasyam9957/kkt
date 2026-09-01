@@ -328,6 +328,86 @@ export interface BookingDetailRow extends ReservationRow {
   notes: string | null;
 }
 
+/* ------------------------------------------------------------------ *
+ * Availability calendar — occupancy per unit, per day
+ * ------------------------------------------------------------------ */
+
+/**
+ * What a unit is doing on one day.
+ *
+ * There is no `cancelled` and no `blocked` here, and both absences are deliberate:
+ *
+ *   - a cancellation and a no-show are excluded from OCCUPANCY_STATUSES, so they occupy
+ *     nothing. The honest answer for their dates is that the unit is FREE, which is what
+ *     a front office needs to know when placing a booking.
+ *   - the workbook has no dated block of any kind. `PropertyStatus` is a manual,
+ *     UNDATED flag on the property master (the contract says so in as many words), so it
+ *     describes the unit, not a span of days. It is carried on the row instead.
+ */
+export type CalendarDayState = 'available' | 'booked' | 'checked-in' | 'checked-out';
+
+export interface CalendarCell {
+  date: string;
+  state: CalendarDayState;
+  /** The booking occupying this day, when one does. */
+  bookingId: string | null;
+}
+
+/** A contiguous run of days one booking holds INSIDE the month being shown. */
+export interface CalendarStay {
+  bookingId: string;
+  /** Given name + last initial, minimised upstream exactly as every list shows it. */
+  guestDisplayName: string;
+  platform: string;
+  bookingStatus: string;
+  /** The whole stay, which may reach outside the window. */
+  checkIn: string | null;
+  checkOut: string | null;
+  nights: number;
+  /** The visible run: first and last day inside the window, inclusive. */
+  fromDate: string;
+  toDate: string;
+  /** How many of the month's columns the bar spans. */
+  span: number;
+  /** True when the stay begins before, or ends after, the month on screen. */
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+}
+
+export interface CalendarUnitRow {
+  propertyId: string;
+  /** The Unit name from the property master, never invented. */
+  unitName: string;
+  /**
+   * The master's own manual status. UNDATED by construction, so it labels the unit and
+   * never paints a day — a standing "Blocked" flag must not erase a real booking.
+   */
+  propertyStatus: string;
+  /** True when that standing status means the unit is not taking stays. */
+  outOfService: boolean;
+  cells: CalendarCell[];
+  stays: CalendarStay[];
+}
+
+export interface CalendarView {
+  /** 'YYYY-MM'. Not clamped to months carrying revenue — see resolveMonthKey. */
+  month: string;
+  previousMonth: string;
+  nextMonth: string;
+  /** Every ISO day in the month, in order. */
+  days: string[];
+  /** 0 = Sunday .. 6 = Saturday, parallel to `days`. */
+  weekdays: number[];
+  units: CalendarUnitRow[];
+  /** The source's own operational day, and whether it falls inside this month. */
+  operationalDate: string;
+  operationalMonth: boolean;
+  /** The day the reader has selected — what the mobile view shows. */
+  selectedDate: string;
+  /** True when `selectedDate` is inside the month being shown. */
+  selectedInMonth: boolean;
+}
+
 export interface CapexRow {
   id: string;
   date: string | null;
@@ -425,6 +505,12 @@ export interface DashboardDataProvider {
    * pasted URL for a stay that started in another period.
    */
   getBookingDetail(bookingId: string): Promise<Envelope<BookingDetailRow | null>>;
+  /**
+   * Per-unit, per-day occupancy for one month. Derived from the SAME reservations and the
+   * SAME half-open interval every other occupancy figure uses; it holds no state of its
+   * own and carries no financial field.
+   */
+  getCalendar(filters: ReportFilters): Promise<Envelope<CalendarView>>;
   getRevenue(filters: ReportFilters): Promise<Envelope<LedgerRow[]>>;
   getExpenses(filters: ReportFilters): Promise<Envelope<LedgerRow[]>>;
   getCapex(filters: ReportFilters): Promise<Envelope<CapexRow[]>>;

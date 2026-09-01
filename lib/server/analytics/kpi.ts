@@ -56,6 +56,35 @@ const isCancelledStatus = (status: string): boolean =>
   (CANCELLED_STATUSES as readonly string[]).includes(status);
 
 /**
+ * Does a stay span this day? THE half-open interval, in one place.
+ *
+ * Arrival day counts, departure day does not — so a same-day turnover is one unit-night,
+ * not two, and back-to-back stays never both claim the changeover date. This is the same
+ * bound `occupiedNights` applies across a period; it was open-coded in four places, one
+ * of which had drifted by omitting the blank-date guard below.
+ *
+ * A blank date arrives as serial 0, not null, so `> 0` is load-bearing: without it an
+ * unfinished booking occupies every day since the epoch.
+ */
+export function spansDay(checkIn: Serial | null, checkOut: Serial | null, day: Serial): boolean {
+  if (checkIn === null || checkOut === null) return false;
+  if (checkIn <= 0 || checkOut <= 0) return false;
+  return checkIn <= day && day < checkOut;
+}
+
+/**
+ * Does a REAL stay cover this day? The interval above, plus the domain's own definition
+ * of a stay that happened (`OCCUPANCY_STATUSES`).
+ *
+ * A cancellation and a no-show are excluded by that set, so they occupy nothing — which
+ * is the answer a calendar has to give: the unit is free.
+ */
+export function stayCoversDay(booking: ReservationRecord, day: Serial): boolean {
+  return isOccupancyStatus(booking.BookingStatus)
+    && spansDay(booking.CheckInDate, booking.CheckOutDate, day);
+}
+
+/**
  * V1: `=ARRAYFORMULA(IF(LEN(id)=0,,N(Gross)-N(Discount)-N(Tax)-N(PlatformFee)-N(OtherDeduction)))`
  * (05_REVENUE `NetRevenue`). Computed from raw inputs rather than read from the calc
  * column, so a row entered seconds ago is counted before the workbook has recalculated.

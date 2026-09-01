@@ -631,7 +631,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Tables ---- */
 
-.sv-table-scroller { overflow-x: auto; }
+/* `position: relative` is load-bearing, not decoration. `.sv-visually-hidden` is
+   absolutely positioned, so inside a scroller with no positioned ancestor it resolves
+   against the initial containing block — escaping the scroller's clipping and widening
+   the PAGE by however far its static position sits. That is the same trap the hidden
+   TABLE rule above was written for; this contains the whole class of it, for every
+   table in the product rather than one more special case. */
+.sv-table-scroller { overflow-x: auto; position: relative; }
 .sv-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
 .sv-table th, .sv-table td {
   /* Comfortable density (§13): ~44px rows by default; ledgers opt into compact. */
@@ -1726,4 +1732,170 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-bkdetail__closed {
   font-size: var(--t-small); color: var(--text-muted);
   padding: var(--s-3); background: var(--surface-sunken); border-radius: var(--r-2);
+}
+
+/* ================================================================== *
+ * AVAILABILITY CALENDAR (UI-5)
+ *
+ * Two presentations of one data set. Exactly one is in the accessibility tree at any
+ * width: the other is display:none, which also takes it out of the tab order.
+ * ================================================================== */
+
+/* ---- The month control ---- */
+.sv-calnav {
+  display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap;
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+.sv-calnav__step { flex: none; }
+.sv-calnav__icon--back { transform: rotate(180deg); }
+.sv-calnav__current { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.sv-calnav__label {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+.sv-calnav__month { font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600; }
+.sv-calnav__reset { flex: none; }
+@media (max-width: 560px) {
+  .sv-calnav__step-text { display: none; }
+  .sv-calnav__current { order: -1; flex-basis: 100%; }
+}
+
+/* ---- Desktop: the month grid ---- */
+.sv-calgrid { display: none; }
+.sv-caltable { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.sv-caltable__corner,
+.sv-caltable__unit {
+  width: 11rem; min-width: 11rem; text-align: left; vertical-align: middle;
+  padding: var(--s-2) var(--s-3);
+  border-right: 1px solid var(--line-strong);
+  background: var(--surface-card);
+  position: sticky; left: 0; z-index: 1;
+}
+.sv-caltable__corner {
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; color: var(--text-muted); font-weight: 600;
+}
+.sv-caltable__unitname { display: block; font-size: var(--t-small); font-weight: 600; }
+.sv-caltable__unitid { display: block; font-size: var(--text-label); color: var(--text-muted); }
+.sv-caltable__oos {
+  display: inline-block; margin-top: 2px;
+  font-size: var(--text-label); letter-spacing: var(--tracking-label);
+  text-transform: uppercase; font-weight: 600;
+  color: var(--warn-fg); background: var(--warn-bg);
+  padding: 1px 5px; border-radius: var(--r-1);
+}
+
+.sv-caltable__day { width: 1.75rem; min-width: 1.75rem; padding: 0; border-bottom: 1px solid var(--line); }
+.sv-caltable__daybtn {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 100%; padding: var(--s-2) 0;
+  background: none; border: none; font: inherit; color: var(--text-muted); cursor: pointer;
+}
+.sv-caltable__daybtn:hover { background: var(--surface-sunken); color: var(--text-primary); }
+.sv-caltable__daybtn:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.sv-caltable__dow { font-size: var(--text-label); }
+.sv-caltable__dom { font-size: var(--t-small); font-variant-numeric: tabular-nums; }
+.sv-caltable__day--today .sv-caltable__daybtn { color: var(--text-brand); font-weight: 700; }
+.sv-caltable__day--selected { background: var(--surface-sunken); }
+.sv-caltable__day--selected .sv-caltable__daybtn { color: var(--text-primary); font-weight: 700; }
+
+.sv-caltable__cell { height: 2.5rem; padding: 2px; border-bottom: 1px solid var(--line); }
+.sv-caltable__cell--selected { background: var(--surface-sunken); }
+.sv-caltable tbody tr:last-child .sv-caltable__cell { border-bottom: none; }
+
+/* A free day: a full-height target, quiet until it is wanted. */
+.sv-calfree { display: block; height: 100%; border-radius: var(--r-1); }
+.sv-calfree:hover { background: var(--good-bg); box-shadow: inset 0 0 0 1px var(--good-fg); }
+.sv-calfree:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+
+/* A booking bar. Status is carried by a WORD wherever it fits and by the accessible
+   name always; the left edge additionally differs in STYLE, not only in hue, so the
+   states stay distinguishable without colour vision. */
+.sv-calbar {
+  display: flex; align-items: center; gap: var(--s-2);
+  height: 100%; padding: 0 var(--s-2);
+  border-radius: var(--r-1);
+  font-size: var(--text-label); color: var(--text-primary); text-decoration: none;
+  overflow: hidden; white-space: nowrap;
+  transition: filter var(--m-fast) var(--e-standard);
+}
+.sv-calbar:hover { filter: brightness(0.96); }
+.sv-calbar:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.sv-calbar__guest { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.sv-calbar__status { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+
+.sv-calbar--confirmed   { background: var(--info-bg);    border-left: 4px solid var(--info-fg); }
+.sv-calbar--checked-in  { background: var(--good-bg);    border-left: 4px double var(--good-fg); }
+.sv-calbar--checked-out { background: var(--surface-sunken); border-left: 4px dotted var(--text-muted); }
+/* A stay reaching outside the month is squared off on that side, so a clipped bar does
+   not read as one that starts or ends here. */
+.sv-calbar--from-before { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-style: solid; border-left-color: var(--text-muted); }
+.sv-calbar--into-after { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+
+@media (prefers-reduced-motion: reduce) { .sv-calbar { transition: none; } }
+
+/* ---- Mobile: a day strip, then that day's units ---- */
+.sv-calday { display: block; }
+.sv-calday__strip {
+  display: flex; gap: var(--s-2); overflow-x: auto;
+  padding: var(--s-4) var(--s-5);
+  scroll-snap-type: x proximity;
+  border-bottom: 1px solid var(--line);
+}
+.sv-calday__pip {
+  flex: none; scroll-snap-align: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  min-width: 44px; min-height: 44px;
+  background: none; border: 1px solid transparent; border-radius: var(--r-2);
+  font: inherit; color: var(--text-muted); cursor: pointer;
+}
+.sv-calday__pip:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.sv-calday__dow { font-size: var(--text-label); }
+.sv-calday__dom { font-size: var(--t-small); font-variant-numeric: tabular-nums; }
+.sv-calday__pip--today { color: var(--text-brand); font-weight: 700; }
+.sv-calday__pip--selected {
+  background: var(--surface-sunken); border-color: var(--line-strong);
+  color: var(--text-primary); font-weight: 700;
+}
+.sv-calday__heading {
+  padding: var(--s-3) var(--s-5) 0;
+  font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600;
+}
+
+.sv-callist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sv-calrow {
+  display: grid; gap: var(--s-2) var(--s-4);
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'unit state' 'action action';
+  align-items: center;
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+.sv-calrow:last-child { border-bottom: none; }
+.sv-calrow__unit { grid-area: unit; min-width: 0; }
+.sv-calrow__state { grid-area: state; }
+.sv-calrow__action { grid-area: action; }
+/* One thumb, full width — the same rule every operational row follows. */
+.sv-calrow__action .sv-btn { width: 100%; justify-content: center; }
+.sv-calrow__name { font-size: var(--t-body); font-weight: 600; color: var(--text-primary); }
+.sv-calrow__meta { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; }
+
+/* ---- The switch. Below 900px a 31-column grid is a rumour of a calendar. ---- */
+@media (min-width: 900px) {
+  .sv-calgrid { display: block; }
+  .sv-calday { display: none; }
+}
+
+/* ---- Entry points ---- */
+.sv-bktools__calendar,
+.sv-daylink a {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  font-size: var(--t-small); color: var(--text-brand);
+}
+.sv-bktools__calendar:focus-visible,
+.sv-daylink a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.sv-daylink { margin: calc(-1 * var(--s-2)) 0 var(--s-4); }
+@media (pointer: coarse) {
+  .sv-bktools__calendar, .sv-daylink a { min-height: 44px; }
 }

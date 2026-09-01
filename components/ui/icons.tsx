@@ -97,6 +97,7 @@ export const NAV_ICONS: Readonly<Record<string, IconName>> = {
   Portfolio: 'pnl',
   Properties: 'property',
   Reservations: 'reservation',
+  Availability: 'calendar',
   'Booking Ledger': 'reservation',
   Today: 'today',
   Bookings: 'reservation',

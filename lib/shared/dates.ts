@@ -140,3 +140,50 @@ export function resolveBoardDate(input: string | null | undefined, fallbackIso: 
 export function shiftIsoDay(iso: string, offset: number): string {
   return serialToIso(isoToSerial(iso) + offset);
 }
+
+/**
+ * A reporting month a URL may ask for, or the fallback.
+ *
+ * The sibling of `resolveBoardDate`, and untrusted for the same reasons: the value comes
+ * from a query string and may be malformed or impossible ("2027-13"). Round-tripping
+ * through the month arithmetic rejects both.
+ *
+ * Deliberately NOT clamped to months that carry revenue. `WorkbookViews.resolveMonth`
+ * does clamp, which is right for a P&L — there is nothing to report on an empty month —
+ * and wrong for a calendar, where looking at a month with no bookings yet is the entire
+ * point of looking.
+ */
+export function resolveMonthKey(input: string | null | undefined, fallback: string): string {
+  if (typeof input !== 'string') return fallback;
+  const trimmed = input.trim();
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) return fallback;
+  try {
+    return monthKeyOf(monthKeyToSerial(trimmed)) === trimmed ? trimmed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** The month `offset` months from a 'YYYY-MM' key. Uses V1's own EDATE arithmetic. */
+export function shiftMonthKey(monthKey: string, offset: number): string {
+  return monthKeyOf(edate(monthKeyToSerial(monthKey), offset));
+}
+
+/** Every ISO day in a 'YYYY-MM', in order. */
+export function daysOfMonth(monthKey: string): string[] {
+  const start = monthKeyToSerial(monthKey);
+  const count = daysInMonth(start);
+  return Array.from({ length: count }, (_, i) => serialToIso(start + i));
+}
+
+/**
+ * 0 = Sunday .. 6 = Saturday.
+ *
+ * Taken from this module's own serial conversion rather than from `serial % 7`: the
+ * modulo is off by one against the sheet epoch, and a calendar whose weekday headers are
+ * one column out is wrong in a way nobody notices until they place a weekend booking.
+ * UTC, so the answer does not change with the reader's timezone.
+ */
+export function weekdayOf(iso: string): number {
+  return serialToDate(isoToSerial(iso)).getUTCDay();
+}

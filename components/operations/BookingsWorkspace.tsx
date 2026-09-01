@@ -28,6 +28,7 @@ import {
   Card, CardHeader, CardBody, StatusPill, EmptyState, Button, Chip,
 } from '@/components/ui/primitives';
 import { DataTable, type Column, type SortState } from '@/components/ui/DataTable';
+import { Icon } from '@/components/ui/icons';
 import { RowActionButton } from '@/components/mutations/actions';
 import type { FieldSpec } from '@/components/mutations/MutationForm';
 import { formatDate, formatDateShort } from '@/lib/shared/format';
@@ -55,6 +56,8 @@ export interface BookingsWorkspaceProps {
   isOperationalDay: boolean;
   /** The reporting month, for the month scope's heading. */
   periodLabel: string;
+  /** 'YYYY-MM' — so the calendar link opens on the month the reader is looking at. */
+  month: string;
   /** Field specs built on the server from the V1 contract — never assembled here. */
   checkInFields: FieldSpec[];
   checkOutFields: FieldSpec[];
@@ -87,7 +90,7 @@ function restingLabel(status: string): string {
 }
 
 export function BookingsWorkspace({
-  rows, units, scope, date, isOperationalDay, periodLabel,
+  rows, units, scope, date, isOperationalDay, periodLabel, month,
   checkInFields, checkOutFields, detail,
 }: BookingsWorkspaceProps) {
   const router = useRouter();
@@ -277,6 +280,12 @@ export function BookingsWorkspace({
             Staying {stayingWhen}
           </Chip>
           {pending ? <span className="sv-muted" role="status">Loading…</span> : null}
+
+          {/* The same bookings, seen as a grid. One calendar, one entry per surface. */}
+          <Link className="sv-bktools__calendar" href={`/admin/operations/calendar?month=${month}`}>
+            <Icon name="calendar" size={16} />
+            View availability
+          </Link>
         </div>
 
         {/* ---- narrowing what is already here ---- */}
