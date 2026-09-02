@@ -34,6 +34,7 @@ import { SupabaseAuthProvider } from '@/lib/server/auth/session';
 import { DemoAuthProvider } from '@/lib/server/auth/demo-identities';
 import { getDataProvider, getReadCache } from '@/lib/data/providers';
 import { resolveTenantDataSource } from '@/lib/server/tenant/data-source';
+import type { TenantId } from '@/lib/server/tenant/context';
 import { ALL_FEATURES_OFF } from '@/lib/server/ai/guardrails';
 import { DiscardingAiUsageSink, InMemoryAiUsageSink, type AiUsageSink } from '@/lib/server/ai/provider';
 import { resolveAiProvider } from '@/lib/server/ai/dispatch';
@@ -76,6 +77,29 @@ export function getServiceAudit(): AuditLogger {
   return auditSlot.read()!;
 }
 
+/**
+ * ONE SET OF REPOSITORIES PER TENANT, resolved on the write.
+ *
+ * The write path used to be `repos: createRepositories(sheetsClient)` — a single client
+ * built at router construction, from the environment, cached in a process slot for the
+ * life of the process. Every tenant's writes went through it. The router is still built
+ * once (it holds the operation ledger and the id sequences, which must be process-wide),
+ * but the WORKBOOK is now resolved per write from the tenant registry, so a router shared
+ * by two tenants no longer means a workbook shared by two tenants.
+ *
+ * `resolveTenantDataSource` caches the binding, so this is a map lookup on the warm path
+ * rather than a control-plane round trip per write. It refuses an unregistered or
+ * suspended tenant, and that refusal is what reaches the caller — a write with nowhere
+ * legitimate to go does not fall back to somewhere illegitimate.
+ *
+ * Exported so it can be tested directly. Composed into `MutationDependencies` below, this
+ * is otherwise reachable only through a fully-built router, and a seam no test can reach
+ * is a seam a regression can walk through.
+ */
+export async function tenantRepositories(tenantId: TenantId) {
+  return createRepositories((await resolveTenantDataSource(tenantId)).client);
+}
+
 export function getApiRouter(): ApiRouter {
   const existing = routerSlot.read();
   if (existing) return existing;
@@ -103,22 +127,7 @@ export function getApiRouter(): ApiRouter {
     : new DemoAuthProvider(resolved);
 
   const deps: MutationDependencies = {
-    /*
-     * ONE SET OF REPOSITORIES PER TENANT, resolved on the write.
-     *
-     * This was `repos: createRepositories(sheetsClient)` — a single client built here,
-     * at router construction, from the environment, and cached in a process slot for the
-     * life of the process. Every tenant's writes went through it. The router is still
-     * built once (it holds the operation ledger and the id sequences, which must be
-     * process-wide), but the WORKBOOK is now resolved per write from the tenant registry,
-     * so a router shared by two tenants no longer means a workbook shared by two tenants.
-     *
-     * `resolveTenantDataSource` caches the binding, so this is a map lookup on the warm
-     * path rather than a control-plane round trip per write.
-     */
-    reposFor: async (tenantId) => createRepositories(
-      (await resolveTenantDataSource(tenantId)).client,
-    ),
+    reposFor: tenantRepositories,
     store: operationStore,
     allocator: new IdAllocator(sequences, audit),
     audit,

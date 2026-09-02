@@ -15,7 +15,7 @@ import { ApiRouter } from '@/lib/server/api/router';
 import { API_ROUTES } from '@/lib/server/api/routes';
 import { registerMutationHandlers } from '@/lib/server/api/mutation-services';
 import type { MutationDependencies } from '@/lib/server/api/mutations';
-import { InMemoryAuthProvider } from '@/lib/server/auth/session';
+import { InMemoryAuthProvider, type TestUser } from '@/lib/server/auth/session';
 import { AuditLogger, InMemoryAuditSink } from '@/lib/server/audit/logger';
 import { IdAllocator, InMemorySequenceStore } from '@/lib/server/ids/allocator';
 import { InMemoryOperationStore } from '@/lib/server/ops/operation-store';
@@ -43,6 +43,15 @@ export interface WriteHarness {
   reposFor(tenantId: TenantId): Repositories;
   request(userKey: keyof typeof USERS | null, method: string, path: string, body?: unknown):
     Promise<{ status: number; body: any }>;
+  /**
+   * The same request, addressed by TOKEN rather than by a key of the shared USERS map.
+   *
+   * Needed because every user in USERS belongs to TENANT_A: proving that one tenant
+   * cannot reach another requires a principal in the other, and inventing one is the
+   * point of the case rather than a detail of it.
+   */
+  requestAs(token: string | null, method: string, path: string, body?: unknown):
+    Promise<{ status: number; body: any }>;
 }
 
 export interface WriteHarnessOptions {
@@ -54,6 +63,8 @@ export interface WriteHarnessOptions {
    * Tenant B's records" is an observable event rather than an assertion about intent.
    */
   tenants?: readonly TenantId[];
+  /** Principals this harness authenticates. Defaults to the shared single-tenant USERS. */
+  users?: readonly TestUser[];
 }
 
 export function createWriteHarness(
@@ -96,7 +107,7 @@ export function createWriteHarness(
     ...overrides,
   };
   const router = new ApiRouter({
-    authProvider: new InMemoryAuthProvider(Object.values(USERS)),
+    authProvider: new InMemoryAuthProvider([...(options.users ?? Object.values(USERS))]),
     audit: auditService,
   });
   registerMutationHandlers(router, API_ROUTES, deps);
@@ -113,10 +124,20 @@ export function createWriteHarness(
     clientFor: (tenantId) => requireTenantWorkbook(clients, tenantId),
     reposFor: (tenantId) => requireTenantWorkbook(repositories, tenantId),
     async request(userKey, method, requestPath, body) {
+      return this.requestAs(userKey ? USERS[userKey]!.token : null, method, requestPath, body);
+    },
+    async requestAs(token, method, requestPath, body) {
       const headers: Record<string, string> = {};
-      if (userKey) headers.authorization = `Bearer ${USERS[userKey]!.token}`;
+      if (token) headers.authorization = `Bearer ${token}`;
+      /*
+       * Split the query off the path, as the transport layer does. Without this a test
+       * cannot present a query string at all — and "a caller cannot steer selection from
+       * the query string" is unprovable if the query string never reaches the router.
+       */
+      const [path, search = ''] = requestPath.split('?');
+      const query = Object.fromEntries(new URLSearchParams(search));
       const response = await router.dispatch({
-        method, path: requestPath, headers, body, query: {}, requestId: `req-${randomUUID().slice(0, 8)}`,
+        method, path: path!, headers, body, query, requestId: `req-${randomUUID().slice(0, 8)}`,
       });
       return { status: response.status, body: response.body as any };
     },
