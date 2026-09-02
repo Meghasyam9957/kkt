@@ -100,7 +100,26 @@ export function buildDemoWorkbookGrids(): Record<string, Row[]> {
       // Fictional inputs consistent with the dataset's own stock figure.
       OpeningStock: i.currentStock, Purchased: 0, Used: 0,
       MinStock: i.minStock,
+      // Laid from M-INV-1. The dataset always carried both; the grid dropped them, so
+      // every demonstration item read back with no category and no vendor.
+      Category: i.category, Vendor: i.vendor,
     }, { CurrentStock: i.currentStock })),
+  ];
+
+  /*
+   * 16_ASSETS. The register existed in the contract and in the domain types with no grid
+   * behind it, so nothing could read it — which is why M-INV-1 found an asset register the
+   * product had never surfaced.
+   */
+  grids[SHEET_META.ASSETS.name] = [
+    ...HEADER_FILLER,
+    ...dataset.registers.assets.map((a) => layRow('ASSETS', {
+      AssetID: a.assetId, PropertyID: a.propertyId, Category: a.category, Asset: a.asset,
+      PurchaseDate: a.purchaseDate, PurchaseCost: a.purchaseCost, Vendor: a.vendor,
+      WarrantyExpiry: a.warrantyExpiry, UsefulLifeMonths: a.usefulLifeMonths,
+      Condition: a.condition, CurrentStatus: a.currentStatus,
+      MaintenanceHistory: a.maintenanceHistory, DisposalDate: a.disposalDate, Notes: a.notes,
+    }, { WarrantyStatus: a.warrantyStatus })),
   ];
 
   return grids;

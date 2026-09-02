@@ -17,7 +17,7 @@ import type {
   PropertyRecord, ReservationRecord, RevenueRecord, ExpenseRecord, CapexRecord,
   CashFlowRecord, InvestorRecord, DistributionRecord, BusinessSettings, WorkbookData,
   BookingStatus, MaintenanceTicket, HousekeepingTask, InventoryItem, OperationsData,
-  RentRecord,
+  RentRecord, AssetRecord,
 } from '@/lib/shared/domain';
 import { BRAND } from '@/lib/shared/brand';
 
@@ -718,6 +718,16 @@ export class InventoryRepository extends SheetRepository<InventoryItem> {
       // rather than recomputing opening + purchased - used, so the two can never disagree.
       currentStock: r.num('CurrentStock'),
       minStock: r.num('MinStock'),
+      category: r.text('Category'),
+      /*
+       * The cumulative inputs BEHIND that formula. Read, never recomputed into a balance:
+       * they exist so a movement can add to the running total the sheet already holds,
+       * instead of asking a person to retype a number nothing had shown them.
+       */
+      openingStock: r.num('OpeningStock'),
+      purchased: r.num('Purchased'),
+      used: r.num('Used'),
+      vendor: r.text('Vendor'),
     };
   }
 }
@@ -771,7 +781,34 @@ export interface Repositories {
   housekeeping: HousekeepingRepository;
   maintenance: MaintenanceRepository;
   inventory: InventoryRepository;
+  assets: AssetsRepository;
   rent: RentRepository;
+}
+
+export class AssetsRepository extends SheetRepository<AssetRecord> {
+  constructor(client: GoogleSheetsClient) { super(client, 'ASSETS'); }
+  protected get idKey() { return 'AssetID'; }
+  protected map(row: Row): AssetRecord {
+    const r = reader('ASSETS', row);
+    return {
+      assetId: r.text('AssetID'),
+      propertyId: r.text('PropertyID'),
+      category: r.text('Category'),
+      asset: r.text('Asset'),
+      purchaseDate: r.text('PurchaseDate'),
+      purchaseCost: r.num('PurchaseCost'),
+      vendor: r.text('Vendor'),
+      warrantyExpiry: r.text('WarrantyExpiry') || null,
+      usefulLifeMonths: r.num('UsefulLifeMonths'),
+      condition: (r.text('Condition') || 'Good') as AssetRecord['condition'],
+      currentStatus: (r.text('CurrentStatus') || 'In Use') as AssetRecord['currentStatus'],
+      // A workbook formula, read as computed — exactly like CurrentStock on 15_INVENTORY.
+      warrantyStatus: r.text('WarrantyStatus'),
+      maintenanceHistory: r.text('MaintenanceHistory'),
+      disposalDate: r.text('DisposalDate') || null,
+      notes: r.text('Notes'),
+    };
+  }
 }
 
 export function createRepositories(client: GoogleSheetsClient): Repositories {
@@ -789,6 +826,7 @@ export function createRepositories(client: GoogleSheetsClient): Repositories {
     housekeeping: new HousekeepingRepository(client),
     maintenance: new MaintenanceRepository(client),
     inventory: new InventoryRepository(client),
+    assets: new AssetsRepository(client),
     rent: new RentRepository(client),
   };
 }

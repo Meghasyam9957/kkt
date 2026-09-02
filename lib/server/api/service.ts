@@ -39,6 +39,14 @@ import { OPEN_HOUSEKEEPING_STATUSES, OPEN_MAINTENANCE_STATUSES } from '@/lib/sha
 import { MUTATION_DEFINITIONS } from './mutation-services';
 import { executeMutation } from './mutations';
 import { randomUUID } from 'node:crypto';
+import { registerInventoryHandlers } from './inventory-handlers';
+import {
+  InventoryService, type WorkbookStockRow, type WorkbookAssetRow, type SheetWriteContext as InvWrite,
+} from '@/lib/server/inventory/service';
+import {
+  InMemoryInventoryRepository, type InventoryRepository,
+} from '@/lib/server/inventory/repository';
+import { SupabaseInventoryRepository } from '@/lib/server/inventory/supabase-repository';
 import type { MutationDependencies } from './mutations';
 import { resolveEnvironment, type ResolvedEnvironment } from '@/lib/server/environment/config';
 import { createRepositories } from '@/lib/server/sheets/repositories';
@@ -264,8 +272,128 @@ export function getApiRouter(): ApiRouter {
     writesPermitted: resolved.writesPermitted,
   }));
 
+  /*
+   * INVENTORY (M-INV-1). The workbook owns stock; this owns why it moved.
+   *
+   * `stockRows` and `assetRows` read the CALLER'S OWN workbook through the tenant-resolved
+   * repositories, so a foreign ItemID or AssetID is a miss rather than a refusal — the same
+   * property every other domain here relies on. `writeTotals` runs the EXISTING
+   * `inventory.update` mutation rather than touching a sheets client, so the sheet write
+   * keeps its contract check (which refuses CurrentStock and ReorderStatus), its
+   * read-after-write verification and its audit record.
+   */
+  const invRepo = inventoryRepository(supabaseClient);
+  registerInventoryHandlers(built, async () => ({
+    service: new InventoryService({
+      repo: invRepo,
+      hr: new HrService({
+        repo: hrRepo,
+        propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+        isPeriodClosed: async (tenant, isoDate) => {
+          const period = await financeRepo.getPeriod(tenant, periodStartOf(isoDate));
+          return period?.status === 'CLOSED';
+        },
+        audit,
+      }),
+      stockRows: async (tenant) => inventoryStockRows(await deps.reposFor(tenant.tenantId)),
+      assetRows: async (tenant) => inventoryAssetRows(await deps.reposFor(tenant.tenantId)),
+      propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+      // Finance's vendor register, tenant-scoped. Not a second supplier master.
+      vendor: (tenant, vendorId) => financeRepo.getVendor(tenant, vendorId),
+      writeTotals: (write, itemRef, totals) =>
+        writeTotalsThroughPipeline(deps, write, itemRef, totals),
+      audit,
+    }),
+    store: operationStore,
+    audit,
+    writesPermitted: resolved.writesPermitted,
+  }));
+
   routerSlot.write(built);
   return built;
+}
+
+/** The caller's own stock rows, shaped for the inventory service. Never a copy of the sheet. */
+async function inventoryStockRows(
+  repos: Awaited<ReturnType<MutationDependencies['reposFor']>>,
+): Promise<readonly WorkbookStockRow[]> {
+  return (await repos.inventory.readAll()).map((item) => ({
+    itemRef: item.itemId,
+    propertyId: item.propertyId || null,
+    category: item.category,
+    name: item.item,
+    unit: item.unit,
+    openingStock: item.openingStock,
+    purchased: item.purchased,
+    used: item.used,
+    // The workbook's own formula result, carried through untouched.
+    currentStock: item.currentStock,
+    minStock: item.minStock,
+    vendorName: item.vendor || null,
+  }));
+}
+
+async function inventoryAssetRows(
+  repos: Awaited<ReturnType<MutationDependencies['reposFor']>>,
+): Promise<readonly WorkbookAssetRow[]> {
+  return (await repos.assets.readAll()).map((asset) => ({
+    assetRef: asset.assetId,
+    propertyId: asset.propertyId || null,
+    category: asset.category,
+    name: asset.asset,
+    purchaseDate: asset.purchaseDate || null,
+    /*
+     * The workbook records a rupee figure; this domain speaks paise, like every other money
+     * value in the product. It is what was PAID — never a book value, because no
+     * depreciation is modelled anywhere here.
+     */
+    purchaseCostMinor: Number.isFinite(asset.purchaseCost)
+      ? Math.round(asset.purchaseCost * 100) : null,
+    vendorName: asset.vendor || null,
+    warrantyExpiry: asset.warrantyExpiry,
+    warrantyLabel: asset.warrantyStatus,
+    condition: asset.condition,
+    status: asset.currentStatus,
+    disposalDate: asset.disposalDate,
+  }));
+}
+
+/**
+ * Writes an item's cumulative totals through the EXISTING verified mutation pipeline.
+ *
+ * Reusing `inventory.update` rather than reaching for a sheets client means this write keeps
+ * the contract check that refuses `CurrentStock` and `ReorderStatus` (both calculated), the
+ * read-after-write verification, the operation ledger and the audit record. A second write
+ * path into 15_INVENTORY is exactly what the mutation layer exists to prevent.
+ *
+ * The totals passed in are ABSOLUTE, because that is what the sheet holds and what the
+ * mutation sets. The service computed them by adding the movement to what the sheet said —
+ * which is the whole reason `Purchased` and `Used` are now read.
+ */
+async function writeTotalsThroughPipeline(
+  deps: MutationDependencies,
+  write: InvWrite,
+  itemRef: string,
+  totals: { purchased?: number; used?: number },
+): Promise<void> {
+  const definition = MUTATION_DEFINITIONS['inventory.update'];
+  if (!definition) throw new Error('No mutation definition for inventory.update');
+
+  await executeMutation(definition, {
+    // The REAL caller: the pipeline authenticates, audits and allocates from this context,
+    // and a fabricated actor would put a stock write in the trail under somebody who did
+    // not make it.
+    auth: write.auth,
+    request: {
+      method: 'PATCH',
+      path: `/api/inventory/${itemRef}`,
+      headers: {},
+      query: {},
+      params: { id: itemRef },
+      body: { operationId: randomUUID(), ...totals },
+      requestId: write.requestId,
+    },
+  }, deps);
 }
 
 /**
@@ -308,6 +436,52 @@ export function operationsServiceFor(): OperationsPeopleService {
       throw new Error(
         'A rendered page does not assign work. Assignment goes through '
         + 'POST /api/operations/assignments, which carries the capability check, the '
+        + 'idempotency envelope and the audit record.',
+      );
+    },
+    audit,
+  });
+}
+
+/**
+ * THE inventory service, for a server component.
+ *
+ * Same shape as `operationsServiceFor`: it shares the process-slotted overlay repository with
+ * the API handlers, so a movement recorded through a route is visible on the very next
+ * render, and `writeTotals` refuses rather than being wired. A rendered page does not move
+ * stock, and a server component holding a live workbook writer is a write path nobody
+ * declared.
+ */
+export function inventoryServiceFor(): InventoryService {
+  const resolved = resolveEnvironment();
+  const supabaseClient = resolved.supabase ? makeSupabaseClient(resolved) : null;
+  const financeRepo = financeRepository(supabaseClient);
+  const hrRepo = hrRepository(supabaseClient);
+  const audit = getServiceAudit();
+
+  return new InventoryService({
+    repo: inventoryRepository(supabaseClient),
+    hr: new HrService({
+      repo: hrRepo,
+      propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+      isPeriodClosed: async (tenant, isoDate) => {
+        const period = await financeRepo.getPeriod(tenant, periodStartOf(isoDate));
+        return period?.status === 'CLOSED';
+      },
+      audit,
+    }),
+    stockRows: async (tenant) => inventoryStockRows(
+      createRepositories((await resolveTenantDataSource(tenant.tenantId)).client),
+    ),
+    assetRows: async (tenant) => inventoryAssetRows(
+      createRepositories((await resolveTenantDataSource(tenant.tenantId)).client),
+    ),
+    propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+    vendor: (tenant, vendorId) => financeRepo.getVendor(tenant, vendorId),
+    writeTotals: async () => {
+      throw new Error(
+        'A rendered page does not move stock. Movements go through '
+        + 'POST /api/inventory/movements, which carries the capability check, the '
         + 'idempotency envelope and the audit record.',
       );
     },
@@ -417,6 +591,16 @@ const aiSinkSlot = processSlot<AiUsageSink>('api.service.aiSink');
 const financeRepoSlot = processSlot<FinanceRepository>('api.service.financeRepo');
 const hrRepoSlot = processSlot<HrRepository>('api.service.hrRepo');
 const opsRepoSlot = processSlot<OperationsRepository>('api.service.opsRepo');
+const invRepoSlot = processSlot<InventoryRepository>('api.service.invRepo');
+
+function inventoryRepository(supabaseClient: unknown): InventoryRepository {
+  if (supabaseClient) return new SupabaseInventoryRepository(supabaseClient);
+  const existing = invRepoSlot.read();
+  if (existing) return existing;
+  const created = new InMemoryInventoryRepository();
+  invRepoSlot.write(created);
+  return created;
+}
 
 function operationsRepository(supabaseClient: unknown): OperationsRepository {
   if (supabaseClient) return new SupabaseOperationsRepository(supabaseClient);

@@ -422,10 +422,14 @@ export function buildDemoOps(today = DEMO_TODAY_ISO): DemoOpsData {
         inspectionStatus: 'Passed', cleaner: 'Sunita', bookingId: '' },
     ],
     inventory: [
-      { itemId: 'ITM-002', propertyId: 'COMMON', item: 'Bath towels', unit: 'pcs', currentStock: 4, minStock: 12 },
-      { itemId: 'ITM-005', propertyId: 'COMMON', item: 'Shampoo sachets', unit: 'pcs', currentStock: 18, minStock: 30 },
-      { itemId: 'ITM-001', propertyId: 'COMMON', item: 'Toilet rolls', unit: 'rolls', currentStock: 46, minStock: 24 },
-      { itemId: 'ITM-004', propertyId: 'COMMON', item: 'Detergent', unit: 'kg', currentStock: 9, minStock: 5 },
+      { itemId: 'ITM-002', propertyId: 'COMMON', item: 'Bath towels', unit: 'pcs', currentStock: 4, minStock: 12,
+        category: 'Linen', openingStock: 4, purchased: 0, used: 0, vendor: '' },
+      { itemId: 'ITM-005', propertyId: 'COMMON', item: 'Shampoo sachets', unit: 'pcs', currentStock: 18, minStock: 30,
+        category: 'Toiletries', openingStock: 18, purchased: 0, used: 0, vendor: '' },
+      { itemId: 'ITM-001', propertyId: 'COMMON', item: 'Toilet rolls', unit: 'rolls', currentStock: 46, minStock: 24,
+        category: 'Toiletries', openingStock: 46, purchased: 0, used: 0, vendor: '' },
+      { itemId: 'ITM-004', propertyId: 'COMMON', item: 'Detergent', unit: 'kg', currentStock: 9, minStock: 5,
+        category: 'Cleaning Supplies', openingStock: 9, purchased: 0, used: 0, vendor: '' },
     ],
     guestRequests: [
       { requestId: 'GR-2027-0007', propertyId: 'HYD-501', summary: 'Late checkout requested (2 PM)',

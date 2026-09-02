@@ -99,6 +99,14 @@ export interface RouteDefinition {
    * no definition of its own — and it is plainly not non-mutating.
    */
   writesOps?: true;
+  /*
+   * A sixth, for inventory, and it exists for the same reason the fifth does. A stock
+   * movement writes BOTH the tenant's workbook — through the existing `inventory.update`
+   * mutation, which owns the sheet and refuses its calculated columns — AND a Postgres
+   * overlay carrying who moved it and why. Procurement and asset links write only the
+   * overlay, and are classified the same way so one prefix rule covers the whole domain.
+   */
+  writesInventory?: true;
   summary: string;
 }
 
@@ -398,6 +406,79 @@ export const API_ROUTES: readonly RouteDefinition[] = [
     writesOps: true, action: 'operations.task.assign', entityType: 'OPS_ASSIGNMENT',
     summary: 'Assign or reassign a task to an employee — supersedes, never overwrites' },
 
+  /* ---------------- Inventory, procurement and assets (M-INV-1) ----------------
+   *
+   * `GET /api/inventory` above is unchanged and still returns the operations board's stock
+   * rows. These are the richer domain surfaces: stock with its own status vocabulary and
+   * whether the vendor name is understood, the movement context the workbook has no row for,
+   * and the procurement workflow that precedes a purchase.
+   */
+  { method: 'GET', path: '/api/inventory/stock', capability: 'inventory.read',
+    action: 'inventory.stock.read',
+    summary: 'Stock with status and vendor linkage, from the workbook' },
+  { method: 'GET', path: '/api/inventory/movements', capability: 'inventory.read',
+    action: 'inventory.movements.read',
+    summary: 'Why stock moved — who, which task, what reason' },
+  { method: 'GET', path: '/api/inventory/reconciliation', capability: 'inventory.read',
+    action: 'inventory.reconciliation.read',
+    summary: 'Where recorded movement context and the workbook totals disagree' },
+  { method: 'POST', path: '/api/inventory/movements', capability: 'inventory.movement',
+    writesInventory: true, action: 'inventory.movement.record', entityType: 'INV_MOVEMENT',
+    summary: 'Record a movement: sheet first, then why it happened' },
+
+  { method: 'GET', path: '/api/inventory/requests', capability: 'procurement.read',
+    action: 'inventory.requests.read', summary: 'Purchase requests' },
+  { method: 'POST', path: '/api/inventory/requests', capability: 'procurement.request',
+    writesInventory: true, action: 'inventory.request.create', entityType: 'INV_REQUEST',
+    summary: 'Ask for stock' },
+  /*
+   * ONE ROUTE, TWO BARS. Submitting and cancelling a request are part of asking, so this
+   * route carries `procurement.request` — the capability an operations supervisor already
+   * holds. APPROVING or REJECTING is a different power and is checked in the handler against
+   * `procurement.approve`, which is listed in FINANCIAL_CAPABILITIES: the invariant that
+   * OPERATIONS holds no financial capability is what keeps whoever asked from being whoever
+   * approves.
+   *
+   * Carrying the higher bar on the route instead would have meant a supervisor could not
+   * submit the request they had just written, which is not a control — it is a dead end.
+   */
+  { method: 'POST', path: '/api/inventory/requests/:id/decision',
+    capability: 'procurement.request', writesInventory: true,
+    action: 'inventory.request.decide', entityType: 'INV_REQUEST',
+    summary: 'Submit, approve, reject or cancel a request' },
+
+  { method: 'GET', path: '/api/inventory/purchase-orders', capability: 'procurement.read',
+    action: 'inventory.purchaseOrders.read',
+    summary: 'Purchase orders — prices only for a caller entitled to them' },
+  { method: 'POST', path: '/api/inventory/purchase-orders',
+    capability: 'procurement.approve', writesInventory: true,
+    action: 'inventory.po.create', entityType: 'INV_PURCHASE_ORDER',
+    summary: 'Raise a purchase order against a vendor finance already knows' },
+  { method: 'POST', path: '/api/inventory/purchase-orders/:id/status',
+    capability: 'procurement.approve', writesInventory: true,
+    action: 'inventory.po.transition', entityType: 'INV_PURCHASE_ORDER',
+    summary: 'Move an order along its lifecycle' },
+  /*
+   * Receiving is operational — a supervisor signs for what arrived — and it is the ONLY
+   * event that increases stock. A placed order changes nothing.
+   */
+  { method: 'POST', path: '/api/inventory/goods-receipts', capability: 'procurement.receive',
+    writesInventory: true, action: 'inventory.goodsReceipt.record',
+    entityType: 'INV_GOODS_RECEIPT',
+    summary: 'Record what actually arrived, and move the workbook by that much' },
+  { method: 'POST', path: '/api/inventory/vendor-links', capability: 'procurement.approve',
+    writesInventory: true, action: 'inventory.vendorLink.create',
+    entityType: 'INV_VENDOR_LINK',
+    summary: 'Say which finance vendor a workbook vendor name means' },
+
+  { method: 'GET', path: '/api/inventory/assets', capability: 'inventory.assets',
+    action: 'inventory.assets.read',
+    summary: 'The 16_ASSETS register, with linked maintenance tickets' },
+  { method: 'POST', path: '/api/inventory/assets/:id/tickets',
+    capability: 'inventory.assets', writesInventory: true,
+    action: 'inventory.asset.link', entityType: 'INV_ASSET_LINK',
+    summary: 'Link a maintenance ticket to an asset' },
+
   /* ---------------- Administration ---------------- */
   { method: 'GET', path: '/api/settings', capability: 'settings.read',
     action: 'settings.read', summary: 'Business rules (read-only; the workbook owns them)' },
@@ -518,11 +599,13 @@ export function assertWriteGovernance(
     const finance = route.writesFinance === true;
     const people = route.writesHr === true;
     const operations = route.writesOps === true;
+    const inventory = route.writesInventory === true;
 
-    const classifications = [mutating, exempt, finance, people, operations].filter(Boolean).length;
+    const classifications =
+      [mutating, exempt, finance, people, operations, inventory].filter(Boolean).length;
     check(classifications === 1,
       `${where} must declare exactly one of mutates:true, writesFinance:true, writesHr:true, `
-      + 'writesOps:true or nonMutating:true');
+      + 'writesOps:true, writesInventory:true or nonMutating:true');
     check(route.method !== 'DELETE',
       `${where}: no DELETE route may exist — removal is a status transition`);
     check((route.investorScoped ?? false) === false,
@@ -543,6 +626,15 @@ export function assertWriteGovernance(
       check(route.capability.startsWith('operations.'),
         `${where}: an operations-writing route demands an operations capability `
         + `(has ${route.capability})`);
+    } else if (inventory) {
+      // Same shape as the operations class: one path prefix, and a capability from the two
+      // vocabularies that own this domain.
+      check(route.path.startsWith('/api/inventory/'),
+        `${where}: an inventory-writing route lives under /api/inventory/`);
+      check(route.capability.startsWith('inventory.')
+        || route.capability.startsWith('procurement.'),
+        `${where}: an inventory-writing route demands an inventory or procurement `
+        + `capability (has ${route.capability})`);
       check(route.method === 'POST',
         `${where}: an operations write is a POST — an assignment supersedes rather than `
         + 'overwrites, so there is nothing to PATCH');

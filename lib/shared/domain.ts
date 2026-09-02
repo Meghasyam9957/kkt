@@ -359,6 +359,27 @@ export interface InventoryItem {
   unit: string;
   currentStock: number;
   minStock: number;
+  /**
+   * INV_CATEGORY — Toiletries, Cleaning Supplies, Kitchen / Pantry, Linen, Guest Amenities,
+   * Other. Read from M-INV-1 so stock can be grouped by the workbook's own vocabulary
+   * rather than a second one invented here.
+   */
+  category: string;
+  /**
+   * THE CUMULATIVE TOTALS, read from M-INV-1 onward.
+   *
+   * These were written by `inventory.update` and never read back, which is why recording a
+   * movement asked an operator to retype a running total the product had never shown them —
+   * and why getting it wrong made stock fall after a purchase with nothing to notice.
+   * Reading them is what lets the server compute the new total itself.
+   *
+   * `currentStock` above stays the workbook's formula over these. Nothing recomputes it.
+   */
+  openingStock: number;
+  purchased: number;
+  used: number;
+  /** 15_INVENTORY.Vendor — a NAME, like every other vendor cell in this workbook. */
+  vendor: string;
 }
 
 export interface GuestRequest {
@@ -431,8 +452,20 @@ export interface AssetRecord {
   vendor: string;
   warrantyExpiry: string | null;
   usefulLifeMonths: number;
-  condition: 'New' | 'Good' | 'Fair' | 'Poor' | 'Damaged';
+  /**
+   * CONDITION — the workbook's own list is New / Good / Fair / Poor / BROKEN.
+   *
+   * This union said 'Damaged', a value the sheet's validation would refuse. Nothing had ever
+   * written it, because nothing writes assets at all, so the mismatch was invisible until
+   * M-INV-1 came to read the register.
+   */
+  condition: 'New' | 'Good' | 'Fair' | 'Poor' | 'Broken';
   currentStatus: 'In Use' | 'In Storage' | 'Under Repair' | 'Disposed';
+  /** WarrantyStatus is a workbook formula. Read, never recomputed. */
+  warrantyStatus: string;
+  /** Free prose in the sheet. The ticket references live in the overlay instead. */
+  maintenanceHistory: string;
+  disposalDate: string | null;
   notes: string;
 }
 

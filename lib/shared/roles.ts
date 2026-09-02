@@ -83,6 +83,28 @@ export const CAPABILITIES = [
    * and nothing else exists on the type to leak.
    */
   'operations.staff.read', 'operations.assign',
+  /*
+   * INVENTORY, M-INV-1. `inventory.read` and `inventory.write` already existed and are
+   * unchanged — the first shows stock, the second writes the workbook's own columns.
+   *
+   * Three narrower ones join them, because "may change stock" turned out to cover three
+   * quite different powers:
+   *
+   *   inventory.movement  record WHY stock moved — a turnover consumed two towels, a sheet
+   *                       was torn. Ordinary operational work.
+   *   inventory.adjust    correct the count itself. This is the one that can make a
+   *                       discrepancy disappear, so it is deliberately NOT operational.
+   *   inventory.assets    read the asset register and link a ticket to an asset.
+   */
+  'inventory.movement', 'inventory.adjust', 'inventory.assets',
+  /*
+   * PROCUREMENT. Asking is operational; approving is not, and that split is the whole point
+   * of separating duty. `procurement.approve` is listed in FINANCIAL_CAPABILITIES below, so
+   * the invariant that OPERATIONS holds no financial capability guards it automatically — a
+   * future grant of it to an operations login fails a test written long before procurement
+   * existed.
+   */
+  'procurement.read', 'procurement.request', 'procurement.receive', 'procurement.approve',
   // Administration
   'settings.read', 'settings.write', 'users.manage', 'audit.read',
   /**
@@ -135,6 +157,8 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     'hr.read', 'hr.manage', 'hr.approve',
     'hr.compensation.read', 'hr.compensation.manage',
     'operations.staff.read', 'operations.assign',
+    'inventory.movement', 'inventory.adjust', 'inventory.assets',
+    'procurement.read', 'procurement.request', 'procurement.receive', 'procurement.approve',
     'audit.read',               // full internal READ access, per the Phase 5A role brief
     'demo.control',             // demo-only in practice; the environment gate decides
     'ai.copilot', 'ai.operations',
@@ -154,6 +178,15 @@ const GRANTS: Record<Role, readonly Capability[]> = {
      * the capability list for why the narrower pair exists.
      */
     'operations.staff.read', 'operations.assign',
+    /*
+     * Stock is operational work: a supervisor records what a turnover used, asks for more,
+     * and signs for what arrived. What they do NOT get is `inventory.adjust` — correcting a
+     * count is how a discrepancy stops being a question anybody asks — or
+     * `procurement.approve`, because whoever asks for something must not be whoever
+     * approves it.
+     */
+    'inventory.movement', 'inventory.assets',
+    'procurement.read', 'procurement.request', 'procurement.receive',
     'ai.operations',
   ],
 
@@ -196,6 +229,13 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
    * rules that already exist start guarding the new thing.
    */
   'finance.read', 'finance.write', 'finance.approve', 'finance.period.manage',
+  /*
+   * Approving a purchase commits the business to spending money, which is a finance decision
+   * whatever the thing being bought is. Listing it here means the assertions that already
+   * exist — that OPERATIONS and INVESTOR hold no financial capability — cover procurement
+   * for free, and separation of duty cannot be quietly undone by a grant.
+   */
+  'procurement.approve',
   /*
    * ONLY the compensation half of HR belongs here, and the omission is deliberate.
    *

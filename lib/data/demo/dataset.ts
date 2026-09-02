@@ -436,10 +436,14 @@ function buildDemoOperations(today: string, scenario: DemoScenario): OperationsD
 
   /* 6 · low inventory — two items below their reorder point, two comfortably above. */
   const inventory: InventoryItem[] = [
-    { itemId: 'ITM-D-002', propertyId: 'COMMON', item: 'Bath towels', unit: 'pcs', currentStock: 4, minStock: 12 },
-    { itemId: 'ITM-D-005', propertyId: 'COMMON', item: 'Shampoo sachets', unit: 'pcs', currentStock: 18, minStock: 30 },
-    { itemId: 'ITM-D-001', propertyId: 'COMMON', item: 'Toilet rolls', unit: 'rolls', currentStock: 46, minStock: 24 },
-    { itemId: 'ITM-D-004', propertyId: 'COMMON', item: 'Detergent', unit: 'kg', currentStock: 9, minStock: 5 },
+    { itemId: 'ITM-D-002', propertyId: 'COMMON', item: 'Bath towels', unit: 'pcs', currentStock: 4, minStock: 12,
+        category: 'Linen', openingStock: 4, purchased: 0, used: 0, vendor: 'Demo Linen Co' },
+    { itemId: 'ITM-D-005', propertyId: 'COMMON', item: 'Shampoo sachets', unit: 'pcs', currentStock: 18, minStock: 30,
+        category: 'Toiletries', openingStock: 18, purchased: 0, used: 0, vendor: 'Demo Supplies' },
+    { itemId: 'ITM-D-001', propertyId: 'COMMON', item: 'Toilet rolls', unit: 'rolls', currentStock: 46, minStock: 24,
+        category: 'Toiletries', openingStock: 46, purchased: 0, used: 0, vendor: 'Demo Supplies' },
+    { itemId: 'ITM-D-004', propertyId: 'COMMON', item: 'Detergent', unit: 'kg', currentStock: 9, minStock: 5,
+        category: 'Cleaning Supplies', openingStock: 9, purchased: 0, used: 0, vendor: 'Demo Supplies' },
   ];
 
   const guestRequests: GuestRequest[] = [
@@ -463,6 +467,7 @@ function buildDemoOperations(today: string, scenario: DemoScenario): OperationsD
     inventory.push({
       itemId: 'ITM-D-007', propertyId: 'COMMON', item: 'Bed linen sets', unit: 'sets',
       currentStock: 2, minStock: 10,
+      category: 'Linen', openingStock: 2, purchased: 0, used: 0, vendor: '',
     });
   }
 
@@ -525,19 +530,23 @@ function buildDemoRegisters(today: string, todaySerial: number, rentDueDays: num
     { assetId: 'AST-D-0001', propertyId: 'HYD-501', category: 'Appliance', asset: 'Split AC 1.5T',
       purchaseDate: serialToIso(DEMO_FY_START + 12), purchaseCost: 42_000, vendor: 'Demo Appliances',
       warrantyExpiry: serialToIso(edate(DEMO_FY_START, 24)), usefulLifeMonths: 84,
-      condition: 'Good', currentStatus: 'In Use', notes: DEMO_NOTE },
+      condition: 'Good', currentStatus: 'In Use',
+      warrantyStatus: '', maintenanceHistory: '', disposalDate: null, notes: DEMO_NOTE },
     { assetId: 'AST-D-0002', propertyId: 'HYD-601', category: 'Appliance', asset: 'Split AC 1.5T',
       purchaseDate: serialToIso(DEMO_FY_START + 40), purchaseCost: 42_000, vendor: 'Demo Appliances',
       warrantyExpiry: serialToIso(edate(DEMO_FY_START, 3)), usefulLifeMonths: 84,
-      condition: 'Fair', currentStatus: 'Under Repair', notes: `${DEMO_NOTE} Linked to MNT-D-0011.` },
+      condition: 'Fair', currentStatus: 'Under Repair',
+      warrantyStatus: '', maintenanceHistory: '', disposalDate: null, notes: `${DEMO_NOTE} Linked to MNT-D-0011.` },
     { assetId: 'AST-D-0003', propertyId: 'HYD-602', category: 'Electronics', asset: '43" Smart TV',
       purchaseDate: serialToIso(edate(DEMO_FY_START, 5) + 8), purchaseCost: 29_000, vendor: 'Demo Electronics',
       warrantyExpiry: serialToIso(edate(DEMO_FY_START, 29)), usefulLifeMonths: 60,
-      condition: 'New', currentStatus: 'In Use', notes: DEMO_NOTE },
+      condition: 'New', currentStatus: 'In Use',
+      warrantyStatus: '', maintenanceHistory: '', disposalDate: null, notes: DEMO_NOTE },
     { assetId: 'AST-D-0004', propertyId: 'COMMON', category: 'Security', asset: 'Smart lock set (4)',
       purchaseDate: serialToIso(edate(DEMO_FY_START, 3) + 5), purchaseCost: 36_000, vendor: 'Demo Security',
       warrantyExpiry: serialToIso(edate(DEMO_FY_START, 15)), usefulLifeMonths: 48,
-      condition: 'Good', currentStatus: 'In Use', notes: DEMO_NOTE },
+      condition: 'Good', currentStatus: 'In Use',
+      warrantyStatus: '', maintenanceHistory: '', disposalDate: null, notes: DEMO_NOTE },
   ];
 
   const compliance: ComplianceRecord[] = [
