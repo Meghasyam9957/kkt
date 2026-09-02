@@ -175,6 +175,32 @@ export class SupabaseOperationsRepository implements OperationsRepository {
     const { tenantId } = requireTenant(tenant, 'assign');
     const stamp = new Date().toISOString();
 
+    /*
+     * SUPERSEDE FIRST, exactly as the in-memory twin does.
+     *
+     * Without this the insert below always collided with `ops_assignment_one_current` on
+     * the second assignment of a task, returned null, and the service reported
+     * ALREADY_ASSIGNED — so no task could ever be reassigned through a real database. The
+     * two twins disagreed and nothing noticed, because the recorder harness asserts the
+     * query chain a repository builds and never runs it against a schema.
+     *
+     * The previous row keeps its own dates and actor; only its supersession is written, and
+     * `superseded_by` is filled in after the replacement exists so it points at something
+     * real. Both predicates on the update, as everywhere else.
+     */
+    const superseded = await this.client
+      .from('ops_task_assignments')
+      .update({ superseded_at: stamp })
+      .eq('tenant_id', tenantId)
+      .eq('task_type', input.taskType)
+      .eq('task_ref', input.taskRef)
+      .is('superseded_at', null)
+      .select('id');
+    if (superseded.error) {
+      throw new Error(String(superseded.error.message ?? 'supersede failed'));
+    }
+    const previousIds = ((superseded.data ?? []) as { id: string }[]).map((r) => r.id);
+
     const { data, error } = await this.client
       .from('ops_task_assignments')
       // `tenant_id` LAST, so a caller-supplied one is overwritten rather than honoured.
@@ -201,6 +227,18 @@ export class SupabaseOperationsRepository implements OperationsRepository {
       if (String(error.code) === '23505') return null;
       throw new Error(String(error.message ?? 'assignment insert failed'));
     }
+
+    // Point the superseded row forward at what replaced it, now that it exists. A failure
+    // here leaves the history readable — the row is already marked superseded and the new
+    // one is current — so it is not worth failing the assignment over.
+    if (previousIds.length > 0) {
+      await this.client
+        .from('ops_task_assignments')
+        .update({ superseded_by: (data as { id: string }).id })
+        .eq('tenant_id', tenantId)
+        .in('id', previousIds);
+    }
+
     return toAssignment(data);
   }
 

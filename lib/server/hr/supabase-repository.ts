@@ -76,7 +76,13 @@ export class SupabaseHrRepository implements HrRepository {
     const { tenantId } = requireTenant(tenant, `SupabaseHrRepository.${table}`);
     const { data, error } = await this.client
       .from(table)
-      .update({ ...patch, updated_at: new Date().toISOString() })
+      // Six tables in this schema carry no `updated_at`. Stamping one unconditionally made
+      // every update to those tables fail against a real database with "column
+      // updated_at does not exist" — invisible until M-INFRA-1 ran the migrations, because
+      // the recorder harness asserts the query CHAIN and never meets a schema.
+      .update(WITHOUT_UPDATED_AT.has(table)
+        ? { ...patch }
+        : { ...patch, updated_at: new Date().toISOString() })
       // Both predicates, always. `id` alone updates another tenant's row the moment an
       // identifier leaks.
       .eq('tenant_id', tenantId)
@@ -256,7 +262,7 @@ export class SupabaseHrRepository implements HrRepository {
   async transitionAttendance(
     t: TenantContext, id: string, next: ApprovalStatus, actor: string,
   ): Promise<AttendanceRecord | null> {
-    const row = await this.updateRow(ATTENDANCE, t, id, approvalPatch(next, actor));
+    const row = await this.updateRow(ATTENDANCE, t, id, attendanceApprovalPatch(next, actor));
     return row ? toAttendance(row) : null;
   }
 
@@ -506,10 +512,45 @@ export class SupabaseHrRepository implements HrRepository {
  * Row → domain
  * ------------------------------------------------------------------ */
 
+/**
+ * Tables with no `updated_at` column.
+ *
+ * Written down here because `updateRow` has to know, and verified against the real schema
+ * by tests/infrastructure/repository-schema.test.ts so this list cannot quietly drift away
+ * from the migrations it describes.
+ */
+export const WITHOUT_UPDATED_AT: ReadonlySet<string> = new Set([
+  'hr_holidays', 'hr_leave_types', 'hr_payroll_lines',
+  'hr_salary_components', 'hr_salary_structures',
+]);
+
+/**
+ * Leave, overtime and advances keep their approval in a column literally named `status`,
+ * typed `hr_approval_status`. For those this is right.
+ */
 function approvalPatch(next: ApprovalStatus, actor: string): Record<string, unknown> {
   const now = new Date().toISOString();
   const key = next === 'APPROVED' ? { approved_by: actor, approved_at: now } : {};
   return { status: next, ...key };
+}
+
+/**
+ * Attendance is the exception, and the reason is deliberate in the schema: an attendance
+ * row has TWO independent facts. `status` is what happened that day (PRESENT, ABSENT,
+ * HALF_DAY, LEAVE, HOLIDAY, WEEKLY_OFF) and `approval` is whether a supervisor has signed
+ * it off (DRAFT, SUBMITTED, APPROVED, REJECTED). Migration 0007 separates them precisely so
+ * that payroll consumes only approved facts without the approval overwriting the fact.
+ *
+ * Writing the approval into `status` therefore does not merely misfile it — 'APPROVED' is
+ * not a value `hr_attendance_status` has, so the write is rejected outright and no
+ * attendance can ever be approved. Which is what happened until M-INFRA-1.
+ */
+function attendanceApprovalPatch(
+  next: ApprovalStatus, actor: string,
+): Record<string, unknown> {
+  const now = new Date().toISOString();
+  const key = next === 'APPROVED' ? { approved_by: actor, approved_at: now } : {};
+  return { approval: next, ...key };
 }
 
 function toNamed(row: any): Department | Designation {
