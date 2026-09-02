@@ -104,6 +104,9 @@ function harness() {
         assigneeName: t.cleaner || null,
         status: t.status,
         open: OPEN_HOUSEKEEPING_STATUSES.includes(t.status),
+        occurredOn: t.checkoutDate,
+        priority: null,
+        title: t.bookingId ? `Turnover after ${t.bookingId}` : 'Turnover',
       }));
     }
     return (await repos.maintenance.readAll()).map((t) => ({
@@ -112,6 +115,9 @@ function harness() {
       assigneeName: t.assignedTo || null,
       status: t.status,
       open: OPEN_MAINTENANCE_STATUSES.includes(t.status),
+      occurredOn: t.reportedOn,
+      priority: t.priority,
+      title: t.description || t.category || null,
     }));
   };
 
@@ -782,5 +788,405 @@ describe('operations · governance', () => {
     expect(flattened).toContain('revoke all on ops_task_assignments from authenticated, anon');
     // The rules live in TypeScript, because nothing here executes SQL.
     expect(sql).not.toMatch(/create (or replace )?function|create trigger/i);
+  });
+});
+
+
+/* ================================================================== *
+ * M-OPS-3 · RECONCILIATION, URGENCY, AND THE HISTORY BEHIND A NAME
+ * ================================================================== */
+
+/** A ticket with a chosen priority and date — the two things urgency and history turn on. */
+async function aTicketLike(
+  token: string, propertyId: string,
+  over: { priority?: string; dateReported?: string; description?: string } = {},
+) {
+  const res = await h.request(token, 'POST', '/api/maintenance', {
+    operationId: op(), propertyId, dateReported: over.dateReported ?? '2026-05-04',
+    issueCategory: 'Plumbing', description: over.description ?? 'Slow drain',
+    priority: over.priority ?? 'High',
+  });
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
+  return String(res.body.record.TicketID);
+}
+
+/** Put a name in the sheet cell without creating an assignment — a pre-MAKAM row. */
+async function nameOnSheetOnly(token: string, taskRef: string, name: string) {
+  const res = await h.request(token, 'PATCH', `/api/housekeeping/${taskRef}`, {
+    operationId: op(), cleaner: name,
+  });
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
+}
+
+const rowFor = (report: { rows: readonly { taskRef: string }[] }, taskRef: string) =>
+  report.rows.find((r) => r.taskRef === taskRef);
+
+describe('reconciliation · what the sheet and the record each say', () => {
+  it('calls an assignment we made, and echoed, MATCHED', async () => {
+    const employee = await anEmployee(HR_A.token, { fullName: 'Anita Rao' });
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    const assigned = await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+      operationId: op(), taskType: 'HOUSEKEEPING', taskRef: task, employeeId: employee.id,
+    });
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(200);
+
+    const report = await h.service.reconciliationReport(OPS_A as never);
+    expect(rowFor(report, task)?.status).toBe('MATCHED');
+    expect(rowFor(report, task)?.employee?.displayName).toBe('Anita Rao');
+  });
+
+  it('calls a hand-edited sheet cell ECHO_MISMATCH, and keeps both names', async () => {
+    const employee = await anEmployee(HR_A.token, { fullName: 'Anita Rao' });
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+      operationId: op(), taskType: 'HOUSEKEEPING', taskRef: task, employeeId: employee.id,
+    });
+
+    // A supervisor types over the cell in the customer's own spreadsheet. Nothing fails.
+    await nameOnSheetOnly(OPS_A.token, task, 'Somebody Else');
+
+    const row = rowFor(await h.service.reconciliationReport(OPS_A as never), task);
+    expect(row?.status).toBe('ECHO_MISMATCH');
+    expect(row?.sheetName, 'what the workbook now says').toBe('Somebody Else');
+    expect(row?.employee?.displayName, 'who the record still names').toBe('Anita Rao');
+    // Reported, never resolved: which of the two is right is not ours to decide.
+    expect(row?.recommendation).toBe('REPAIR_ECHO');
+  });
+
+  it('calls a lone resolvable name UNLINKED and offers to bind it', async () => {
+    await anEmployee(HR_A.token, { fullName: 'Lakshmi Narayanan', preferredName: 'Lakshmi' });
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    await nameOnSheetOnly(OPS_A.token, task, 'Lakshmi');
+
+    const row = rowFor(await h.service.reconciliationReport(OPS_A as never), task);
+    expect(row?.status).toBe('UNLINKED');
+    expect(row?.recommendation).toBe('BIND');
+    expect(row?.employee?.displayName).toBe('Lakshmi');
+  });
+
+  it('refuses to choose when two people answer to one name', async () => {
+    // Both employed well before the task, so the date cannot separate them either.
+    await anEmployee(HR_A.token, {
+      fullName: 'Ramesh Babu', preferredName: 'Ramesh', joiningDate: '2020-01-01',
+    });
+    await anEmployee(HR_A.token, {
+      fullName: 'Ramesh Gupta', preferredName: 'Ramesh', joiningDate: '2021-01-01',
+    });
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    await nameOnSheetOnly(OPS_A.token, task, 'Ramesh');
+
+    const row = rowFor(await h.service.reconciliationReport(OPS_A as never), task);
+    expect(row?.status).toBe('AMBIGUOUS');
+    // Never BIND. This is the case the whole design exists to refuse to guess at.
+    expect(row?.recommendation).toBe('REVIEW');
+    expect(row?.employee, 'nobody is chosen').toBeNull();
+    /*
+     * The candidates are named in FULL. Both go by "Ramesh" — that is what makes this
+     * ambiguous — so listing the name they share twice would present a choice with no
+     * information in it. Their codes distinguish them too, and the screen shows both.
+     */
+    expect(row?.candidates.map((c) => c.displayName).sort())
+      .toEqual(['Ramesh Babu', 'Ramesh Gupta']);
+    expect(new Set(row?.candidates.map((c) => c.employeeCode)).size).toBe(2);
+  });
+
+  it('resolves a name against the day the work happened, not against today', async () => {
+    /*
+     * THE TEST THIS WHOLE FEATURE TURNS ON.
+     *
+     * One person holds the name "Ramesh" today. The turnover is dated 2026-05-04 and he
+     * joined in 2027 — so he cannot have done it, however confidently a lookup by current
+     * name would say otherwise. Getting this wrong writes a permanent, plausible, false
+     * statement about two people into an operational record.
+     */
+    await anEmployee(HR_A.token, {
+      fullName: 'Ramesh Gupta', preferredName: 'Ramesh', joiningDate: '2027-04-01',
+    });
+    const task = await aTurnover(OPS_A.token, 'HYD-501');   // dated 2026-05-04
+    await nameOnSheetOnly(OPS_A.token, task, 'Ramesh');
+
+    const row = rowFor(await h.service.reconciliationReport(OPS_A as never), task);
+    expect(row?.status, 'he was not employed on the day').toBe('HISTORICAL');
+    expect(row?.recommendation).toBe('IGNORE_HISTORICAL');
+  });
+
+  it('calls a name nobody answers to MISSING_RELATION', async () => {
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    await nameOnSheetOnly(OPS_A.token, task, 'Nobody By That Name');
+
+    const row = rowFor(await h.service.reconciliationReport(OPS_A as never), task);
+    expect(row?.status).toBe('MISSING_RELATION');
+  });
+
+  it('treats an unassigned task with a blank cell as agreement, not as a problem', async () => {
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    const row = rowFor(await h.service.reconciliationReport(OPS_A as never), task);
+    // Both stores agree that nobody holds it. Most tasks are like this most of the time.
+    expect(row?.status).toBe('MATCHED');
+    expect(row?.recommendation).toBe('NONE');
+  });
+
+  it('counts what needs a person separately from what does not', async () => {
+    await anEmployee(HR_A.token, { fullName: 'Lakshmi N', preferredName: 'Lakshmi' });
+    const bound = await aTurnover(OPS_A.token, 'HYD-501');
+    const loose = await aTurnover(OPS_A.token, 'HYD-501');
+    await nameOnSheetOnly(OPS_A.token, loose, 'Lakshmi');
+
+    const employee = (await h.request(OPS_A.token, 'GET', '/api/hr/employees')).body;
+    void employee;
+    void bound;
+
+    const report = await h.service.reconciliationReport(OPS_A as never);
+    expect(report.summary.total).toBe(report.rows.length);
+    expect(report.summary.unlinked).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('reconciliation · one tenant cannot see another', () => {
+  it('reports only the caller’s own tasks', async () => {
+    /*
+     * Identifier sequences are tenant-scoped, so A's first turnover and B's first turnover
+     * carry the SAME reference. Asserting that B's id is absent from A's report would
+     * therefore prove nothing — it is A's id too. What must not cross is the CONTENT, so
+     * that is what is asserted: a name written only into B's workbook.
+     */
+    const theirs = await aTurnover(OPS_B.token, 'HYD-601');
+    await nameOnSheetOnly(OPS_B.token, theirs, 'Bala Of Tenant B');
+    const mine = await aTurnover(OPS_A.token, 'HYD-501');
+    await nameOnSheetOnly(OPS_A.token, mine, 'Anita Of Tenant A');
+
+    const forA = await h.service.reconciliationReport(OPS_A as never);
+    expect(forA.rows.some((r) => r.sheetName === 'Anita Of Tenant A')).toBe(true);
+    expect(forA.rows.some((r) => r.sheetName === 'Bala Of Tenant B'),
+      'B’s workbook must not reach A’s report').toBe(false);
+
+    const forB = await h.service.reconciliationReport(OPS_B as never);
+    expect(forB.rows.some((r) => r.sheetName === 'Bala Of Tenant B')).toBe(true);
+    expect(forB.rows.some((r) => r.sheetName === 'Anita Of Tenant A')).toBe(false);
+  });
+
+  it('does not resolve a name against the other tenant’s staff', async () => {
+    // Only B employs anybody called Bala. A's sheet naming "Bala" must not find them.
+    await anEmployee(HR_B.token, { fullName: 'Bala Krishnan', preferredName: 'Bala' });
+    const mine = await aTurnover(OPS_A.token, 'HYD-501');
+    await nameOnSheetOnly(OPS_A.token, mine, 'Bala');
+
+    const row = rowFor(await h.service.reconciliationReport(OPS_A as never), mine);
+    expect(row?.status, 'a name is resolved inside one tenant only').toBe('MISSING_RELATION');
+    expect(row?.employee).toBeNull();
+  });
+
+  it('serves the reconciliation route scoped to the caller', async () => {
+    const theirs = await aTurnover(OPS_B.token, 'HYD-601');
+    const res = await h.request(OPS_A.token, 'GET', '/api/operations/reconciliation');
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toContain(theirs);
+  });
+});
+
+describe('urgent work with no owner', () => {
+  it('raises open, urgent, unassigned maintenance and nothing else', async () => {
+    const critical = await aTicketLike(OPS_A.token, 'HYD-501', { priority: 'Critical' });
+    const routine = await aTicketLike(OPS_A.token, 'HYD-501', { priority: 'Low' });
+
+    const urgent = await h.service.unassignedUrgent(OPS_A as never);
+    const refs = urgent.map((u) => u.taskRef);
+    expect(refs).toContain(critical);
+    // An unassigned LOW ticket is ordinary. Alerting on it teaches people to ignore alerts.
+    expect(refs).not.toContain(routine);
+  });
+
+  it('gives the same ticket the same identity every time it is derived', async () => {
+    const critical = await aTicketLike(OPS_A.token, 'HYD-501', { priority: 'Critical' });
+
+    const first = await h.service.unassignedUrgent(OPS_A as never);
+    const second = await h.service.unassignedUrgent(OPS_A as never);
+
+    // Derived, never appended: a refresh cannot mint a second copy, and the key matches the
+    // Today board's own `mnt-<ticketId>` convention so one ticket is one thing everywhere.
+    expect(second).toEqual(first);
+    expect(first.find((u) => u.taskRef === critical)?.key).toBe(`mnt-${critical}`);
+    expect(new Set(second.map((u) => u.key)).size).toBe(second.length);
+  });
+
+  it('stops raising it the moment somebody is assigned', async () => {
+    const employee = await anEmployee(HR_A.token, { fullName: 'Ravi Technician' });
+    const critical = await aTicketLike(OPS_A.token, 'HYD-501', { priority: 'Critical' });
+    expect((await h.service.unassignedUrgent(OPS_A as never)).map((u) => u.taskRef))
+      .toContain(critical);
+
+    const res = await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+      operationId: op(), taskType: 'MAINTENANCE', taskRef: critical, employeeId: employee.id,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    // Resolved by the fact changing, not by anybody remembering to close an alert.
+    expect((await h.service.unassignedUrgent(OPS_A as never)).map((u) => u.taskRef))
+      .not.toContain(critical);
+  });
+
+  it('stops raising it when the ticket is resolved', async () => {
+    const critical = await aTicketLike(OPS_A.token, 'HYD-501', { priority: 'Critical' });
+    const res = await h.request(OPS_A.token, 'PATCH', `/api/maintenance/${critical}`, {
+      operationId: op(), status: 'Resolved', dateResolved: '2026-05-06',
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+
+    expect((await h.service.unassignedUrgent(OPS_A as never)).map((u) => u.taskRef))
+      .not.toContain(critical);
+  });
+
+  it('derives urgency per tenant, even when both hold the same reference', async () => {
+    /*
+     * The strongest available proof, and it uses the id collision rather than fighting it.
+     *
+     * Both tenants mint the same ticket reference, because sequences are tenant-scoped. A
+     * assigns theirs; B does not. If the derivation leaked across the boundary — by
+     * matching on reference alone, say — A's assignment would silence B's ticket too, and
+     * a customer would stop being told about urgent work nobody is doing.
+     */
+    const employee = await anEmployee(HR_A.token, { fullName: 'Ravi Technician' });
+    const mine = await aTicketLike(OPS_A.token, 'HYD-501', { priority: 'Critical' });
+    const theirs = await aTicketLike(OPS_B.token, 'HYD-601', { priority: 'Critical' });
+    expect(mine, 'the sequences are tenant-scoped, so the refs collide').toBe(theirs);
+
+    const assigned = await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+      operationId: op(), taskType: 'MAINTENANCE', taskRef: mine, employeeId: employee.id,
+    });
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(200);
+
+    expect((await h.service.unassignedUrgent(OPS_A as never)).map((u) => u.taskRef),
+      'A has an owner for it now').not.toContain(mine);
+    expect((await h.service.unassignedUrgent(OPS_B as never)).map((u) => u.taskRef),
+      'B still has nobody on theirs').toContain(theirs);
+  });
+
+  it('refuses a property the caller does not operate, exactly as a missing one', async () => {
+    await expect(h.service.unassignedUrgent(OPS_A as never, 'HYD-601')).rejects.toThrow();
+    await expect(h.service.unassignedUrgent(OPS_A as never, 'NOT-A-PROPERTY')).rejects.toThrow();
+  });
+
+  it('says how long the work has waited', async () => {
+    const critical = await aTicketLike(OPS_A.token, 'HYD-501', {
+      priority: 'Critical', dateReported: '2026-05-01',
+    });
+    const [item] = (await h.service.unassignedUrgent(OPS_A as never, undefined, '2026-05-06'))
+      .filter((u) => u.taskRef === critical);
+    expect(item?.ageDays).toBe(5);
+  });
+});
+
+describe('M-OPS-3 · the new surfaces keep the existing boundaries', () => {
+  it('carries no compensation or contact field into any operations payload', async () => {
+    await anEmployee(HR_A.token, {
+      fullName: 'Anita Rao', contactRef: '+91-99999-00000', email: 'anita@example.test',
+    });
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    await nameOnSheetOnly(OPS_A.token, task, 'Anita Rao');
+
+    for (const path of ['/api/operations/reconciliation', '/api/operations/urgent',
+      '/api/operations/staffing']) {
+      const res = await h.request(OPS_A.token, 'GET', path);
+      expect(res.status, path).toBe(200);
+      const body = JSON.stringify(res.body);
+      for (const forbidden of ['salary', 'gross', 'net', 'payroll', 'bank',
+        'contactRef', '99999-00000', 'anita@example.test', 'tenantId']) {
+        expect(body.toLowerCase(), `${path} must not carry ${forbidden}`)
+          .not.toContain(forbidden.toLowerCase());
+      }
+    }
+  });
+
+  it('gives the reconciliation and urgent routes the staffing capability, not a wider one', () => {
+    const byPath = new Map(API_ROUTES.map((r) => [`${r.method} ${r.path}`, r.capability]));
+    expect(byPath.get('GET /api/operations/reconciliation')).toBe('operations.staff.read');
+    expect(byPath.get('GET /api/operations/urgent')).toBe('operations.staff.read');
+    // Assignment stays the one write, behind the one capability that means it.
+    expect(byPath.get('POST /api/operations/assignments')).toBe('operations.assign');
+  });
+
+  it('keeps an investor out of every operations surface', async () => {
+    for (const path of ['/api/operations/reconciliation', '/api/operations/urgent',
+      '/api/operations/staffing', '/api/operations/assignments']) {
+      const res = await h.request(USERS.investorA.token, 'GET', path);
+      expect([401, 403], `${path} must refuse an investor`).toContain(res.status);
+    }
+  });
+
+  it('adds no second way to assign a task', () => {
+    // One assignment abstraction. A per-domain assign route would be a second place for one
+    // of the checks to be forgotten.
+    const assigning = API_ROUTES.filter((r) => r.method !== 'GET'
+      && /assign/i.test(r.path));
+    expect(assigning.map((r) => r.path)).toEqual(['/api/operations/assignments']);
+    expect(() => assertWriteGovernance(API_ROUTES, (condition, message) => {
+      if (!condition) throw new Error(message);
+    })).not.toThrow();
+  });
+
+  it('never names an employee in the audit trail for an assignment', async () => {
+    const employee = await anEmployee(HR_A.token, { fullName: 'Anita Rao' });
+    const task = await aTurnover(OPS_A.token, 'HYD-501');
+    await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+      operationId: op(), taskType: 'HOUSEKEEPING', taskRef: task, employeeId: employee.id,
+    });
+    const entries = JSON.stringify(h.wb.deps.audit ? await h.wb.auditEntries?.() ?? [] : []);
+    if (entries !== '[]') {
+      expect(entries, 'a staff-movement record is not what an audit trail is for')
+        .not.toContain('Anita Rao');
+    }
+  });
+});
+
+describe('assignment · a task whose property the workbook no longer lists', () => {
+  it('refuses rather than assigning around a property that has gone', async () => {
+    /*
+     * The belt-and-braces check, and the only situation that reaches it.
+     *
+     * A task always arrives from the caller's own workbook, so its property is normally
+     * theirs by construction. It stops being theirs when the property LEAVES the workbook
+     * while its tasks remain — a unit sold, a listing retired, a row deleted. The turnover
+     * still exists and still names somewhere this business no longer operates.
+     *
+     * Assigning it would quietly attach a person to work at a property the system cannot
+     * account for. Refusing surfaces the data problem instead, which is the whole point of
+     * a check that "cannot" fire.
+     */
+    const employee = await anEmployee(HR_A.token, { fullName: 'Anita Rao' });
+    const task = await aTurnover(OPS_A.token, 'HYD-502');
+
+    const owned = PROPERTIES[TENANT_A]!;
+    const before = [...owned];
+    // The property leaves the workbook, exactly as it would if the unit were retired.
+    owned.splice(owned.indexOf('HYD-502'), 1);
+    try {
+      const res = await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+        operationId: op(), taskType: 'HOUSEKEEPING', taskRef: task, employeeId: employee.id,
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(String(res.body.error?.code ?? res.body.code)).toBe('UNKNOWN_PROPERTY');
+    } finally {
+      owned.splice(0, owned.length, ...before);
+    }
+  });
+});
+
+describe('assignment · a supervisor cannot reach across the boundary', () => {
+  it('refuses another tenant’s employee on the caller’s own task', async () => {
+    const theirs = await anEmployee(HR_B.token, { fullName: 'Bala of B' });
+    const mine = await aTurnover(OPS_A.token, 'HYD-501');
+    const res = await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+      operationId: op(), taskType: 'HOUSEKEEPING', taskRef: mine, employeeId: theirs.id,
+    });
+    expect(res.status, 'a foreign employee is not found').toBe(404);
+  });
+
+  it('refuses the caller’s own employee on another tenant’s task', async () => {
+    const mine = await anEmployee(HR_A.token, { fullName: 'Anita Rao' });
+    const theirs = await aTurnover(OPS_B.token, 'HYD-601');
+    const res = await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
+      operationId: op(), taskType: 'HOUSEKEEPING', taskRef: theirs, employeeId: mine.id,
+    });
+    expect(res.status, 'a foreign task is not found').toBe(404);
   });
 });
