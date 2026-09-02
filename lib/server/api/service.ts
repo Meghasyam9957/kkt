@@ -269,6 +269,53 @@ export function getApiRouter(): ApiRouter {
 }
 
 /**
+ * THE operations-people service, for a server component.
+ *
+ * Pages read staffing the same way they read the workbook: in process. It shares the
+ * process-slotted assignment store with the API handlers, so an assignment made through a
+ * route is visible on the very next render.
+ *
+ * `writeAssignee` is deliberately absent-by-refusal here rather than wired: a page renders,
+ * it does not assign, and a server component holding a live workbook writer is a write path
+ * nobody declared. Assignment goes through the route, which has the capability check, the
+ * idempotency envelope and the audit record.
+ */
+export function operationsServiceFor(): OperationsPeopleService {
+  const resolved = resolveEnvironment();
+  const supabaseClient = resolved.supabase ? makeSupabaseClient(resolved) : null;
+  const financeRepo = financeRepository(supabaseClient);
+  const hrRepo = hrRepository(supabaseClient);
+  const audit = getServiceAudit();
+  const router = getApiRouter();
+  void router;
+
+  return new OperationsPeopleService({
+    hr: new HrService({
+      repo: hrRepo,
+      propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+      isPeriodClosed: async (tenant, isoDate) => {
+        const period = await financeRepo.getPeriod(tenant, periodStartOf(isoDate));
+        return period?.status === 'CLOSED';
+      },
+      audit,
+    }),
+    assignments: operationsRepository(supabaseClient),
+    tasks: async (tenant, taskType) => operationalTasks(
+      createRepositories((await resolveTenantDataSource(tenant.tenantId)).client), taskType,
+    ),
+    propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+    writeAssignee: async () => {
+      throw new Error(
+        'A rendered page does not assign work. Assignment goes through '
+        + 'POST /api/operations/assignments, which carries the capability check, the '
+        + 'idempotency envelope and the audit record.',
+      );
+    },
+    audit,
+  });
+}
+
+/**
  * The tenant's own tasks, as much of them as the assignment service needs.
  *
  * Nothing is copied into Postgres: this reads the workbook every time, so the sheet stays

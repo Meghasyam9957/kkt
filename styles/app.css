@@ -576,6 +576,17 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-state--error { background: var(--bad-bg); border-radius: var(--radius-md); }
 .sv-state--error .sv-state__title { color: var(--bad-fg); }
 
+/* An in-card note where a table would otherwise be: "nothing is outstanding", "nobody is
+   on the books yet". Deliberately NOT .sv-state, which is the centred full-block empty
+   state — this sits inline under a card header, in the muted body voice, because a
+   settled position is a reading and not an absence of one. */
+.sv-empty {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  max-width: 62ch;
+}
+
 .sv-skeleton {
   display: block; background: var(--surface-sunken);
   position: relative; overflow: hidden;

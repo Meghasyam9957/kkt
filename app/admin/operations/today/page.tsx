@@ -8,12 +8,19 @@
  * capability, and a board that shows money beside a cleaning task both leaks it and pulls
  * attention to the wrong decision.
  *
+ * Since M-OPS-2 the desk also answers "who is working": the staffing section below the
+ * board names who is on today, on what shift, and how many open tasks each person holds.
+ * It carries no pay figure — see `components/operations/TodayStaffing.tsx`.
+ *
  * Every record comes from the data provider — the same one every other screen uses — and
  * every action runs the existing verified write path, then re-reads. Nothing on this page
  * computes a booking state of its own.
  */
+import { Suspense } from 'react';
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { TodayBoard } from '@/components/operations/TodayBoard';
+import { TodayStaffing } from '@/components/operations/TodayStaffing';
+import { LoadingBlock } from '@/components/ui/primitives';
 
 export const metadata = { title: "Today — MAKAM Home Stays" };
 
@@ -28,7 +35,19 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
       filters={['property']}
       fetcher={(provider, filters) => provider.getOperations(filters)}
     >
-      {(board) => <TodayBoard board={board} />}
+      {(board) => (
+        <>
+          <TodayBoard board={board} />
+          {/*
+            * Streamed rather than awaited: staffing comes from the people domain, and the
+            * board must not wait on it. It also renders nothing at all for a viewer without
+            * `operations.staff.read`, which is why it is a component and not a prop.
+            */}
+          <Suspense fallback={<LoadingBlock rows={3} label="Loading staff" />}>
+            <TodayStaffing property={params.property} />
+          </Suspense>
+        </>
+      )}
     </ReadOnlyPage>
   );
 }
