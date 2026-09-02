@@ -20,6 +20,10 @@ import { registerMutationHandlers } from './mutation-services';
 import { registerForecastHandlers } from './forecast-service';
 import { registerAnalyticsHandlers } from './analytics-service';
 import { registerCopilotHandlers } from './copilot-service';
+import { registerFinanceHandlers } from './finance-handlers';
+import { FinanceService } from '@/lib/server/finance/service';
+import { InMemoryFinanceRepository, type FinanceRepository } from '@/lib/server/finance/repository';
+import { SupabaseFinanceRepository } from '@/lib/server/finance/supabase-repository';
 import type { MutationDependencies } from './mutations';
 import { resolveEnvironment, type ResolvedEnvironment } from '@/lib/server/environment/config';
 import { createRepositories } from '@/lib/server/sheets/repositories';
@@ -143,6 +147,29 @@ export function getApiRouter(): ApiRouter {
   registerForecastHandlers(built, getDataProvider);
   registerAnalyticsHandlers(built, getDataProvider);
   registerCopilotHandlers(built, getDataProvider, copilotRuntime);
+
+  /*
+   * FINANCE (M-DATA-1). The relational domain, in Postgres when a control plane is
+   * configured and in memory otherwise — the same asymmetry every other backend here
+   * has, so a demonstration exercises the real pipeline rather than a second one.
+   *
+   * The deps are built PER REQUEST from the caller's tenant, and the property list the
+   * service validates against comes from that tenant's own provider. That is what makes
+   * naming another customer's property indistinguishable from naming one that does not
+   * exist: the question is only ever asked of the caller's own workbook.
+   */
+  const financeRepo = financeRepository(supabaseClient);
+  registerFinanceHandlers(built, async () => ({
+    service: new FinanceService({
+      repo: financeRepo,
+      propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+      audit,
+    }),
+    store: operationStore,
+    audit,
+    writesPermitted: resolved.writesPermitted,
+  }));
+
   routerSlot.write(built);
   return built;
 }
@@ -156,6 +183,23 @@ export function getApiRouter(): ApiRouter {
  * lib/server/runtime/process-state.ts.
  */
 const aiSinkSlot = processSlot<AiUsageSink>('api.service.aiSink');
+
+/*
+ * The in-memory finance ledger, when there is no control plane, lives for the life of the
+ * PROCESS rather than the router — for the same reason the operation ledger does. `next
+ * dev` re-evaluates this module when it compiles a route it has not served, and a
+ * module-level binding would discard a demonstration's recorded payments mid-session.
+ */
+const financeRepoSlot = processSlot<FinanceRepository>('api.service.financeRepo');
+
+function financeRepository(supabaseClient: unknown): FinanceRepository {
+  if (supabaseClient) return new SupabaseFinanceRepository(supabaseClient);
+  const existing = financeRepoSlot.read();
+  if (existing) return existing;
+  const created = new InMemoryFinanceRepository();
+  financeRepoSlot.write(created);
+  return created;
+}
 
 function aiUsageSink(permitted: boolean): AiUsageSink {
   const existing = aiSinkSlot.read();

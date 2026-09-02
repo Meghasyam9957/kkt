@@ -40,6 +40,20 @@ export const CAPABILITIES = [
   'rent.write', 'cashflow.write',
   'housekeeping.write', 'maintenance.write', 'inventory.write',
   'investors.write', 'distributions.write', 'properties.write',
+  /*
+   * FINANCE (M-DATA-1). The relational finance domain — vendors, payables, receivables
+   * and settlement — which lives in Postgres rather than the workbook.
+   *
+   * Four capabilities rather than one, because the separation that matters in finance is
+   * between RAISING a payment and APPROVING it. Granting both to one role does not by
+   * itself create a control failure — the service additionally refuses self-approval — but
+   * expressing them separately is what lets a deployment ever separate them.
+   *
+   * `finance.period.manage` closes and reopens an accounting month. It is deliberately
+   * NOT granted to ADMIN: reopening a closed period is the act that most needs a second
+   * pair of hands, and it is recorded with a reason and an actor when it happens.
+   */
+  'finance.read', 'finance.write', 'finance.approve', 'finance.period.manage',
   // Administration
   'settings.read', 'settings.write', 'users.manage', 'audit.read',
   /**
@@ -78,6 +92,9 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     'housekeeping.write', 'maintenance.write', 'inventory.write',
     'investors.write', 'distributions.write', 'properties.write',
     'settings.read',            // read-only: no 'settings.write'
+    // Finance: may run the ledger and approve payments they did not raise. NOT
+    // 'finance.period.manage' — closing and reopening a month stays above this role.
+    'finance.read', 'finance.write', 'finance.approve',
     'audit.read',               // full internal READ access, per the Phase 5A role brief
     'demo.control',             // demo-only in practice; the environment gate decides
     'ai.copilot', 'ai.operations',
@@ -124,6 +141,15 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
   'rent.read', 'cashflow.read', 'pnl.read', 'investors.read.all',
   'revenue.write', 'expenses.write', 'capex.write', 'rent.write', 'cashflow.write',
   'investors.write', 'distributions.write',
+  /*
+   * The M-DATA-1 finance domain belongs in this list, and listing it here is what makes
+   * the existing invariants cover it for free: the security suite already asserts that
+   * OPERATIONS and INVESTOR hold NO financial capability, so a future grant of
+   * `finance.read` to an operations login fails a test that was written before finance
+   * existed. That is the intended way to extend this system — add to the list, and the
+   * rules that already exist start guarding the new thing.
+   */
+  'finance.read', 'finance.write', 'finance.approve', 'finance.period.manage',
 ];
 
 /**

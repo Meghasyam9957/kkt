@@ -12,7 +12,7 @@ import '@/lib/server/only';
  * Handlers are thin: they resolve data through the repositories and the KPI engine. No
  * business calculation is ever performed in a handler, and none is duplicated in the UI.
  */
-import type { Capability } from '@/lib/server/auth/roles';
+import { FINANCIAL_CAPABILITIES, type Capability } from '@/lib/server/auth/roles';
 import type { TenantContext } from '@/lib/server/tenant/context';
 import type { DashboardDataProvider } from '@/lib/data/providers/types';
 
@@ -59,6 +59,23 @@ export interface RouteDefinition {
    * governance suites, including that the set of them is exactly the one route below.
    */
   nonMutating?: true;
+  /**
+   * True on a non-GET route that writes the RELATIONAL FINANCE domain (M-DATA-1).
+   *
+   * A third classification rather than a reuse of either existing one, because neither is
+   * true of it. `mutates` means "runs the workbook mutation pipeline" — the governance
+   * suite cross-checks every `mutates` route against `MUTATION_DEFINITIONS`, and a finance
+   * route has no sheet, no ID_RULES entry and no calc columns to protect. `nonMutating`
+   * means "changes no business data", and a payment plainly does.
+   *
+   * What a finance-writing route must satisfy instead is asserted in
+   * `assertWriteGovernance` below, and it is not a weaker bar: a finance capability rather
+   * than any `.write`, a `/api/finance/` path, never investor-scoped, and a handler that
+   * runs the finance operation pipeline — idempotency through the same tenant-aware
+   * operation store the workbook writes use, then audit. The one rule it genuinely cannot
+   * inherit is the contract check, because there is no V1 column to check against.
+   */
+  writesFinance?: true;
   summary: string;
 }
 
@@ -166,6 +183,63 @@ export const API_ROUTES: readonly RouteDefinition[] = [
   { method: 'GET', path: '/api/investor/reports', capability: 'investor.self.read',
     investorScoped: true, action: 'investor.reports.read',
     summary: 'Approved reports available to this investor' },
+
+  /* ---------------- Finance (M-DATA-1) ----------------
+   * The relational finance domain: vendors, payables, receivables and settlement, held
+   * in Postgres because a spreadsheet has rows but no relationships, no lifecycle and no
+   * enforceable state. It does NOT duplicate the workbook — revenue (05), expenses (06),
+   * the cash journal (09) and the P&L (10) keep their authority there, and nothing below
+   * recomputes any of them.
+   *
+   * Every write is POST, because finance history is append-only: a correction is a new
+   * record that points at what it corrects, never an edit of the original. That is why
+   * there is no PATCH here and no DELETE anywhere.
+   *
+   * Reads carry `finance.read`; writes `finance.write`; approving a payment somebody else
+   * raised carries `finance.approve`; closing and reopening a month carries
+   * `finance.period.manage`, which ADMIN does not hold.                                */
+  { method: 'GET', path: '/api/finance/overview', capability: 'finance.read',
+    action: 'finance.overview.read',
+    summary: 'Obligations position and money settled through the finance ledger' },
+  { method: 'GET', path: '/api/finance/vendors', capability: 'finance.read',
+    action: 'finance.vendors.read', summary: 'Vendor master for this tenant' },
+  { method: 'POST', path: '/api/finance/vendors', capability: 'finance.write',
+    writesFinance: true, action: 'finance.vendor.create', entityType: 'FINANCE_VENDOR',
+    summary: 'Register a vendor' },
+  { method: 'GET', path: '/api/finance/payables', capability: 'finance.read',
+    action: 'finance.payables.read', summary: 'Vendor bills with outstanding balances' },
+  { method: 'POST', path: '/api/finance/payables', capability: 'finance.write',
+    writesFinance: true, action: 'finance.bill.create', entityType: 'FINANCE_BILL',
+    summary: 'Record a vendor bill' },
+  { method: 'GET', path: '/api/finance/receivables', capability: 'finance.read',
+    action: 'finance.receivables.read', summary: 'Amounts owed to this tenant, with balances' },
+  { method: 'POST', path: '/api/finance/receivables', capability: 'finance.write',
+    writesFinance: true, action: 'finance.receivable.create', entityType: 'FINANCE_RECEIVABLE',
+    summary: 'Record an amount owed to the business' },
+  { method: 'GET', path: '/api/finance/payments', capability: 'finance.read',
+    action: 'finance.payments.read', summary: 'Settlement events' },
+  { method: 'POST', path: '/api/finance/payments', capability: 'finance.write',
+    writesFinance: true, action: 'finance.payment.create', entityType: 'FINANCE_PAYMENT',
+    summary: 'Raise a payment, as a draft' },
+  /* Approval is a separate capability from raising, and the service additionally refuses
+   * a payment approved by the person who raised it.                                    */
+  { method: 'POST', path: '/api/finance/payments/:id/approve', capability: 'finance.approve',
+    writesFinance: true, action: 'finance.payment.approve', entityType: 'FINANCE_PAYMENT',
+    summary: 'Approve a payment raised by someone else' },
+  { method: 'POST', path: '/api/finance/payments/:id/post', capability: 'finance.write',
+    writesFinance: true, action: 'finance.payment.post', entityType: 'FINANCE_PAYMENT',
+    summary: 'Post an approved payment — the point money is recorded as moved' },
+  { method: 'POST', path: '/api/finance/payments/:id/void', capability: 'finance.write',
+    writesFinance: true, action: 'finance.payment.void', entityType: 'FINANCE_PAYMENT',
+    summary: 'Void a payment that never took effect' },
+  { method: 'GET', path: '/api/finance/periods', capability: 'finance.read',
+    action: 'finance.periods.read', summary: 'Accounting periods and their status' },
+  { method: 'POST', path: '/api/finance/periods/close', capability: 'finance.period.manage',
+    writesFinance: true, action: 'finance.period.close', entityType: 'FINANCE_PERIOD',
+    summary: 'Close a month to further finance movement' },
+  { method: 'POST', path: '/api/finance/periods/reopen', capability: 'finance.period.manage',
+    writesFinance: true, action: 'finance.period.reopen', entityType: 'FINANCE_PERIOD',
+    summary: 'Reopen a closed month, with a recorded reason' },
 
   /* ---------------- Administration ---------------- */
   { method: 'GET', path: '/api/settings', capability: 'settings.read',
@@ -284,9 +358,11 @@ export function assertWriteGovernance(
     const where = `${route.method} ${route.path}`;
     const mutating = route.mutates === true;
     const exempt = route.nonMutating === true;
+    const finance = route.writesFinance === true;
 
-    check(mutating !== exempt,
-      `${where} must declare exactly one of mutates:true or nonMutating:true`);
+    const classifications = [mutating, exempt, finance].filter(Boolean).length;
+    check(classifications === 1,
+      `${where} must declare exactly one of mutates:true, writesFinance:true or nonMutating:true`);
     check(route.method !== 'DELETE',
       `${where}: no DELETE route may exist — removal is a status transition`);
     check((route.investorScoped ?? false) === false,
@@ -295,6 +371,21 @@ export function assertWriteGovernance(
     if (mutating) {
       check(route.capability.endsWith('.write'),
         `${where} must demand a .write capability (has ${route.capability})`);
+    } else if (finance) {
+      /*
+       * The finance class. Every clause here is what stops it becoming the loophole the
+       * non-mutating exemption was carefully written not to be.
+       */
+      check(route.path.startsWith('/api/finance/'),
+        `${where}: a finance-writing route lives under /api/finance/`);
+      check(route.capability.startsWith('finance.'),
+        `${where}: a finance-writing route demands a finance capability (has ${route.capability})`);
+      check(FINANCIAL_CAPABILITIES.includes(route.capability),
+        `${where}: ${route.capability} must be listed in FINANCIAL_CAPABILITIES, so the `
+        + 'existing "OPERATIONS holds no financial capability" invariant covers it');
+      check(route.method === 'POST',
+        `${where}: a finance write is a POST — finance history is append-only, and a `
+        + 'correction is a new record rather than an edit of an old one');
     } else {
       // The exempt class is deliberately narrow, and every clause below is what stops it
       // becoming a door for a business write that would rather not be governed.
