@@ -40,7 +40,7 @@ import { buildDemoSheetsClient } from '@/lib/server/demo/workbook-grids';
 import { ReadCache } from '@/lib/server/cache/read-cache';
 import { inputColumns, COLUMNS, SHEETS, DATA_ROW, columnIndex } from '@/lib/contract/contract.generated';
 import { isoToSerial } from '@/lib/shared/dates';
-import { USERS } from './support/harness';
+import { USERS, TENANT_A } from './support/harness';
 import { createWriteHarness, type WriteHarness } from './support/write-harness';
 
 const ROOT = path.resolve(__dirname, '..');
@@ -349,7 +349,7 @@ describe('mutations · concurrency', () => {
     const naive = new NaiveOperationStore(2);
     const operationId = randomUUID();
     const outcomes = await Promise.all(Array.from({ length: 6 }, () => naive.begin({
-      operationId, actorId: 'x', actorRole: 'ADMIN', action: 'test', requestHash: 'h',
+      operationId, tenantId: TENANT_A, actorId: 'x', actorRole: 'ADMIN', action: 'test', requestHash: 'h',
     })));
     const inserted = outcomes.filter((o) => o.outcome === 'inserted');
     expect(inserted.length).toBeGreaterThan(1);
@@ -408,7 +408,7 @@ describe('mutations · verification', () => {
 describe('mutations · cache', () => {
   it('a verified write invalidates workbook-derived cache entries', async () => {
     await h.cache.get(
-      { resource: 'workbook', identity: null, filters: { today: '2026-08-20' } },
+      { tenant: TENANT_A, resource: 'workbook', identity: null, filters: { today: '2026-08-20' } },
       async () => ({ figure: 42 }),
     );
     expect(h.cache.size).toBeGreaterThan(0);
@@ -419,7 +419,7 @@ describe('mutations · cache', () => {
 
   it('a REFUSED write leaves the cache untouched', async () => {
     await h.cache.get(
-      { resource: 'workbook', identity: null, filters: { today: '2026-08-20' } },
+      { tenant: TENANT_A, resource: 'workbook', identity: null, filters: { today: '2026-08-20' } },
       async () => ({ figure: 42 }),
     );
     const before = h.cache.size;
@@ -682,7 +682,7 @@ describe('mutations · pipeline internals', () => {
       toColumns: (i: any, id: string) => ({ ExpenseID: id, TotalAmount: 1 }),
     };
     await expect(executeMutation(def as any, {
-      auth: { userId: 'u-admin', email: 'a@a', role: 'ADMIN', investorId: null, status: 'ACTIVE' },
+      auth: { userId: 'u-admin', email: 'a@a', role: 'ADMIN', tenantId: TENANT_A, investorId: null, status: 'ACTIVE' },
       request: { method: 'POST', path: '/api/expenses', body: expensePayload(randomUUID()) },
     } as any, h.deps)).rejects.toMatchObject({ code: 'CONTRACT_VIOLATION', status: 422 });
   });

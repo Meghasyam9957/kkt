@@ -2,6 +2,7 @@ import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { AvailabilitySearch } from '@/components/operations/AvailabilitySearch';
 import { reservationFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
+import { requireTenantContext } from '@/lib/server/auth/page-guard';
 import type { AvailabilitySearchView } from '@/lib/data/providers/types';
 
 export const metadata = { title: 'Find a unit — MAKAM Home Stays' };
@@ -17,7 +18,7 @@ export const metadata = { title: 'Find a unit — MAKAM Home Stays' };
  * absent from the form, the payload and the browser rather than hidden.
  */
 async function SearchBody({ view }: { view: AvailabilitySearchView }) {
-  const provider = getDataProvider();
+  const provider = getDataProvider(await requireTenantContext());
   const [propertyIds, platforms] = await Promise.all([
     provider.getPropertyIds(), provider.getPlatforms(),
   ]);

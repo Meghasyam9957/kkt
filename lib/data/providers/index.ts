@@ -29,6 +29,9 @@ import { resolveEnvironment, EnvironmentConfigError } from '@/lib/server/environ
 import { processSlot } from '@/lib/server/runtime/process-state';
 import { currentDataset, demoStatus } from '@/lib/server/demo/store';
 import type { DashboardDataProvider } from './types';
+import {
+  isTenantId, MissingTenantError, type TenantContext, type TenantId,
+} from '@/lib/server/tenant/context';
 
 export * from './types';
 export { FixtureDashboardDataProvider } from './fixture-provider';
@@ -46,8 +49,29 @@ export function isDemoMode(): boolean {
   return resolveEnvironment().env === 'demo';
 }
 
-let liveProvider: DashboardDataProvider | null = null;
+/**
+ * PROVIDERS, ONE PER TENANT — never one per process.
+ *
+ * `liveProvider` used to be a module-level binding: the first request to need a provider
+ * constructed it, and every later request in that process got the same object bound to
+ * whichever workbook the environment named. With one customer that is a cache; with two
+ * it is a cross-tenant breach, because the second customer would be served the first
+ * customer's data source.
+ *
+ * The registry below holds one THIN provider object per tenant — not one workbook per
+ * tenant. The data itself lives in the shared `ReadCache`, whose keys now begin with the
+ * tenant, so memory does not grow with the customer list simply by having a registry.
+ */
+const providerSlot = processSlot<Map<TenantId, DashboardDataProvider>>('data.providers.byTenant');
 let injected: DashboardDataProvider | null = null;
+
+function providerRegistry(): Map<TenantId, DashboardDataProvider> {
+  const existing = providerSlot.read();
+  if (existing) return existing;
+  const created = new Map<TenantId, DashboardDataProvider>();
+  providerSlot.write(created);
+  return created;
+}
 
 /**
  * One cache per process, shared by every provider instance, so concurrent operators on
@@ -77,24 +101,56 @@ export function getReadCache(): ReadCache {
  * write. That is what makes "record an expense and the P&L moves" real behaviour in a
  * demo with no Google workbook configured.
  */
-let demoProvider: DashboardDataProvider | null = null;
-let demoProviderKey: string | null = null;
+const demoProviders = new Map<string, { key: string; provider: DashboardDataProvider }>();
 
-function demoFixtureProvider(): DashboardDataProvider {
+function demoFixtureProvider(tenantId: TenantId): DashboardDataProvider {
   const status = demoStatus();
   // The DemoGridProvider tracks write versions itself; this outer key only guards the
   // dataset-served slices (guest requests) that sit outside the grid store.
   const key = `${status.scenario}|${status.seededAt}|${status.mutations}`;
-  if (demoProvider && demoProviderKey === key) return demoProvider;
+  /*
+   * Keyed by TENANT as well. One deployment configures one workbook, so today two
+   * tenants would read the same records — but they must not share an instance, because
+   * an instance is what a later milestone binds to a workbook. Keeping them separate
+   * now means that milestone changes what a provider READS, not who holds one.
+   */
+  const existing = demoProviders.get(tenantId);
+  if (existing && existing.key === key) return existing.provider;
 
-  demoProvider = new DemoGridProvider();
-  demoProviderKey = key;
-  return demoProvider;
+  const provider = new DemoGridProvider();
+  demoProviders.set(tenantId, { key, provider });
+  return provider;
 }
 
-export function getDataProvider(): DashboardDataProvider {
+/**
+ * THE data provider for one tenant.
+ *
+ * The tenant is an explicit, required argument. There is no ambient "current tenant" and
+ * no default: a caller that cannot say whose data it wants does not get any, which is
+ * what `MissingTenantError` means. Every call site obtains the context from the
+ * authenticated session — `checkPageAccess().tenant` on a page, `ctx.auth` in a handler —
+ * so a request can never name its own.
+ *
+ * MAKAM is one workbook per tenant. Today exactly one tenant is configured and its
+ * workbook is the environment's, which is why the resolution below is unchanged; what
+ * changed is that the ANSWER is now keyed by who asked.
+ */
+export function getDataProvider(tenant: TenantContext): DashboardDataProvider {
+  // The test seam stays ahead of the tenant check so a suite can inject a double, but it
+  // is still refused a provider without a tenant — the seam does not weaken the rule.
+  if (!tenant || !isTenantId(tenant.tenantId)) throw new MissingTenantError('getDataProvider');
   if (injected) return injected;
 
+  const registry = providerRegistry();
+  const existing = registry.get(tenant.tenantId);
+  if (existing) return existing;
+
+  const created = buildProviderFor(tenant.tenantId);
+  registry.set(tenant.tenantId, created);
+  return created;
+}
+
+function buildProviderFor(tenantId: TenantId): DashboardDataProvider {
   const resolved = resolveEnvironment();
 
   if (resolved.env === 'production') {
@@ -107,37 +163,34 @@ export function getDataProvider(): DashboardDataProvider {
     }
     // createLiveSheetsClient reads PRODUCTION_* only, and throws with the missing
     // variable names if they are absent. It cannot reach the demo workbook.
-    if (!liveProvider) {
-      liveProvider = new GoogleSheetsDashboardDataProvider({
-        client: createLiveSheetsClient(resolved),
-        cache: getReadCache(),
-      });
-    }
-    return liveProvider;
+    return new GoogleSheetsDashboardDataProvider({
+      tenantId,
+      client: createLiveSheetsClient(resolved),
+      cache: getReadCache(),
+    });
   }
 
   /* ---- demo ---- */
   if (isLiveDataEnabled()) {
     // The DEMO workbook, read through DEMO_* credentials only.
-    if (!liveProvider) {
-      liveProvider = new GoogleSheetsDashboardDataProvider({
-        client: createLiveSheetsClient(resolved),
-        cache: getReadCache(),
-      });
-    }
-    return liveProvider;
+    return new GoogleSheetsDashboardDataProvider({
+      tenantId,
+      client: createLiveSheetsClient(resolved),
+      cache: getReadCache(),
+    });
   }
 
-  return demoFixtureProvider();
+  return demoFixtureProvider(tenantId);
 }
 
 /** Test seam: inject a provider (including one that throws, for error states). */
 export function __setDataProviderForTests(provider: DashboardDataProvider | null): void {
   injected = provider;
   if (provider === null) {
-    liveProvider = null;
-    demoProvider = null;
-    demoProviderKey = null;
+    // Every per-tenant instance goes, not just "the" one — there is no longer a single
+    // provider to clear, and a leftover entry would serve a later case stale data.
+    providerSlot.write(null);
+    demoProviders.clear();
   }
 }
 

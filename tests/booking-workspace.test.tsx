@@ -44,6 +44,9 @@ import type { PropertyOption, ReservationRow } from '@/lib/data/providers/types'
 
 import { readSource as read, codeOf } from './support/source';
 
+/** Filters are resolved for a tenant; this suite uses one. */
+const TEST_TENANT = { tenantId: 'tenant-test', userId: 'u-test', role: 'ADMIN' as const };
+
 const provider = new FixtureDashboardDataProvider({ now: () => new Date('2027-01-19T10:00:00Z') });
 
 async function latestMonth(): Promise<string> {
@@ -222,10 +225,10 @@ describe('bookings workspace · scope', () => {
   it('narrows an unrecognised ?scope= to the safe default rather than passing it through', async () => {
     // A URL cannot introduce a scope the view has never heard of.
     for (const raw of ['everything', 'in progress', 'IN-PROGRESS', '']) {
-      const filters = await resolveFilters({ scope: raw });
+      const filters = await resolveFilters({ scope: raw }, TEST_TENANT);
       expect(filters.scope, raw).toBe('month');
     }
-    expect((await resolveFilters({ scope: 'in-progress' })).scope).toBe('in-progress');
+    expect((await resolveFilters({ scope: 'in-progress' }, TEST_TENANT)).scope).toBe('in-progress');
   });
 
   it('the scope toggle writes the URL and clears it again — the server owns the selection', async () => {

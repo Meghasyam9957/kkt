@@ -51,6 +51,12 @@ export interface OperationRecord {
 export interface OperationStore {
   begin(input: {
     operationId: string;
+    /**
+     * WHOSE operation this is. An operation id is globally unique, so two tenants can
+     * present the same one — and the answer must be refusal, never replay: Tenant B must
+     * not receive Tenant A's stored result, nor be told its request was already applied.
+     */
+    tenantId: string;
     actorId: string | null;
     actorRole: string | null;
     action: string;
@@ -89,11 +95,14 @@ export class PostgresOperationStore implements OperationStore {
   constructor(private readonly client: any) {}
 
   async begin(input: {
-    operationId: string; actorId: string | null; actorRole: string | null;
+    operationId: string; tenantId: string; actorId: string | null; actorRole: string | null;
     action: string; requestHash: string;
   }): Promise<BeginResult> {
+    // `begin_operation` compares the stored row's tenant before anything else and
+    // reports a mismatch for another customer's id — see migration 0004.
     const { data, error } = await this.client.rpc('begin_operation', {
-      p_id: input.operationId, p_actor: input.actorId, p_role: input.actorRole,
+      p_id: input.operationId, p_tenant: input.tenantId,
+      p_actor: input.actorId, p_role: input.actorRole,
       p_action: input.action, p_hash: input.requestHash,
     });
     if (error) throw new Error(`begin_operation failed: ${error.message}`);
@@ -146,7 +155,7 @@ export class PostgresOperationStore implements OperationStore {
  * In-memory store (tests; demo without Supabase)
  * ------------------------------------------------------------------ */
 
-interface StoredOperation extends OperationRecord { requestHash: string }
+interface StoredOperation extends OperationRecord { requestHash: string; tenantId: string }
 
 export class InMemoryOperationStore implements OperationStore {
   private readonly rows = new Map<string, StoredOperation>();
@@ -162,7 +171,7 @@ export class InMemoryOperationStore implements OperationStore {
   constructor(private readonly latencyMs = 0) {}
 
   async begin(input: {
-    operationId: string; actorId: string | null; actorRole: string | null;
+    operationId: string; tenantId: string; actorId: string | null; actorRole: string | null;
     action: string; requestHash: string;
   }): Promise<BeginResult> {
     return this.critical(async () => {
@@ -170,10 +179,21 @@ export class InMemoryOperationStore implements OperationStore {
       const existing = this.rows.get(input.operationId);
       if (!existing) {
         this.rows.set(input.operationId, {
-          operationId: input.operationId, actorId: input.actorId, actorRole: input.actorRole,
+          operationId: input.operationId, tenantId: input.tenantId,
+          actorId: input.actorId, actorRole: input.actorRole,
           action: input.action, requestHash: input.requestHash, status: 'PENDING',
         });
         return { outcome: 'inserted', status: 'PENDING' } as BeginResult;
+      }
+      /*
+       * THE CROSS-TENANT GUARD, checked before the hash and before any stored result is
+       * reachable. Another customer's operation id is a mismatch, full stop — the reply
+       * reveals nothing about their operation: not its status, not its result, not
+       * whether the hash would have matched. Mirrors `begin_operation` exactly, so a
+       * suite passing here is testing the rule production enforces.
+       */
+      if (existing.tenantId !== input.tenantId) {
+        return { outcome: 'mismatch', status: existing.status } as BeginResult;
       }
       if (existing.requestHash !== input.requestHash) {
         return { outcome: 'mismatch', status: existing.status } as BeginResult;
@@ -232,7 +252,7 @@ export class NaiveOperationStore extends InMemoryOperationStore {
   constructor(private readonly naiveLatencyMs = 1) { super(); }
 
   override async begin(input: {
-    operationId: string; actorId: string | null; actorRole: string | null;
+    operationId: string; tenantId: string; actorId: string | null; actorRole: string | null;
     action: string; requestHash: string;
   }): Promise<BeginResult> {
     const existing = await this.get(input.operationId);          // read

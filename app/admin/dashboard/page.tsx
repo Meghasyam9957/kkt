@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import { getDataProvider } from '@/lib/data/providers';
+import { requireTenantContext } from '@/lib/server/auth/page-guard';
 import { checkPageAccess } from '@/lib/server/auth/page-guard';
 import { AccessDenied } from '@/components/shell/AccessDenied';
 import { DemoAssumptionsNotice } from '@/components/demo/DemoAssumptionsNotice';
@@ -18,7 +19,7 @@ export default async function DashboardPage({
   if (!access.allowed) return <AccessDenied role={access.session.role} />;
 
   const params = await searchParams;
-  const provider = getDataProvider();
+  const provider = getDataProvider(await requireTenantContext());
   const months = await provider.getAvailableMonths();
   const month = params.month && months.includes(params.month)
     ? params.month

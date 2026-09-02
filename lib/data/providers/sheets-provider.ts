@@ -22,6 +22,7 @@ import {
 } from '@/lib/server/sheets/repositories';
 import type { GoogleSheetsClient } from '@/lib/server/sheets/client';
 import { ReadCache, configuredTtlMs, type CacheResult } from '@/lib/server/cache/read-cache';
+import { isTenantId, MissingTenantError } from '@/lib/server/tenant/context';
 import { WorkbookViews, type ViewSource } from '@/lib/data/views/workbook-views';
 import type { MonthlyMetrics } from '@/lib/shared/domain';
 import type {
@@ -36,6 +37,8 @@ import type {
 const WORKBOOK_RESOURCE = 'workbook';
 
 export interface SheetsProviderOptions {
+  /** REQUIRED. The tenant whose workbook this client reads. */
+  tenantId: string;
   client: GoogleSheetsClient;
   /** Shared across providers in a process. Defaults to a cache with the configured TTL. */
   cache?: ReadCache;
@@ -49,6 +52,11 @@ export interface SheetsProviderOptions {
 
 export class GoogleSheetsDashboardDataProvider implements DashboardDataProvider {
   readonly kind = 'GOOGLE_SHEETS' as const;
+  /**
+   * The one tenant this provider reads for. Fixed at construction and never re-read from
+   * anywhere, so an instance cannot be talked into answering for a different customer.
+   */
+  readonly tenantId: string;
   private readonly client: GoogleSheetsClient;
   private readonly cache: ReadCache;
   private readonly now: () => Date;
@@ -62,6 +70,8 @@ export class GoogleSheetsDashboardDataProvider implements DashboardDataProvider 
   private lastError: Error | null = null;
 
   constructor(options: SheetsProviderOptions) {
+    if (!isTenantId(options.tenantId)) throw new MissingTenantError('GoogleSheetsDashboardDataProvider');
+    this.tenantId = options.tenantId;
     this.client = options.client;
     this.cache = options.cache ?? new ReadCache({ ttlMs: configuredTtlMs() });
     this.now = options.now ?? (() => new Date());
@@ -87,7 +97,9 @@ export class GoogleSheetsDashboardDataProvider implements DashboardDataProvider 
     const result = await this.cache.get<ViewSource>(
       // `today` is part of the key: the operational board means something different
       // tomorrow, so yesterday's entry must not answer for it.
-      { resource: WORKBOOK_RESOURCE, identity: null, filters: { today } },
+      // The tenant is the first part of the key. Two customers reading "the workbook"
+      // on the same day produce two different entries, by construction.
+      { tenant: this.tenantId, resource: WORKBOOK_RESOURCE, identity: null, filters: { today } },
       async () => {
         const [workbook, ops, rent] = await Promise.all([
           loadWorkbookData(this.client),

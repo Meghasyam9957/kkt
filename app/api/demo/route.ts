@@ -45,6 +45,7 @@ async function audit(session: ShellSession, action: string, metadata: Record<str
   await getServiceAudit().record({
     actor: {
       userId: session.userId, email: session.email, role: session.role,
+      tenantId: session.tenantId,
       investorId: session.investorId, status: 'ACTIVE',
     },
     action,

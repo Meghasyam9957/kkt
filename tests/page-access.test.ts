@@ -207,7 +207,7 @@ describe('page access · the guard runs before any data is read', () => {
   it('ReadOnlyPage checks access before it resolves a provider', () => {
     const source = fs.readFileSync(path.join(ROOT, 'lib/shared/page-helpers.tsx'), 'utf8');
     const guardAt = source.indexOf('checkPageAccess');
-    const fetchAt = source.indexOf('getDataProvider()');
+    const fetchAt = source.indexOf('getDataProvider(');
     expect(guardAt).toBeGreaterThan(-1);
     // A refused request must not cause a read of figures the caller is not entitled to,
     // even if the result would have been thrown away.

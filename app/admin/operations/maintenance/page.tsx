@@ -3,11 +3,12 @@ import { MaintenanceTable } from '@/components/pages/OpsTables';
 import { NewRecordButton } from '@/components/mutations/actions';
 import { maintenanceFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
+import { requireTenantContext } from '@/lib/server/auth/page-guard';
 
 export const metadata = { title: 'Maintenance — MAKAM Home Stays' };
 
 async function NewIssueAction() {
-  const propertyIds = await getDataProvider().getPropertyIds();
+  const propertyIds = await getDataProvider(await requireTenantContext()).getPropertyIds();
   return (
     <NewRecordButton
       label="+ New Maintenance Issue"

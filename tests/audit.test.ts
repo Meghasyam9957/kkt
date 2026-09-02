@@ -244,7 +244,10 @@ describe('audit · resilience', () => {
     expect(record.occurredAt).toBe('2026-04-01T10:00:00.000Z');
     expect(Object.keys(record).sort()).toEqual([
       'action', 'actorEmail', 'actorId', 'actorRole', 'entityId', 'entityType',
-      'ip', 'metadata', 'occurredAt', 'reason', 'requestId', 'result', 'userAgent',
+      'ip', 'metadata', 'occurredAt', 'reason', 'requestId', 'result',
+      // M-SAAS-0: every audited action belongs to a tenant, taken from the actor's own
+      // resolved context. Null only where no tenant could be resolved at all.
+      'tenantId', 'userAgent',
     ]);
   });
 });

@@ -27,6 +27,9 @@ import { canLoadRoute } from '@/lib/server/auth/guard';
 import { InvestorService } from '@/lib/server/api/investor-service';
 import type { DataMeta, DashboardView, KpiValue } from '@/lib/data/providers/types';
 
+/** Every provider is obtained for a tenant; these cases use one. */
+const TEST_TENANT = { tenantId: 'tenant-test', userId: 'u-test', role: 'ADMIN' as const };
+
 const ROOT = process.cwd();
 
 /** What the server resolves and hands the client. Never computed in the browser. */
@@ -261,7 +264,7 @@ describe('5 · demo mode is unmistakable', () => {
     // missing so an operator can fix it, and it must say plainly that it will not
     // substitute another source.
     let thrown: Error | null = null;
-    try { getDataProvider(); } catch (error) { thrown = error as Error; }
+    try { getDataProvider(TEST_TENANT); } catch (error) { thrown = error as Error; }
     expect(thrown, 'live mode with no connection must throw').not.toBeNull();
     expect(thrown!.message).toMatch(/DEMO_GOOGLE_SHEET_ID/);
     expect(thrown!.message).toMatch(/will not fall back/i);
@@ -281,7 +284,7 @@ describe('5 · demo mode is unmistakable', () => {
       .from(JSON.stringify({ client_email: 'demo@example.invalid' }), 'utf8')
       .toString('base64');
 
-    const provider = getDataProvider();
+    const provider = getDataProvider(TEST_TENANT);
     expect(provider.kind).toBe('GOOGLE_SHEETS');
 
     process.env = original;

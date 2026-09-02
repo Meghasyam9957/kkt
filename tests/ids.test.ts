@@ -12,11 +12,12 @@ import {
   IdAllocator, InMemorySequenceStore, NaiveSequenceStore, formatId, parseIdValue, scopeFor,
 } from '@/lib/server/ids/allocator';
 import { AuditLogger, InMemoryAuditSink } from '@/lib/server/audit/logger';
-import { USERS } from './support/harness';
+import { USERS, TENANT_A } from './support/harness';
 import type { AuthContext } from '@/lib/server/auth/session';
 
 const actor: AuthContext = {
   userId: USERS.admin!.userId, email: USERS.admin!.email, role: 'ADMIN',
+  tenantId: USERS.admin!.tenantId!,
   investorId: null, status: 'ACTIVE',
 };
 
@@ -41,8 +42,8 @@ describe('atomic ids · format matches the V1 conventions', () => {
   });
 
   it('scopes year-prefixed ids per year and lifetime ids globally', () => {
-    expect(scopeFor('RESERVATIONS', 2026)).not.toBe(scopeFor('RESERVATIONS', 2027));
-    expect(scopeFor('INVESTORS', 2026)).toBe(scopeFor('INVESTORS', 2027));
+    expect(scopeFor(TENANT_A, 'RESERVATIONS', 2026)).not.toBe(scopeFor(TENANT_A, 'RESERVATIONS', 2027));
+    expect(scopeFor(TENANT_A, 'INVESTORS', 2026)).toBe(scopeFor(TENANT_A, 'INVESTORS', 2027));
   });
 });
 
@@ -53,7 +54,7 @@ describe('atomic ids · concurrency', () => {
 
     const results = await Promise.all(
       Array.from({ length: CONCURRENCY }, () =>
-        allocator.allocate({ sheet: 'RESERVATIONS', year: 2026 })),
+        allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor })),
     );
 
     const ids = results.flatMap((r) => r.ids);
@@ -71,7 +72,7 @@ describe('atomic ids · concurrency', () => {
     // starts passing, the test above has stopped being meaningful.
     const naive = new IdAllocator(new NaiveSequenceStore(1));
     const results = await Promise.all(
-      Array.from({ length: CONCURRENCY }, () => naive.allocate({ sheet: 'RESERVATIONS', year: 2026 })),
+      Array.from({ length: CONCURRENCY }, () => naive.allocate({ sheet: 'RESERVATIONS', year: 2026, actor })),
     );
     const ids = results.flatMap((r) => r.ids);
     expect(new Set(ids).size, 'MAX+1 unexpectedly produced no duplicates').toBeLessThan(CONCURRENCY);
@@ -80,9 +81,9 @@ describe('atomic ids · concurrency', () => {
   it('allocates contiguous blocks without overlap', async () => {
     const allocator = new IdAllocator(new InMemorySequenceStore(1));
     const blocks = await Promise.all([
-      allocator.allocate({ sheet: 'REVENUE', year: 2026, count: 5 }),
-      allocator.allocate({ sheet: 'REVENUE', year: 2026, count: 5 }),
-      allocator.allocate({ sheet: 'REVENUE', year: 2026, count: 5 }),
+      allocator.allocate({ sheet: 'REVENUE', year: 2026, actor, count: 5 }),
+      allocator.allocate({ sheet: 'REVENUE', year: 2026, actor, count: 5 }),
+      allocator.allocate({ sheet: 'REVENUE', year: 2026, actor, count: 5 }),
     ]);
     const all = blocks.flatMap((b) => b.ids);
     expect(new Set(all).size).toBe(15);
@@ -94,9 +95,9 @@ describe('atomic ids · concurrency', () => {
 
   it('keeps separate scopes independent', async () => {
     const allocator = new IdAllocator(new InMemorySequenceStore());
-    const a = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026 });
-    const b = await allocator.allocate({ sheet: 'REVENUE', year: 2026 });
-    const c = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2027 });
+    const a = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor });
+    const b = await allocator.allocate({ sheet: 'REVENUE', year: 2026, actor });
+    const c = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2027, actor });
     expect(a.ids[0]).toBe('BK-2026-0001');
     expect(b.ids[0]).toBe('REV-2026-0001');
     expect(c.ids[0]).toBe('BK-2027-0001');
@@ -106,8 +107,8 @@ describe('atomic ids · concurrency', () => {
 describe('atomic ids · retry safety', () => {
   it('replays the same ids for a repeated idempotency key', async () => {
     const allocator = new IdAllocator(new InMemorySequenceStore());
-    const first = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, idempotencyKey: 'req-abc' });
-    const retry = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, idempotencyKey: 'req-abc' });
+    const first = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, idempotencyKey: 'req-abc' });
+    const retry = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, idempotencyKey: 'req-abc' });
     expect(retry.ids).toEqual(first.ids);
     expect(retry.reused).toBe(true);
     expect(first.reused).toBe(false);
@@ -117,7 +118,7 @@ describe('atomic ids · retry safety', () => {
     const allocator = new IdAllocator(new InMemorySequenceStore(1));
     const results = await Promise.all(
       Array.from({ length: 20 }, () =>
-        allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, idempotencyKey: 'same-key' })),
+        allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, idempotencyKey: 'same-key' })),
     );
     const distinct = new Set(results.map((r) => r.ids[0]));
     expect(distinct.size, 'a retried request minted more than one identifier').toBe(1);
@@ -125,9 +126,9 @@ describe('atomic ids · retry safety', () => {
 
   it('rejects an idempotency key reused with different parameters', async () => {
     const allocator = new IdAllocator(new InMemorySequenceStore());
-    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, idempotencyKey: 'k', count: 1 });
+    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, idempotencyKey: 'k', count: 1 });
     await expect(
-      allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, idempotencyKey: 'k', count: 3 }),
+      allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, idempotencyKey: 'k', count: 3 }),
     ).rejects.toThrow(/different parameters/i);
   });
 
@@ -145,26 +146,26 @@ describe('atomic ids · workbook cutover safety', () => {
     const allocator = new IdAllocator(store);
 
     // The sheet already contains ids typed by hand or minted by V1's menu item.
-    await allocator.seedFromExistingIds('RESERVATIONS', 2026,
+    await allocator.seedFromExistingIds(TENANT_A, 'RESERVATIONS', 2026,
       ['BK-2026-0001', 'BK-2026-0007', 'BK-2026-0003', 'not-an-id', '']);
 
-    const next = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026 });
+    const next = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor });
     expect(next.ids[0], 'allocation collided with an id already in the workbook').toBe('BK-2026-0008');
   });
 
   it('never lowers a sequence that has already advanced', async () => {
     const store = new InMemorySequenceStore();
     const allocator = new IdAllocator(store);
-    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, count: 50 });
-    await allocator.seedFromExistingIds('RESERVATIONS', 2026, ['BK-2026-0003']);
-    const next = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026 });
+    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, count: 50 });
+    await allocator.seedFromExistingIds(TENANT_A, 'RESERVATIONS', 2026, ['BK-2026-0003']);
+    const next = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor });
     expect(next.ids[0]).toBe('BK-2026-0051');
   });
 
   it('handles an empty workbook', async () => {
     const allocator = new IdAllocator(new InMemorySequenceStore());
-    await allocator.seedFromExistingIds('RESERVATIONS', 2026, []);
-    const next = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026 });
+    await allocator.seedFromExistingIds(TENANT_A, 'RESERVATIONS', 2026, []);
+    const next = await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor });
     expect(next.ids[0]).toBe('BK-2026-0001');
   });
 });
@@ -173,7 +174,7 @@ describe('atomic ids · auditability', () => {
   it('records every allocation with its actor', async () => {
     const sink = new InMemoryAuditSink();
     const allocator = new IdAllocator(new InMemorySequenceStore(), new AuditLogger(sink));
-    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, count: 2, actor });
+    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, count: 2 });
 
     const record = sink.byAction('id.allocate')[0]!;
     expect(record.actorId).toBe('u-admin');
@@ -187,8 +188,8 @@ describe('atomic ids · auditability', () => {
   it('marks a replayed allocation as reused so retries are visible in the trail', async () => {
     const sink = new InMemoryAuditSink();
     const allocator = new IdAllocator(new InMemorySequenceStore(), new AuditLogger(sink));
-    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, idempotencyKey: 'k', actor });
-    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, idempotencyKey: 'k', actor });
+    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, idempotencyKey: 'k' });
+    await allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor, idempotencyKey: 'k' });
     const records = sink.byAction('id.allocate');
     expect(records[0]!.metadata.reused).toBe(false);
     expect(records[1]!.metadata.reused).toBe(true);
@@ -200,13 +201,13 @@ describe('atomic ids · report', () => {
     const store = new InMemorySequenceStore(1);
     const allocator = new IdAllocator(store);
     const results = await Promise.all(
-      Array.from({ length: CONCURRENCY }, () => allocator.allocate({ sheet: 'RESERVATIONS', year: 2026 })),
+      Array.from({ length: CONCURRENCY }, () => allocator.allocate({ sheet: 'RESERVATIONS', year: 2026, actor })),
     );
     const ids = results.flatMap((r) => r.ids);
 
     const naive = new IdAllocator(new NaiveSequenceStore(1));
     const naiveIds = (await Promise.all(
-      Array.from({ length: CONCURRENCY }, () => naive.allocate({ sheet: 'RESERVATIONS', year: 2026 })),
+      Array.from({ length: CONCURRENCY }, () => naive.allocate({ sheet: 'RESERVATIONS', year: 2026, actor })),
     )).flatMap((r) => r.ids);
 
     const dir = path.resolve(process.cwd(), 'reports');

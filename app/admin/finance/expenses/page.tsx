@@ -3,6 +3,7 @@ import { LedgerTable } from '@/components/pages/LedgerPage';
 import { NewRecordButton } from '@/components/mutations/actions';
 import { expenseFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
+import { requireTenantContext } from '@/lib/server/auth/page-guard';
 
 export const metadata = { title: 'Expenses — MAKAM Home Stays' };
 
@@ -12,7 +13,7 @@ export const metadata = { title: 'Expenses — MAKAM Home Stays' };
  * ReadOnlyPage, never before it.
  */
 async function NewExpenseAction() {
-  const propertyIds = await getDataProvider().getPropertyIds();
+  const propertyIds = await getDataProvider(await requireTenantContext()).getPropertyIds();
   return (
     <NewRecordButton
       label="+ New Expense"

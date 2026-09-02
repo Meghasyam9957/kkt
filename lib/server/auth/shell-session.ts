@@ -32,6 +32,12 @@ export interface ShellSession {
   name: string;
   email: string;
   role: Role;
+  /**
+   * The tenant this session acts in — resolved from the user's membership by the auth
+   * provider, immutable for the request, and never taken from the client. Every read or
+   * write of business data requires it.
+   */
+  tenantId: string;
   /** Present only for INVESTOR. Server-resolved; never taken from the client. */
   investorId: string | null;
   /** True when this is a demonstration identity rather than a real account. */
@@ -130,6 +136,7 @@ export async function getShellSession(deps: ShellSessionDeps = {}): Promise<Shel
     name: displayName(context),
     email: context.email,
     role: context.role,
+    tenantId: context.tenantId,
     investorId: context.investorId,
     demo: context.userId.startsWith('demo:'),
   };

@@ -82,6 +82,16 @@ export const DEMO_QUIET_MONTHS = {
   notYetTraded: 11,
 } as const;
 
+/**
+ * The demonstration deployment's tenant.
+ *
+ * A FIXTURE, in the same sense as the investor ids below: the demo has no Supabase and
+ * therefore no memberships table to resolve a tenant from, so the identities it offers
+ * carry this one. Application logic never mentions it — the live path reads the tenant
+ * from the signed-in user's membership, and this constant is unreachable from there.
+ */
+export const DEMO_TENANT_ID = 'demo-tenant';
+
 export const DEMO_INVESTOR_A = 'INV-001';
 export const DEMO_INVESTOR_B = 'INV-002';
 

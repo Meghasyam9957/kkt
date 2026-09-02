@@ -1,4 +1,6 @@
 import '@/lib/server/only';
+import { requireTenant } from '@/lib/server/tenant/context';
+import type { TenantProviderFactory } from './routes';
 /**
  * COPILOT API — the HTTP surface for ARCHITECTURE §7's `POST /api/ai/copilot`.
  *
@@ -53,7 +55,7 @@ export const CopilotAsk = z.object({
  */
 export function registerCopilotHandlers(
   router: ApiRouter,
-  provider: () => DashboardDataProvider,
+  provider: TenantProviderFactory,
   runtime: () => CopilotRuntime,
 ): void {
   router.register('POST', '/api/ai/copilot', async (ctx) => {
@@ -74,7 +76,9 @@ export function registerCopilotHandlers(
       };
     }
 
-    const data = provider();
+    // The AI context is assembled from THIS tenant's provider. A copilot answer can
+    // therefore only ever describe the customer whose user asked the question.
+    const data = provider(requireTenant(ctx.auth, 'copilot'));
     // §7's filter conventions, resolved by the helper the analytics reads share: an
     // absent or unknown month falls back to the most recent one that carries data, and
     // the answer states which period it described.

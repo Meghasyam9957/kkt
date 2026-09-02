@@ -8,9 +8,12 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  ReadCache, buildCacheKey, configuredTtlMs, CacheIdentityError,
+  ReadCache, buildCacheKey, configuredTtlMs, CacheIdentityError, CacheTenantError,
   IDENTITY_SCOPED_RESOURCES, MIN_TTL_MS, MAX_TTL_MS, DEFAULT_TTL_MS,
 } from '@/lib/server/cache/read-cache';
+
+/** Every cache entry belongs to a tenant; these tests use one unless they test the rule. */
+const TENANT = 'tenant-test';
 
 /** Controllable clock, so TTL expiry is asserted rather than waited for. */
 function clock(start = 1_000_000) {
@@ -34,7 +37,7 @@ describe('cache · rule 1: the TTL is bounded', () => {
   it('serves from cache inside the TTL and re-reads after it', async () => {
     let reads = 0;
     const load = async () => { reads++; return { value: reads }; };
-    const key = { resource: 'workbook', identity: null };
+    const key = { tenant: TENANT, resource: 'workbook', identity: null };
 
     expect((await cache.get(key, load)).outcome).toBe('MISS');
     expect((await cache.get(key, load)).outcome).toBe('HIT');
@@ -61,7 +64,7 @@ describe('cache · rule 1: the TTL is bounded', () => {
 
   it('is bounded in size as well as in time', async () => {
     for (let i = 0; i < 12; i++) {
-      await cache.get({ resource: 'r', identity: null, filters: { i } }, async () => i);
+      await cache.get({ tenant: TENANT, resource: 'r', identity: null, filters: { i } }, async () => i);
     }
     expect(cache.size).toBeLessThanOrEqual(5);
     expect(cache.stats().evictions).toBeGreaterThan(0);
@@ -76,7 +79,7 @@ describe('cache · rule 2: refresh is never answered from cache', () => {
   it('bypasses a perfectly fresh entry', async () => {
     let reads = 0;
     const load = async () => ++reads;
-    const key = { resource: 'workbook', identity: null };
+    const key = { tenant: TENANT, resource: 'workbook', identity: null };
 
     await cache.get(key, load);
     const refreshed = await cache.get(key, load, { refresh: true });
@@ -95,7 +98,7 @@ describe('cache · rule 2: refresh is never answered from cache', () => {
       const n = ++reads;
       gate.push(() => resolve(n));
     });
-    const key = { resource: 'workbook', identity: null };
+    const key = { tenant: TENANT, resource: 'workbook', identity: null };
 
     const first = cache.get(key, load);
     const refresh = cache.get(key, load, { refresh: true });
@@ -108,7 +111,7 @@ describe('cache · rule 2: refresh is never answered from cache', () => {
   it('concurrent ordinary readers share one round trip', async () => {
     let reads = 0;
     const load = async () => { reads++; await Promise.resolve(); return reads; };
-    const key = { resource: 'workbook', identity: null };
+    const key = { tenant: TENANT, resource: 'workbook', identity: null };
 
     await Promise.all([cache.get(key, load), cache.get(key, load), cache.get(key, load)]);
     expect(reads).toBe(1);
@@ -124,15 +127,15 @@ describe('cache · rule 3: filters are part of the key', () => {
     const months: string[] = [];
     const load = (month: string) => async () => { months.push(month); return month; };
 
-    await cache.get({ resource: 'dashboard', identity: null, filters: { month: '2026-04' } }, load('2026-04'));
-    await cache.get({ resource: 'dashboard', identity: null, filters: { month: '2026-05' } }, load('2026-05'));
-    await cache.get({ resource: 'dashboard', identity: null, filters: { month: '2026-04' } }, load('2026-04'));
+    await cache.get({ tenant: TENANT, resource: 'dashboard', identity: null, filters: { month: '2026-04' } }, load('2026-04'));
+    await cache.get({ tenant: TENANT, resource: 'dashboard', identity: null, filters: { month: '2026-05' } }, load('2026-05'));
+    await cache.get({ tenant: TENANT, resource: 'dashboard', identity: null, filters: { month: '2026-04' } }, load('2026-04'));
 
     expect(months).toEqual(['2026-04', '2026-05']);   // the third call was a hit
   });
 
   it('property and platform filters change the key too', () => {
-    const base = { resource: 'dashboard', identity: null, filters: { month: '2026-04' } };
+    const base = { tenant: TENANT, resource: 'dashboard', identity: null, filters: { month: '2026-04' } };
     const a = buildCacheKey(base);
     const b = buildCacheKey({ ...base, filters: { month: '2026-04', propertyId: 'HYD-501' } });
     const c = buildCacheKey({ ...base, filters: { month: '2026-04', platform: 'Airbnb' } });
@@ -140,13 +143,13 @@ describe('cache · rule 3: filters are part of the key', () => {
   });
 
   it('key building is order-independent, so equivalent filters share an entry', () => {
-    expect(buildCacheKey({ resource: 'x', identity: null, filters: { a: 1, b: 2 } }))
-      .toBe(buildCacheKey({ resource: 'x', identity: null, filters: { b: 2, a: 1 } }));
+    expect(buildCacheKey({ tenant: TENANT, resource: 'x', identity: null, filters: { a: 1, b: 2 } }))
+      .toBe(buildCacheKey({ tenant: TENANT, resource: 'x', identity: null, filters: { b: 2, a: 1 } }));
   });
 
   it('absent and empty filters are treated the same', () => {
-    expect(buildCacheKey({ resource: 'x', identity: null, filters: { month: '2026-04', propertyId: null } }))
-      .toBe(buildCacheKey({ resource: 'x', identity: null, filters: { month: '2026-04' } }));
+    expect(buildCacheKey({ tenant: TENANT, resource: 'x', identity: null, filters: { month: '2026-04', propertyId: null } }))
+      .toBe(buildCacheKey({ tenant: TENANT, resource: 'x', identity: null, filters: { month: '2026-04' } }));
   });
 });
 
@@ -156,7 +159,7 @@ describe('cache · rule 3: filters are part of the key', () => {
 
 describe('cache · rule 4: errors do not destroy cached data', () => {
   it('serves the last good value, marked stale, with the error attached', async () => {
-    const key = { resource: 'workbook', identity: null };
+    const key = { tenant: TENANT, resource: 'workbook', identity: null };
     await cache.get(key, async () => 'good');
 
     time.advance(60_001);                          // entry has expired
@@ -168,7 +171,7 @@ describe('cache · rule 4: errors do not destroy cached data', () => {
   });
 
   it('a failed refresh leaves the previous value intact for the next reader', async () => {
-    const key = { resource: 'workbook', identity: null };
+    const key = { tenant: TENANT, resource: 'workbook', identity: null };
     await cache.get(key, async () => 'good');
 
     await cache.get(key, async () => { throw new Error('boom'); }, { refresh: true });
@@ -180,13 +183,13 @@ describe('cache · rule 4: errors do not destroy cached data', () => {
 
   it('throws when there is nothing cached to fall back to', async () => {
     // No data at all is an outage. Inventing something to show would be worse.
-    await expect(cache.get({ resource: 'workbook', identity: null }, async () => {
+    await expect(cache.get({ tenant: TENANT, resource: 'workbook', identity: null }, async () => {
       throw new Error('sheets unreachable');
     })).rejects.toThrow('sheets unreachable');
   });
 
   it('counts stale serves so the condition is visible in diagnostics', async () => {
-    const key = { resource: 'workbook', identity: null };
+    const key = { tenant: TENANT, resource: 'workbook', identity: null };
     await cache.get(key, async () => 1);
     time.advance(60_001);
     await cache.get(key, async () => { throw new Error('down'); });
@@ -204,8 +207,8 @@ describe('cache · rule 5: no investor data crosses identities', () => {
     const loads: string[] = [];
     const load = (id: string) => async () => { loads.push(id); return `figures for ${id}`; };
 
-    const a = await cache.get({ resource: 'investor.overview', identity: 'INV-001' }, load('INV-001'));
-    const b = await cache.get({ resource: 'investor.overview', identity: 'INV-002' }, load('INV-002'));
+    const a = await cache.get({ tenant: TENANT, resource: 'investor.overview', identity: 'INV-001' }, load('INV-001'));
+    const b = await cache.get({ tenant: TENANT, resource: 'investor.overview', identity: 'INV-002' }, load('INV-002'));
 
     expect(a.value).toBe('figures for INV-001');
     expect(b.value).toBe('figures for INV-002');
@@ -214,27 +217,27 @@ describe('cache · rule 5: no investor data crosses identities', () => {
 
   it('an investor-scoped resource cannot be cached without an identity', () => {
     for (const resource of IDENTITY_SCOPED_RESOURCES) {
-      expect(() => buildCacheKey({ resource, identity: null }), resource)
+      expect(() => buildCacheKey({ tenant: TENANT, resource, identity: null }), resource)
         .toThrow(CacheIdentityError);
     }
   });
 
   it('a management-wide resource may legitimately have no identity', () => {
-    expect(() => buildCacheKey({ resource: 'workbook', identity: null })).not.toThrow();
+    expect(() => buildCacheKey({ tenant: TENANT, resource: 'workbook', identity: null })).not.toThrow();
   });
 
   it('identity appears in the key even for unscoped resources, so it can never collide', () => {
-    expect(buildCacheKey({ resource: 'x', identity: 'INV-001' }))
-      .not.toBe(buildCacheKey({ resource: 'x', identity: 'INV-002' }));
+    expect(buildCacheKey({ tenant: TENANT, resource: 'x', identity: 'INV-001' }))
+      .not.toBe(buildCacheKey({ tenant: TENANT, resource: 'x', identity: 'INV-002' }));
   });
 
   it('one investor can be evicted without touching another', async () => {
-    await cache.get({ resource: 'investor.overview', identity: 'INV-001' }, async () => 'a');
-    await cache.get({ resource: 'investor.overview', identity: 'INV-002' }, async () => 'b');
+    await cache.get({ tenant: TENANT, resource: 'investor.overview', identity: 'INV-001' }, async () => 'a');
+    await cache.get({ tenant: TENANT, resource: 'investor.overview', identity: 'INV-002' }, async () => 'b');
 
     expect(cache.invalidateIdentity('INV-001')).toBe(1);
-    expect(cache.peek({ resource: 'investor.overview', identity: 'INV-001' })).toBeNull();
-    expect(cache.peek({ resource: 'investor.overview', identity: 'INV-002' })).not.toBeNull();
+    expect(cache.peek({ tenant: TENANT, resource: 'investor.overview', identity: 'INV-001' })).toBeNull();
+    expect(cache.peek({ tenant: TENANT, resource: 'investor.overview', identity: 'INV-002' })).not.toBeNull();
   });
 });
 
@@ -243,17 +246,29 @@ describe('cache · rule 5: no investor data crosses identities', () => {
  * ================================================================== */
 
 describe('cache · invalidation', () => {
-  it('drops everything under a resource prefix', async () => {
-    await cache.get({ resource: 'dashboard', identity: null, filters: { month: '2026-04' } }, async () => 1);
-    await cache.get({ resource: 'dashboard', identity: null, filters: { month: '2026-05' } }, async () => 2);
-    await cache.get({ resource: 'workbook', identity: null }, async () => 3);
+  it("drops everything under a tenant's resource prefix", async () => {
+    await cache.get({ tenant: TENANT, resource: 'dashboard', identity: null, filters: { month: '2026-04' } }, async () => 1);
+    await cache.get({ tenant: TENANT, resource: 'dashboard', identity: null, filters: { month: '2026-05' } }, async () => 2);
+    await cache.get({ tenant: TENANT, resource: 'workbook', identity: null }, async () => 3);
 
-    expect(cache.invalidate('dashboard')).toBe(2);
-    expect(cache.peek({ resource: 'workbook', identity: null })).not.toBeNull();
+    // The tenant leads the key, so a prefix is scoped to one customer by construction.
+    expect(cache.invalidate(`tenant=${TENANT}|dashboard`)).toBe(2);
+    expect(cache.peek({ tenant: TENANT, resource: 'workbook', identity: null })).not.toBeNull();
+  });
+
+  it("never lets one tenant's invalidation reach another's entries", async () => {
+    await cache.get({ tenant: 'tenant-a', resource: 'workbook', identity: null }, async () => 1);
+    await cache.get({ tenant: 'tenant-b', resource: 'workbook', identity: null }, async () => 2);
+
+    /* A write in one customer's workbook makes THEIR figures stale and nobody else's.
+       Flushing everyone would also be a denial of service one tenant could inflict on
+       every other, simply by writing. */
+    expect(cache.invalidate('tenant=tenant-a|')).toBe(1);
+    expect(cache.peek({ tenant: 'tenant-b', resource: 'workbook', identity: null })).not.toBeNull();
   });
 
   it('clear empties the cache completely', async () => {
-    await cache.get({ resource: 'workbook', identity: null }, async () => 1);
+    await cache.get({ tenant: TENANT, resource: 'workbook', identity: null }, async () => 1);
     cache.clear();
     expect(cache.size).toBe(0);
   });

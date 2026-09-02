@@ -21,6 +21,7 @@ import { resolveBrandAssets } from '@/lib/server/brand/assets';
 import { demoStatus } from '@/lib/server/demo/store';
 import { DEMO_SCENARIO_DESCRIPTORS } from '@/lib/shared/environment';
 import { roleHasCapability } from '@/lib/shared/roles';
+import { requireTenant } from '@/lib/server/tenant/context';
 
 /**
  * Never statically generated. Every page in this tree depends on the signed-in session and,
@@ -49,7 +50,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     throw error;
   }
 
-  const provider = getDataProvider();
+  // The tenant comes from the session this layout already resolved. Nothing in the
+  // request participates.
+  const tenant = requireTenant(session, 'admin layout');
+  const provider = getDataProvider(tenant);
   // Resolved on the server so a present asset renders immediately and an absent one
   // renders the lockup — never a flash of one replaced by the other.
   const brandAssets = resolveBrandAssets();

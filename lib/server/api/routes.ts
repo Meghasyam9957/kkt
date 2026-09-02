@@ -13,6 +13,17 @@ import '@/lib/server/only';
  * business calculation is ever performed in a handler, and none is duplicated in the UI.
  */
 import type { Capability } from '@/lib/server/auth/roles';
+import type { TenantContext } from '@/lib/server/tenant/context';
+import type { DashboardDataProvider } from '@/lib/data/providers/types';
+
+/**
+ * How a read handler obtains its data source.
+ *
+ * A FUNCTION OF THE TENANT, not a thunk. A handler has an authenticated context and must
+ * say whose data it is asking for; there is no ambient answer, so a handler that forgot
+ * would not compile.
+ */
+export type TenantProviderFactory = (tenant: TenantContext) => DashboardDataProvider;
 
 export interface RouteDefinition {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';

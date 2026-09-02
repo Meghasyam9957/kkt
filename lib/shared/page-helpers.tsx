@@ -15,6 +15,7 @@ import type { ShellSession } from '@/lib/server/auth/shell-session';
 import { AccessDenied } from '@/components/shell/AccessDenied';
 import { DemoAssumptionsNotice } from '@/components/demo/DemoAssumptionsNotice';
 import type { Capability } from '@/lib/shared/roles';
+import type { TenantContext } from '@/lib/server/tenant/context';
 
 export interface SearchParams {
   month?: string; property?: string; platform?: string;
@@ -45,8 +46,10 @@ export interface SearchParams {
 }
 
 /** Resolve URL params into the filter shape the provider expects. */
-export async function resolveFilters(params: SearchParams): Promise<ReportFilters> {
-  const provider = getDataProvider();
+export async function resolveFilters(
+  params: SearchParams, tenant: TenantContext,
+): Promise<ReportFilters> {
+  const provider = getDataProvider(tenant);
   const months = await provider.getAvailableMonths();
   const month = params.month && months.includes(params.month)
     ? params.month
@@ -114,8 +117,8 @@ export async function ReadOnlyPage<T>({
   const access = await checkPageAccess(capability);
   if (!access.allowed) return <AccessDenied role={access.session.role} />;
 
-  const provider = getDataProvider();
-  const filters = await resolveFilters(searchParams);
+  const provider = getDataProvider(access.tenant);
+  const filters = await resolveFilters(searchParams, access.tenant);
 
   let body: ReactNode;
   try {

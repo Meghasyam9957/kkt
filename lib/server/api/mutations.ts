@@ -29,6 +29,7 @@ import type { Repositories, SheetRepository, VerifiedWrite } from '@/lib/server/
 import { SheetWriteVerifyError } from '@/lib/server/sheets/repositories';
 import { SheetWriteForbiddenError, type Row } from '@/lib/server/sheets/client';
 import { IdAllocator } from '@/lib/server/ids/allocator';
+import { requireTenant } from '@/lib/server/tenant/context';
 import { requestHashOf, type OperationStore } from '@/lib/server/ops/operation-store';
 import type { AuditService } from '@/lib/server/audit/logger';
 import type { HandlerContext } from '@/lib/server/auth/guard';
@@ -137,6 +138,13 @@ export async function executeMutation(
   const input = parsed.data as Record<string, unknown>;
   const operationId = String(input.operationId);
   const entityId = ctx.request.params?.id;
+  /*
+   * WHOSE write this is. From the guard's authenticated context and nowhere else —
+   * resolved once, here, so every later step (id scope, idempotency, cache
+   * invalidation, audit) uses the same answer and none of them can be handed a
+   * different one.
+   */
+  const tenantId = requireTenant(ctx.auth, 'executeMutation').tenantId;
 
   /* ---- 3 · contract validation ----------------------------------- */
   // Probe the mapping with a placeholder id: every key it can ever emit must be a
@@ -167,6 +175,7 @@ export async function executeMutation(
   const requestHash = requestHashOf({ action: def.action, entityId: entityId ?? null, input });
   const begun = await deps.store.begin({
     operationId,
+    tenantId,
     actorId: ctx.auth.userId ?? null,
     actorRole: ctx.auth.role,
     action: def.action,
@@ -208,10 +217,13 @@ export async function executeMutation(
          * The floor only ever rises, and re-seeding is idempotent, so doing it lazily
          * here is safe under concurrency — the store serialises both operations.
          */
-        const scope = `${def.sheet}:${year}`;
+        // The seeded-scope memo is per TENANT as well as per sheet and year: two
+        // customers seeding "RESERVATIONS 2026" are two different number lines, and a
+        // shared memo would let the second one skip its own seeding entirely.
+        const scope = `tenant:${tenantId}:${def.sheet}:${year}`;
         if (!seededScopes(deps).has(scope)) {
           const existing = await repositoryFor(deps.repos, def.sheet).allIds();
-          await deps.allocator.seedFromExistingIds(def.sheet, year, existing);
+          await deps.allocator.seedFromExistingIds(tenantId, def.sheet, year, existing);
           seededScopes(deps).add(scope);
         }
         const allocation = await deps.allocator.allocate({
@@ -245,10 +257,11 @@ export async function executeMutation(
     }
 
     /* ---- 9 · cache ------------------------------------------------ */
-    // A write changes calculated figures everywhere (that is the point of the workbook),
-    // so every workbook-derived cache entry is stale — invalidate all of them. The next
-    // read repopulates; correctness beats one warm cache.
-    deps.cache.invalidate('');
+    // A write changes calculated figures everywhere in THIS tenant's workbook (that is
+    // the point of the workbook), so every entry of theirs is stale. Scoped to the
+    // tenant prefix: one customer's write must not flush another customer's cache, which
+    // would be a denial-of-service one tenant could inflict on every other.
+    deps.cache.invalidate(`tenant=${tenantId}|`);
 
     /* ---- 10 · operation state ------------------------------------- */
     const result: MutationResult = {

@@ -13,6 +13,7 @@
  * anything the caller supplies.
  */
 import { describe, it, expect } from 'vitest';
+import { TENANT_A } from './support/harness';
 import {
   getShellSession, supabaseStatus, sessionCookieName, authMode, AuthNotConfiguredError,
 } from '@/lib/server/auth/shell-session';
@@ -34,12 +35,14 @@ const PRODUCTION_WITH_SUPABASE = {
   PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: 'production-service-role',
 };
 
+/* Every account belongs to a tenant, exactly as a membership row makes true in
+   production. An account with none is refused before it reaches any data. */
 const provider = new InMemoryAuthProvider([
-  { userId: 'u-1', email: 'ops.manager@srivillu.test', role: 'OPERATIONS', token: 'tok-ops' },
-  { userId: 'u-2', email: 'owner@srivillu.test', role: 'SUPER_ADMIN', token: 'tok-super' },
-  { userId: 'u-3', email: 'a@srivillu.test', role: 'INVESTOR', investorId: 'INV-001', token: 'tok-inv' },
-  { userId: 'u-4', email: 'gone@srivillu.test', role: 'ADMIN', token: 'tok-suspended', status: 'SUSPENDED' },
-  { userId: 'u-5', email: 'broken@srivillu.test', role: 'INVESTOR', investorId: null, token: 'tok-unmapped' },
+  { userId: 'u-1', tenantId: TENANT_A, email: 'ops.manager@srivillu.test', role: 'OPERATIONS', token: 'tok-ops' },
+  { userId: 'u-2', tenantId: TENANT_A, email: 'owner@srivillu.test', role: 'SUPER_ADMIN', token: 'tok-super' },
+  { userId: 'u-3', tenantId: TENANT_A, email: 'a@srivillu.test', role: 'INVESTOR', investorId: 'INV-001', token: 'tok-inv' },
+  { userId: 'u-4', tenantId: TENANT_A, email: 'gone@srivillu.test', role: 'ADMIN', token: 'tok-suspended', status: 'SUSPENDED' },
+  { userId: 'u-5', tenantId: TENANT_A, email: 'broken@srivillu.test', role: 'INVESTOR', investorId: null, token: 'tok-unmapped' },
 ]);
 
 describe('shell session · which authenticator applies', () => {

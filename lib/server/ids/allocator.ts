@@ -18,6 +18,13 @@ import '@/lib/server/only';
 import { ID_RULES, SHEETS, type SheetKey } from '@/lib/contract/contract.generated';
 import type { AuditService } from '@/lib/server/audit/logger';
 import type { AuthContext } from '@/lib/server/auth/session';
+import { isTenantId, MissingTenantError } from '@/lib/server/tenant/context';
+
+/** The tenant an allocation belongs to, from the actor's resolved context. */
+function requireTenantId(actor: { tenantId?: string } | null | undefined): string {
+  if (!actor || !isTenantId(actor.tenantId)) throw new MissingTenantError('IdAllocator.allocate');
+  return actor.tenantId;
+}
 
 export interface AllocationRequest {
   sheet: SheetKey;
@@ -51,13 +58,24 @@ export interface SequenceStore {
  * ID formatting — mirrors the V1 conventions exactly
  * ------------------------------------------------------------------ */
 
-export function scopeFor(sheet: SheetKey, year: number): string {
+export function scopeFor(tenantId: string, sheet: SheetKey, year: number): string {
+  if (!isTenantId(tenantId)) throw new MissingTenantError('scopeFor');
   const sheetName = SHEETS[sheet];
   const rule = ID_RULES[sheetName as keyof typeof ID_RULES];
   if (!rule) throw new Error(`No ID rule for ${sheetName} — check the V1 contract`);
   const yearScoped = rule.prefix.includes('{y}');
-  // Non-year prefixes (INV-, AST-, RNT-…) share one lifetime scope.
-  return yearScoped ? `${sheetName}:${rule.prefix.replace('-{y}-', '')}:${year}` : `${sheetName}:${rule.prefix}`;
+  // Non-year prefixes (INV-, AST-, RNT-…) share one lifetime scope — per tenant.
+  const within = yearScoped
+    ? `${sheetName}:${rule.prefix.replace('-{y}-', '')}:${year}`
+    : `${sheetName}:${rule.prefix}`;
+  /*
+   * The tenant leads. Without it two customers share one number line and both mint
+   * BK-2026-0001 — not a disclosure, but a collision that makes every identifier in the
+   * product ambiguous. Migration 0004 renames the existing Srivillu scopes into this
+   * shape so allocation continues from the floor it had reached and no visible
+   * identifier changes or repeats.
+   */
+  return `tenant:${tenantId}:${within}`;
 }
 
 export function formatId(sheet: SheetKey, year: number, value: number): string {
@@ -98,7 +116,10 @@ export class IdAllocator {
       throw new Error(`Allocation count must be a positive integer (got ${count})`);
     }
     const year = request.year ?? this.clock().getFullYear();
-    const scope = scopeFor(request.sheet, year);
+    /* From the ACTOR's resolved context — the same place the audit record takes it, and
+       never from the request body. An allocation with no actor has no tenant and is
+       refused rather than falling into a shared sequence. */
+    const scope = scopeFor(requireTenantId(request.actor), request.sheet, year);
 
     const { firstValue, reused } = await this.store.allocate(
       scope, count, request.idempotencyKey, request.actor?.userId ?? null,
@@ -125,8 +146,10 @@ export class IdAllocator {
    * V1's "Generate missing IDs" menu item. Without seeding, the database would start at 1
    * and mint identifiers that already exist in the sheet.
    */
-  async seedFromExistingIds(sheet: SheetKey, year: number, existingIds: string[]): Promise<number> {
-    const scope = scopeFor(sheet, year);
+  async seedFromExistingIds(
+    tenantId: string, sheet: SheetKey, year: number, existingIds: string[],
+  ): Promise<number> {
+    const scope = scopeFor(tenantId, sheet, year);
     const highest = existingIds.reduce((max, id) => {
       const value = parseIdValue(sheet, id);
       return value !== null && value > max ? value : max;

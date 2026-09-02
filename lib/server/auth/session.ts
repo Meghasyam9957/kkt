@@ -13,6 +13,13 @@ export interface AuthContext {
   userId: string;
   email: string;
   role: Role;
+  /**
+   * The tenant this principal is acting in. Resolved HERE — from the membership row in
+   * the live path, from the demonstration fixture in demo, from the stored test user in
+   * memory — and never from anything the caller supplied. Every consumer of business
+   * data requires it, and refuses without it.
+   */
+  tenantId: string;
   /** Present only for INVESTOR. Server-resolved; the sole source of investor identity. */
   investorId: string | null;
   status: 'ACTIVE' | 'SUSPENDED';
@@ -81,6 +88,42 @@ export class SupabaseAuthProvider implements AuthProvider {
     if (!isRole(row.role)) throw new AuthenticationError(`Unknown role: ${row.role}`);
     if (row.status !== 'ACTIVE') throw new AuthorizationError('Account is suspended');
 
+    /*
+     * Step 3 — the TENANT, and the role to use inside it, from the membership.
+     *
+     * Keyed by the verified user id, exactly as the account row is. A caller cannot
+     * name a tenant: the query does not accept one, so there is no parameter to poison.
+     *
+     * One active membership is the shape M-SAAS-0 establishes. When a user eventually
+     * holds several (MAKAM support staff will), choosing between them becomes an
+     * explicit, audited act — never an implicit "first row wins", which is why more than
+     * one is refused here rather than silently resolved.
+     */
+    const { data: memberships, error: membershipError } = await supabase
+      .from('memberships')
+      .select('tenant_id, role, status')
+      .eq('user_id', userId)
+      .eq('status', 'ACTIVE');
+
+    if (membershipError) throw new AuthenticationError('Could not resolve tenant membership');
+    const active = memberships ?? [];
+    if (active.length > 1) {
+      throw new AuthorizationError(
+        'This account belongs to more than one tenant. Choosing between them is not yet ' +
+        'supported, and defaulting to one of them would be a guess about whose data to show.',
+      );
+    }
+    const membership = active[0];
+    if (!membership?.tenant_id) {
+      throw new AuthorizationError('No active tenant membership for this account');
+    }
+    // The membership's role is the authority. `app_users.role` remains only as the
+    // pre-migration fallback and is not consulted once a membership exists.
+    const role = isRole(membership.role) ? membership.role : row.role;
+    if (role !== row.role) {
+      throw new AuthorizationError('Account role and tenant membership disagree');
+    }
+
     // Defence in depth: the DB constraint already guarantees this, but an investor
     // without a scope must never reach a query layer that would return everything.
     if (row.role === 'INVESTOR' && !row.investor_id) {
@@ -90,8 +133,9 @@ export class SupabaseAuthProvider implements AuthProvider {
     return {
       userId: row.id,
       email: row.email,
-      role: row.role,
-      investorId: row.role === 'INVESTOR' ? row.investor_id : null,
+      role,
+      tenantId: String(membership.tenant_id),
+      investorId: role === 'INVESTOR' ? row.investor_id : null,
       status: row.status,
     };
   }
@@ -105,6 +149,8 @@ export interface TestUser {
   userId: string;
   email: string;
   role: Role;
+  /** The tenant this user belongs to. Required: a test user with no tenant is refused. */
+  tenantId?: string;
   investorId?: string | null;
   status?: 'ACTIVE' | 'SUSPENDED';
   /** Opaque token the test presents; stands in for a Supabase access token. */
@@ -137,10 +183,15 @@ export class InMemoryAuthProvider implements AuthProvider {
     if (user.role === 'INVESTOR' && !user.investorId) {
       throw new AuthorizationError('Investor account is missing its investor mapping');
     }
+    // Mirrors production: a principal with no tenant reaches no data layer at all.
+    if (!user.tenantId) {
+      throw new AuthorizationError('No active tenant membership for this account');
+    }
     return {
       userId: user.userId,
       email: user.email,
       role: user.role,
+      tenantId: user.tenantId,
       investorId: user.role === 'INVESTOR' ? (user.investorId ?? null) : null,
       status,
     };

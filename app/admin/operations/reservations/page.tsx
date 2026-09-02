@@ -8,13 +8,14 @@ import {
 import { NewRecordButton } from '@/components/mutations/actions';
 import { reservationFields, checkInFields, checkOutFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
+import { requireTenantContext } from '@/lib/server/auth/page-guard';
 import { formatMonthLong } from '@/lib/shared/format';
 import type { ReservationRow } from '@/lib/data/providers/types';
 
 export const metadata = { title: 'Bookings — MAKAM Home Stays' };
 
 async function NewBookingAction() {
-  const provider = getDataProvider();
+  const provider = getDataProvider(await requireTenantContext());
   const [propertyIds, platforms] = await Promise.all([
     provider.getPropertyIds(), provider.getPlatforms(),
   ]);
@@ -54,8 +55,9 @@ async function WorkspaceLoader({ rows, scope, params }: {
   scope: BookingScope;
   params: SearchParams;
 }) {
-  const provider = getDataProvider();
-  const filters = await resolveFilters(params);
+  const tenant = await requireTenantContext();
+  const provider = getDataProvider(tenant);
+  const filters = await resolveFilters(params, tenant);
   const requested = typeof params.booking === 'string' ? params.booking.trim() : '';
 
   const [units, board, detail] = await Promise.all([

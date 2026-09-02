@@ -42,6 +42,7 @@ function liveProvider(options: {
   now?: () => Date;
 } = {}) {
   return new GoogleSheetsDashboardDataProvider({
+    tenantId: 'tenant-test',
     client: options.client ?? seedSheetsClient(workbook, ops),
     cache: options.cache ?? new ReadCache({ ttlMs: 60_000 }),
     now: options.now ?? (() => DEMO_NOW),

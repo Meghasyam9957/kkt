@@ -1,4 +1,7 @@
 import '@/lib/server/only';
+import { requireTenant } from '@/lib/server/tenant/context';
+import type { TenantProviderFactory } from './routes';
+import type { HandlerContext } from '@/lib/server/auth/guard';
 /**
  * ANALYTICS API — the HTTP surface for ARCHITECTURE §7's `GET /api/analytics/*`.
  *
@@ -54,15 +57,20 @@ export async function filtersFrom(
  */
 export function registerAnalyticsHandlers(
   router: ApiRouter,
-  provider: () => DashboardDataProvider,
+  provider: TenantProviderFactory,
 ): void {
-  const resolve = async (request: ApiRequest) => {
-    const p = provider();
-    return { p, filters: await filtersFrom(p, request) };
+  /*
+   * The provider is resolved from the CALLER's tenant, on every request. There is no
+   * shared instance and no ambient tenant: two customers hitting the same route reach
+   * two different providers over two different cache keys.
+   */
+  const resolve = async (ctx: { request: ApiRequest; auth: HandlerContext['auth'] }) => {
+    const p = provider(requireTenant(ctx.auth, 'analytics handler'));
+    return { p, filters: await filtersFrom(p, ctx.request) };
   };
 
   router.register('GET', '/api/analytics/dashboard', async (ctx) => {
-    const { p, filters } = await resolve(ctx.request);
+    const { p, filters } = await resolve(ctx);
     return p.getDashboard(filters);
   });
 
@@ -70,19 +78,19 @@ export function registerAnalyticsHandlers(
   // monthly series whole — every field of it, rather than a subset chosen here, because a
   // handler that picks columns becomes a second definition of what the block contains.
   router.register('GET', '/api/analytics/timeseries', async (ctx) => {
-    const { p, filters } = await resolve(ctx.request);
+    const { p, filters } = await resolve(ctx);
     return p.getMonthlySeries(filters);
   });
 
   router.register('GET', '/api/analytics/by-property', async (ctx) => {
-    const { p, filters } = await resolve(ctx.request);
+    const { p, filters } = await resolve(ctx);
     return p.getProperties(filters);
   });
 
   // Per-platform performance lives inside the dashboard view, computed once for the same
   // period. Recomputing it here would be the duplication this layer exists to prevent.
   router.register('GET', '/api/analytics/by-platform', async (ctx) => {
-    const { p, filters } = await resolve(ctx.request);
+    const { p, filters } = await resolve(ctx);
     const { data, meta } = await p.getDashboard(filters);
     return { data: data.platforms, meta };
   });
@@ -98,7 +106,7 @@ export function registerAnalyticsHandlers(
    * the clock — so this endpoint is as deterministic as the board it mirrors.
    */
   router.register('GET', '/api/analytics/alerts', async (ctx) => {
-    const { p, filters } = await resolve(ctx.request);
+    const { p, filters } = await resolve(ctx);
     const { data, meta } = await p.getOperations(filters);
     return { data: data.urgent, meta };
   });

@@ -24,7 +24,7 @@ import type { Role } from '@/lib/shared/roles';
 import {
   assertDemoOnly, resolveEnvironment, type ResolvedEnvironment,
 } from '@/lib/server/environment/config';
-import { DEMO_INVESTOR_A, DEMO_INVESTOR_B } from '@/lib/data/demo/dataset';
+import { DEMO_INVESTOR_A, DEMO_INVESTOR_B, DEMO_TENANT_ID } from '@/lib/data/demo/dataset';
 
 export interface DemoIdentity {
   /** Stable key used in the session cookie and the sign-in form. */
@@ -110,6 +110,9 @@ export class DemoAuthProvider implements AuthProvider {
       userId: `demo:${identity.key}`,
       email: identity.email,
       role: identity.role,
+      // The demonstration deployment is one tenant. Read from the fixture, never from
+      // the cookie — the cookie is a lookup key and asserts nothing.
+      tenantId: DEMO_TENANT_ID,
       investorId: identity.role === 'INVESTOR' ? identity.investorId : null,
       status: 'ACTIVE',
     };

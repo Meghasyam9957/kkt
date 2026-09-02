@@ -24,6 +24,9 @@ import { runGuestJourney } from '@/lib/server/demo/guest-journey';
 import { DemoAuthProvider } from '@/lib/server/auth/demo-identities';
 import type { EnvLike } from '@/lib/shared/env';
 
+/** Every provider is obtained for a tenant; these cases use one. */
+const TEST_TENANT = { tenantId: 'tenant-test', userId: 'u-test', role: 'ADMIN' as const };
+
 const ROOT = process.cwd();
 
 const PRODUCTION_SHEET = 'production-workbook-id-1234';
@@ -192,7 +195,7 @@ describe('invariant 4 · production cannot use demo data', () => {
 
     // The alternative — quietly serving fixtures — would put fictional figures in front of
     // someone making a real decision. There is no such fallback.
-    expect(() => getDataProvider()).toThrow(/no fixture mode/i);
+    expect(() => getDataProvider(TEST_TENANT)).toThrow(/no fixture mode/i);
     __setDataProviderForTests(null);
   });
 

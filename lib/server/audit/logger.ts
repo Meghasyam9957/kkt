@@ -28,6 +28,14 @@ export interface AuditEvent {
 
 export interface AuditRecord {
   occurredAt: string;
+  /**
+   * WHOSE record this is. Taken from the actor's resolved context, never from a caller.
+   *
+   * Null only when no tenant could be resolved at all — an unauthenticated attempt has
+   * no membership and therefore no tenant. Null means "unknown", never "any": a future
+   * tenant-scoped audit read filters on equality, so a null row belongs to nobody.
+   */
+  tenantId: string | null;
   actorId: string | null;
   actorEmail: string | null;
   actorRole: string | null;
@@ -54,6 +62,7 @@ export interface AuditService {
 export function toAuditRecord(event: AuditEvent, now: () => Date = () => new Date()): AuditRecord {
   return {
     occurredAt: now().toISOString(),
+    tenantId: event.actor?.tenantId ?? null,
     actorId: event.actor?.userId ?? null,
     actorEmail: event.actor?.email ?? null,
     actorRole: event.actor?.role ?? null,

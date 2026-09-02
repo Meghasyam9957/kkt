@@ -31,6 +31,16 @@ import type { EnvLike } from '@/lib/shared/env';
 export type FilterValue = string | number | boolean | null | undefined;
 
 export interface CacheKeyParts {
+  /**
+   * WHOSE data this is. Mandatory on every entry, without exception.
+   *
+   * This cache is process-wide and shared by every request the process serves. Before
+   * M-SAAS-0 the workbook was cached as `identity: null` with no tenant at all, which in
+   * a multi-tenant deployment is one key for every customer's entire dataset — a total
+   * cross-tenant breach in a single line, with no attacker required. Making it part of
+   * the key, and refusing to build a key without it, is what stops that being possible.
+   */
+  tenant: string;
   /** Logical resource, e.g. 'workbook', 'dashboard', 'investor.overview'. */
   resource: string;
   /**
@@ -60,8 +70,27 @@ export class CacheIdentityError extends Error {
   }
 }
 
+/**
+ * A cache entry with no tenant. Fails closed, exactly as the investor rule above does —
+ * an unscoped key is a programming error, never a configuration choice.
+ */
+export class CacheTenantError extends Error {
+  constructor(resource: string) {
+    super(
+      `Refusing to cache '${resource}' without a tenant: every cache entry belongs to ` +
+      'exactly one customer, and an unkeyed entry would be shared by all of them.',
+    );
+    this.name = 'CacheTenantError';
+  }
+}
+
 /** Deterministic key: same inputs in any property order produce the same string. */
 export function buildCacheKey(parts: CacheKeyParts): string {
+  // The tenant comes FIRST in the key as well as first in the checks: an entry can then
+  // be invalidated per tenant by prefix, and no two customers can ever share a string.
+  if (typeof parts.tenant !== 'string' || parts.tenant.trim() === '') {
+    throw new CacheTenantError(parts.resource);
+  }
   if (IDENTITY_SCOPED_RESOURCES.has(parts.resource) && !parts.identity) {
     throw new CacheIdentityError(parts.resource);
   }
@@ -70,7 +99,7 @@ export function buildCacheKey(parts: CacheKeyParts): string {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}=${String(v)}`)
     .join('&');
-  return `${parts.resource}|identity=${parts.identity ?? '-'}|${filters}`;
+  return `tenant=${parts.tenant}|${parts.resource}|identity=${parts.identity ?? '-'}|${filters}`;
 }
 
 /* ------------------------------------------------------------------ *

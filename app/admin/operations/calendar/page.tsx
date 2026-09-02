@@ -4,6 +4,7 @@ import { BookingDetailDrawer } from '@/components/operations/BookingDetailDrawer
 import { BookingActions } from '@/components/operations/BookingActions';
 import { operationalBookingDetail } from '@/lib/data/views/role-projections';
 import { getDataProvider } from '@/lib/data/providers';
+import { requireTenantContext } from '@/lib/server/auth/page-guard';
 import type { CalendarView } from '@/lib/data/providers/types';
 
 export const metadata = { title: 'Availability — MAKAM Home Stays' };
@@ -21,7 +22,7 @@ export const metadata = { title: 'Availability — MAKAM Home Stays' };
 async function CalendarBody({ view, params }: { view: CalendarView; params: SearchParams }) {
   const requested = typeof params.booking === 'string' ? params.booking.trim() : '';
   const detail = requested
-    ? (await getDataProvider().getBookingDetail(requested)).data
+    ? (await getDataProvider(await requireTenantContext()).getBookingDetail(requested)).data
     : null;
   const projected = detail ? operationalBookingDetail(detail) : null;
 

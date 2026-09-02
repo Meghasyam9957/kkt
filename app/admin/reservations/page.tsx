@@ -6,6 +6,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { reservationFields } from '@/lib/server/api/form-fields';
 import { checkPageAccess } from '@/lib/server/auth/page-guard';
 import { getDataProvider } from '@/lib/data/providers';
+import { requireTenantContext } from '@/lib/server/auth/page-guard';
 
 export const metadata = { title: 'Booking Ledger — MAKAM Home Stays' };
 
@@ -26,7 +27,7 @@ async function NewValuedBookingAction() {
   const access = await checkPageAccess('revenue.read');
   if (!access.allowed) return null;
 
-  const provider = getDataProvider();
+  const provider = getDataProvider(await requireTenantContext());
   const [propertyIds, platforms] = await Promise.all([
     provider.getPropertyIds(), provider.getPlatforms(),
   ]);

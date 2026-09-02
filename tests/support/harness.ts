@@ -10,13 +10,23 @@ import { API_ROUTES } from '@/lib/server/api/routes';
 import type { ApiRequest } from '@/lib/server/auth/guard';
 import { distributionsMixed } from '../fixtures/scenarios';
 
+/**
+ * The tenants this suite acts in.
+ *
+ * TENANT_A is the one nearly every case uses — it stands in for Srivillu. TENANT_B
+ * exists so isolation can be PROVED rather than asserted: a second customer whose data
+ * the first must never reach, and vice versa.
+ */
+export const TENANT_A = 'tenant-a';
+export const TENANT_B = 'tenant-b';
+
 export const USERS: Record<string, TestUser> = {
-  superAdmin: { userId: 'u-super', email: 'super@srivillu.test', role: 'SUPER_ADMIN', token: 't-super' },
-  admin:      { userId: 'u-admin', email: 'admin@srivillu.test', role: 'ADMIN',       token: 't-admin' },
-  operations: { userId: 'u-ops',   email: 'ops@srivillu.test',   role: 'OPERATIONS',  token: 't-ops' },
-  investorA:  { userId: 'u-inv-a', email: 'a@srivillu.test',     role: 'INVESTOR', investorId: 'INV-001', token: 't-inv-a' },
-  investorB:  { userId: 'u-inv-b', email: 'b@srivillu.test',     role: 'INVESTOR', investorId: 'INV-002', token: 't-inv-b' },
-  suspended:  { userId: 'u-susp',  email: 'susp@srivillu.test',  role: 'ADMIN', status: 'SUSPENDED', token: 't-susp' },
+  superAdmin: { userId: 'u-super', tenantId: TENANT_A, email: 'super@srivillu.test', role: 'SUPER_ADMIN', token: 't-super' },
+  admin:      { userId: 'u-admin', tenantId: TENANT_A, email: 'admin@srivillu.test', role: 'ADMIN',       token: 't-admin' },
+  operations: { userId: 'u-ops', tenantId: TENANT_A,   email: 'ops@srivillu.test',   role: 'OPERATIONS',  token: 't-ops' },
+  investorA:  { userId: 'u-inv-a', tenantId: TENANT_A, email: 'a@srivillu.test',     role: 'INVESTOR', investorId: 'INV-001', token: 't-inv-a' },
+  investorB:  { userId: 'u-inv-b', tenantId: TENANT_A, email: 'b@srivillu.test',     role: 'INVESTOR', investorId: 'INV-002', token: 't-inv-b' },
+  suspended:  { userId: 'u-susp', tenantId: TENANT_A,  email: 'susp@srivillu.test',  role: 'ADMIN', status: 'SUSPENDED', token: 't-susp' },
 };
 
 export interface Harness {
