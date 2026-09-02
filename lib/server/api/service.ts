@@ -24,6 +24,10 @@ import { registerFinanceHandlers } from './finance-handlers';
 import { FinanceService } from '@/lib/server/finance/service';
 import { InMemoryFinanceRepository, type FinanceRepository } from '@/lib/server/finance/repository';
 import { SupabaseFinanceRepository } from '@/lib/server/finance/supabase-repository';
+import { registerHrHandlers } from './hr-handlers';
+import { HrService, periodStartOf } from '@/lib/server/hr/service';
+import { InMemoryHrRepository, type HrRepository } from '@/lib/server/hr/repository';
+import { SupabaseHrRepository } from '@/lib/server/hr/supabase-repository';
 import type { MutationDependencies } from './mutations';
 import { resolveEnvironment, type ResolvedEnvironment } from '@/lib/server/environment/config';
 import { createRepositories } from '@/lib/server/sheets/repositories';
@@ -193,6 +197,29 @@ export function getApiRouter(): ApiRouter {
     writesPermitted: resolved.writesPermitted,
   }));
 
+  /*
+   * PEOPLE (M-HR-1). Same composition as finance: Postgres when a control plane is
+   * configured, in memory otherwise, built per request from the caller's tenant. The
+   * property list the service validates against comes from that tenant's own provider, so
+   * naming another customer's property is indistinguishable from naming a fiction.
+   */
+  const hrRepo = hrRepository(supabaseClient);
+  registerHrHandlers(built, async () => ({
+    service: new HrService({
+      repo: hrRepo,
+      propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+      // Finance's lock, not a second one.
+      isPeriodClosed: async (tenant, isoDate) => {
+        const period = await financeRepo.getPeriod(tenant, periodStartOf(isoDate));
+        return period?.status === 'CLOSED';
+      },
+      audit,
+    }),
+    store: operationStore,
+    audit,
+    writesPermitted: resolved.writesPermitted,
+  }));
+
   routerSlot.write(built);
   return built;
 }
@@ -214,6 +241,39 @@ const aiSinkSlot = processSlot<AiUsageSink>('api.service.aiSink');
  * module-level binding would discard a demonstration's recorded payments mid-session.
  */
 const financeRepoSlot = processSlot<FinanceRepository>('api.service.financeRepo');
+const hrRepoSlot = processSlot<HrRepository>('api.service.hrRepo');
+
+function hrRepository(supabaseClient: unknown): HrRepository {
+  if (supabaseClient) return new SupabaseHrRepository(supabaseClient);
+  const existing = hrRepoSlot.read();
+  if (existing) return existing;
+  const created = new InMemoryHrRepository();
+  hrRepoSlot.write(created);
+  return created;
+}
+
+/**
+ * THE people service for a tenant, sharing finance's period lock.
+ *
+ * `isPeriodClosed` reads `finance_periods` through the finance repository rather than an
+ * HR table of its own. Two lock tables is how a month comes to be closed in finance and
+ * open in HR, and the first anybody would learn of it is a payslip dated into a closed
+ * month.
+ */
+export function hrServiceFor(): HrService {
+  const resolved = resolveEnvironment();
+  const supabaseClient = resolved.supabase ? makeSupabaseClient(resolved) : null;
+  const finance = financeRepository(supabaseClient);
+  return new HrService({
+    repo: hrRepository(supabaseClient),
+    propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+    isPeriodClosed: async (tenant, isoDate) => {
+      const period = await finance.getPeriod(tenant, periodStartOf(isoDate));
+      return period?.status === 'CLOSED';
+    },
+    audit: getServiceAudit(),
+  });
+}
 
 function financeRepository(supabaseClient: unknown): FinanceRepository {
   if (supabaseClient) return new SupabaseFinanceRepository(supabaseClient);

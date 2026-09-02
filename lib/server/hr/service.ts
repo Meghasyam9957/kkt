@@ -103,6 +103,86 @@ export class HrService {
   }
 
   /* ---------------------------------------------------------------- *
+   * Organisation master
+   *
+   * Thin pass-throughs, and deliberately so: a department is a name. The value of routing
+   * them through the service is that no caller anywhere reaches a repository directly, so
+   * there is one path to the data and one place a rule can later be added to it.
+   * ---------------------------------------------------------------- */
+
+  async createDepartment(tenant: TenantContext, name: string) {
+    if (!name?.trim()) throw refuse('VALIDATION', 'A department needs a name.');
+    const existing = await this.deps.repo.listDepartments(tenant);
+    if (existing.some((d) => d.name.toLowerCase() === name.trim().toLowerCase())) {
+      throw refuse('DUPLICATE_DEPARTMENT', `There is already a department called "${name.trim()}".`);
+    }
+    return this.deps.repo.createDepartment(tenant, name);
+  }
+
+  listDepartments(tenant: TenantContext) { return this.deps.repo.listDepartments(tenant); }
+
+  async createDesignation(tenant: TenantContext, name: string) {
+    if (!name?.trim()) throw refuse('VALIDATION', 'A designation needs a name.');
+    const existing = await this.deps.repo.listDesignations(tenant);
+    if (existing.some((d) => d.name.toLowerCase() === name.trim().toLowerCase())) {
+      throw refuse('DUPLICATE_DESIGNATION', `There is already a designation called "${name.trim()}".`);
+    }
+    return this.deps.repo.createDesignation(tenant, name);
+  }
+
+  listDesignations(tenant: TenantContext) { return this.deps.repo.listDesignations(tenant); }
+
+  /**
+   * A shift, including an overnight one.
+   *
+   * 22:00 → 06:00 is ordinary in hospitality, so the flag and the times must agree: a
+   * shift that claims not to cross midnight while ending before it starts would be a
+   * zero-length day everything downstream computed from.
+   */
+  async createShift(
+    tenant: TenantContext,
+    input: { name: string; startTime: string; endTime: string; crossesMidnight: boolean; graceMinutes: number },
+  ) {
+    if (!input.name?.trim()) throw refuse('VALIDATION', 'A shift needs a name.');
+    const overnight = input.endTime <= input.startTime;
+    if (overnight !== input.crossesMidnight) {
+      throw refuse('VALIDATION', input.crossesMidnight
+        ? 'A shift marked as crossing midnight must end at or before the time it starts.'
+        : `${input.startTime}–${input.endTime} ends before it begins, so it crosses midnight. `
+          + 'Say so explicitly rather than leaving it to be inferred.');
+    }
+    return this.deps.repo.createShift(tenant, input);
+  }
+
+  listShifts(tenant: TenantContext) { return this.deps.repo.listShifts(tenant); }
+
+  async createLeaveType(
+    tenant: TenantContext, input: { code: string; name: string; paid: boolean },
+  ) {
+    if (!input.code?.trim() || !input.name?.trim()) {
+      throw refuse('VALIDATION', 'A leave type needs a code and a name.');
+    }
+    const existing = await this.deps.repo.listLeaveTypes(tenant);
+    if (existing.some((t) => t.code === input.code.trim().toUpperCase())) {
+      throw refuse('DUPLICATE_LEAVE_TYPE', `Leave type ${input.code.trim().toUpperCase()} already exists.`);
+    }
+    return this.deps.repo.createLeaveType(tenant, input);
+  }
+
+  listLeaveTypes(tenant: TenantContext) { return this.deps.repo.listLeaveTypes(tenant); }
+
+  listAdvances(tenant: TenantContext, employeeId?: string) {
+    return this.deps.repo.listAdvances(tenant, employeeId);
+  }
+
+  createEntitlement(
+    tenant: TenantContext,
+    input: { employeeId: string; leaveTypeId: string; yearStart: string; allocatedHalfDays: number },
+  ) {
+    return this.deps.repo.createEntitlement(tenant, input);
+  }
+
+  /* ---------------------------------------------------------------- *
    * Employees
    * ---------------------------------------------------------------- */
 

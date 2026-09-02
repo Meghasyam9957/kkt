@@ -54,6 +54,22 @@ export const CAPABILITIES = [
    * pair of hands, and it is recorded with a reason and an actor when it happens.
    */
   'finance.read', 'finance.write', 'finance.approve', 'finance.period.manage',
+  /*
+   * PEOPLE (M-HR-1). Split along the line that actually matters in HR, which is not
+   * read-versus-write but PERSON-versus-PAY.
+   *
+   * Attendance, leave and shifts are operational facts: who is on shift tonight is the
+   * same kind of question as which unit needs cleaning. Compensation is not. Somebody who
+   * may see that a colleague was late is not thereby somebody who may see what that
+   * colleague earns, and one `hr.read` capability covering both would have made that
+   * distinction unexpressible.
+   *
+   * `hr.payroll.approve` sits above the rest for the same reason `finance.period.manage`
+   * does: approving a payroll run is what turns a calculation into money somebody will be
+   * paid, and it is the act that most needs a second pair of hands.
+   */
+  'hr.read', 'hr.manage', 'hr.approve',
+  'hr.compensation.read', 'hr.compensation.manage', 'hr.payroll.approve',
   // Administration
   'settings.read', 'settings.write', 'users.manage', 'audit.read',
   /**
@@ -95,6 +111,16 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     // Finance: may run the ledger and approve payments they did not raise. NOT
     // 'finance.period.manage' — closing and reopening a month stays above this role.
     'finance.read', 'finance.write', 'finance.approve',
+    /*
+     * People: the full HR desk, including compensation — this role already holds
+     * `pnl.read`, so withholding the salary line from somebody who can read the profit
+     * and loss it sits inside would be theatre rather than a control.
+     *
+     * NOT 'hr.payroll.approve'. Turning a calculation into money people will be paid
+     * stays above this role, exactly as closing a finance period does.
+     */
+    'hr.read', 'hr.manage', 'hr.approve',
+    'hr.compensation.read', 'hr.compensation.manage',
     'audit.read',               // full internal READ access, per the Phase 5A role brief
     'demo.control',             // demo-only in practice; the environment gate decides
     'ai.copilot', 'ai.operations',
@@ -150,6 +176,20 @@ export const FINANCIAL_CAPABILITIES: readonly Capability[] = [
    * rules that already exist start guarding the new thing.
    */
   'finance.read', 'finance.write', 'finance.approve', 'finance.period.manage',
+  /*
+   * ONLY the compensation half of HR belongs here, and the omission is deliberate.
+   *
+   * `hr.compensation.read`, `hr.compensation.manage` and `hr.payroll.approve` expose pay,
+   * so the existing "OPERATIONS holds no financial capability" invariant should guard them
+   * — and now does, without a new test.
+   *
+   * `hr.read`, `hr.manage` and `hr.approve` are NOT here, because attendance and shifts
+   * are operational facts rather than financial ones. Listing them would make this
+   * constant mean "anything HR touches", and the day an operations supervisor is granted
+   * `hr.read` to mark their own team present, a correct grant would fail a financial
+   * invariant it has nothing to do with.
+   */
+  'hr.compensation.read', 'hr.compensation.manage', 'hr.payroll.approve',
 ];
 
 /**

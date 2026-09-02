@@ -76,6 +76,19 @@ export interface RouteDefinition {
    * inherit is the contract check, because there is no V1 column to check against.
    */
   writesFinance?: true;
+  /**
+   * True on a non-GET route that writes the PEOPLE domain (M-HR-1).
+   *
+   * A fourth classification for the same reason `writesFinance` was a third: `mutates`
+   * means "runs the workbook mutation pipeline" and is cross-checked against
+   * MUTATION_DEFINITIONS, and HR has no sheet; `nonMutating` means "changes no business
+   * data", and an employee record plainly is some.
+   *
+   * It is kept separate from `writesFinance` rather than merged into a general
+   * "writes Postgres" flag because the two demand different capability families, and one
+   * flag would let an HR route satisfy the governance check with a finance capability.
+   */
+  writesHr?: true;
   summary: string;
 }
 
@@ -247,6 +260,98 @@ export const API_ROUTES: readonly RouteDefinition[] = [
     writesFinance: true, action: 'finance.period.reopen', entityType: 'FINANCE_PERIOD',
     summary: 'Reopen a closed month, with a recorded reason' },
 
+  /* ---------------- People (M-HR-1) ----------------
+   * The workforce domain, in Postgres because none of it existed anywhere: no sheet, no
+   * column, no type. Capabilities split along the line that matters in HR — PERSON versus
+   * PAY. `hr.read` / `hr.manage` / `hr.approve` cover people, attendance, leave and
+   * shifts; `hr.compensation.*` covers salary, advances and payroll; `hr.payroll.approve`
+   * sits above both, because approving a run is what turns a calculation into money.
+   *
+   * Every write is a POST: people history is append-only, and a correction is a new record
+   * rather than an edit of one payroll may already have consumed.                       */
+  { method: 'GET', path: '/api/hr/overview', capability: 'hr.read',
+    action: 'hr.overview.read', summary: 'Headcount, attendance and payroll status' },
+  { method: 'GET', path: '/api/hr/employees', capability: 'hr.read',
+    action: 'hr.employees.read', summary: 'The people this business employs' },
+  { method: 'GET', path: '/api/hr/attendance', capability: 'hr.read',
+    action: 'hr.attendance.read', summary: 'Attendance register for a period' },
+  { method: 'GET', path: '/api/hr/leave', capability: 'hr.read',
+    action: 'hr.leave.read', summary: 'Leave requests and their state' },
+  { method: 'GET', path: '/api/hr/overtime', capability: 'hr.read',
+    action: 'hr.overtime.read', summary: 'Approved and pending overtime' },
+  { method: 'GET', path: '/api/hr/shifts', capability: 'hr.read',
+    action: 'hr.shifts.read', summary: 'Shift definitions, including overnight ones' },
+
+  { method: 'POST', path: '/api/hr/departments', capability: 'hr.manage', writesHr: true,
+    action: 'hr.department.create', entityType: 'HR_DEPARTMENT', summary: 'Add a department' },
+  { method: 'POST', path: '/api/hr/designations', capability: 'hr.manage', writesHr: true,
+    action: 'hr.designation.create', entityType: 'HR_DESIGNATION', summary: 'Add a designation' },
+  { method: 'POST', path: '/api/hr/shifts', capability: 'hr.manage', writesHr: true,
+    action: 'hr.shift.create', entityType: 'HR_SHIFT', summary: 'Define a shift' },
+  { method: 'POST', path: '/api/hr/leave-types', capability: 'hr.manage', writesHr: true,
+    action: 'hr.leaveType.create', entityType: 'HR_LEAVE_TYPE', summary: 'Define a leave type' },
+  { method: 'POST', path: '/api/hr/employees', capability: 'hr.manage', writesHr: true,
+    action: 'hr.employee.create', entityType: 'HR_EMPLOYEE', summary: 'Add a person' },
+  { method: 'POST', path: '/api/hr/employees/:id/status', capability: 'hr.manage', writesHr: true,
+    action: 'hr.employee.status', entityType: 'HR_EMPLOYEE',
+    summary: 'Change employment status — never a deletion' },
+  { method: 'POST', path: '/api/hr/attendance', capability: 'hr.manage', writesHr: true,
+    action: 'hr.attendance.record', entityType: 'HR_ATTENDANCE', summary: 'Record a day' },
+  { method: 'POST', path: '/api/hr/attendance/:id/submit', capability: 'hr.manage', writesHr: true,
+    action: 'hr.attendance.submit', entityType: 'HR_ATTENDANCE',
+    summary: 'Submit a day for approval' },
+  { method: 'POST', path: '/api/hr/attendance/:id/approve', capability: 'hr.approve', writesHr: true,
+    action: 'hr.attendance.approve', entityType: 'HR_ATTENDANCE',
+    summary: 'Approve a day — payroll consumes only approved attendance' },
+  { method: 'POST', path: '/api/hr/leave', capability: 'hr.manage', writesHr: true,
+    action: 'hr.leave.request', entityType: 'HR_LEAVE', summary: 'Raise a leave request' },
+  { method: 'POST', path: '/api/hr/leave/:id/submit', capability: 'hr.manage', writesHr: true,
+    action: 'hr.leave.submit', entityType: 'HR_LEAVE', summary: 'Submit leave for approval' },
+  { method: 'POST', path: '/api/hr/leave/:id/approve', capability: 'hr.approve', writesHr: true,
+    action: 'hr.leave.approve', entityType: 'HR_LEAVE', summary: 'Approve leave' },
+  { method: 'POST', path: '/api/hr/leave/:id/reject', capability: 'hr.approve', writesHr: true,
+    action: 'hr.leave.reject', entityType: 'HR_LEAVE', summary: 'Reject leave, with a reason' },
+  { method: 'POST', path: '/api/hr/overtime', capability: 'hr.manage', writesHr: true,
+    action: 'hr.overtime.record', entityType: 'HR_OVERTIME', summary: 'Record overtime worked' },
+  { method: 'POST', path: '/api/hr/overtime/:id/submit', capability: 'hr.manage', writesHr: true,
+    action: 'hr.overtime.submit', entityType: 'HR_OVERTIME',
+    summary: 'Submit overtime for approval' },
+  { method: 'POST', path: '/api/hr/overtime/:id/approve', capability: 'hr.approve', writesHr: true,
+    action: 'hr.overtime.approve', entityType: 'HR_OVERTIME',
+    summary: 'Approve overtime — payroll consumes only approved overtime' },
+
+  /* ---- Compensation. A strictly smaller audience than the roster above. ---- */
+  { method: 'GET', path: '/api/hr/salary', capability: 'hr.compensation.read',
+    action: 'hr.salary.read', summary: 'Effective-dated salary history for one person' },
+  { method: 'GET', path: '/api/hr/advances', capability: 'hr.compensation.read',
+    action: 'hr.advances.read', summary: 'Employee advances and what is outstanding' },
+  { method: 'GET', path: '/api/hr/payroll', capability: 'hr.compensation.read',
+    action: 'hr.payroll.read', summary: 'Payroll runs and their status' },
+  { method: 'GET', path: '/api/hr/payroll/:id', capability: 'hr.compensation.read',
+    action: 'hr.payrollRun.read', summary: 'One run and its lines' },
+  { method: 'POST', path: '/api/hr/salary', capability: 'hr.compensation.manage', writesHr: true,
+    action: 'hr.salary.create', entityType: 'HR_SALARY',
+    summary: 'Record a salary structure — a raise is a new row, never an overwrite' },
+  { method: 'POST', path: '/api/hr/advances', capability: 'hr.compensation.manage', writesHr: true,
+    action: 'hr.advance.create', entityType: 'HR_ADVANCE', summary: 'Issue an advance' },
+  { method: 'POST', path: '/api/hr/advances/:id/submit', capability: 'hr.compensation.manage',
+    writesHr: true, action: 'hr.advance.submit', entityType: 'HR_ADVANCE',
+    summary: 'Submit an advance for approval' },
+  { method: 'POST', path: '/api/hr/advances/:id/approve', capability: 'hr.approve', writesHr: true,
+    action: 'hr.advance.approve', entityType: 'HR_ADVANCE', summary: 'Approve an advance' },
+  { method: 'POST', path: '/api/hr/payroll', capability: 'hr.compensation.manage', writesHr: true,
+    action: 'hr.payroll.open', entityType: 'HR_PAYROLL',
+    summary: 'Open a payroll run for a month' },
+  { method: 'POST', path: '/api/hr/payroll/:id/calculate', capability: 'hr.compensation.manage',
+    writesHr: true, action: 'hr.payroll.calculate', entityType: 'HR_PAYROLL',
+    summary: 'Calculate the run from approved attendance, leave and overtime' },
+  { method: 'POST', path: '/api/hr/payroll/:id/approve', capability: 'hr.payroll.approve',
+    writesHr: true, action: 'hr.payroll.approve', entityType: 'HR_PAYROLL',
+    summary: 'Approve a calculated run — refused while attendance has gaps, unless acknowledged' },
+  { method: 'POST', path: '/api/hr/payroll/:id/post', capability: 'hr.payroll.approve',
+    writesHr: true, action: 'hr.payroll.post', entityType: 'HR_PAYROLL',
+    summary: 'Post an approved run — this creates obligations, it does not pay them' },
+
   /* ---------------- Administration ---------------- */
   { method: 'GET', path: '/api/settings', capability: 'settings.read',
     action: 'settings.read', summary: 'Business rules (read-only; the workbook owns them)' },
@@ -365,10 +470,12 @@ export function assertWriteGovernance(
     const mutating = route.mutates === true;
     const exempt = route.nonMutating === true;
     const finance = route.writesFinance === true;
+    const people = route.writesHr === true;
 
-    const classifications = [mutating, exempt, finance].filter(Boolean).length;
+    const classifications = [mutating, exempt, finance, people].filter(Boolean).length;
     check(classifications === 1,
-      `${where} must declare exactly one of mutates:true, writesFinance:true or nonMutating:true`);
+      `${where} must declare exactly one of mutates:true, writesFinance:true, writesHr:true `
+      + 'or nonMutating:true');
     check(route.method !== 'DELETE',
       `${where}: no DELETE route may exist — removal is a status transition`);
     check((route.investorScoped ?? false) === false,
@@ -377,6 +484,21 @@ export function assertWriteGovernance(
     if (mutating) {
       check(route.capability.endsWith('.write'),
         `${where} must demand a .write capability (has ${route.capability})`);
+    } else if (people) {
+      /*
+       * The people class. The same bar as finance, with one difference that matters: an HR
+       * route is NOT required to hold a capability listed in FINANCIAL_CAPABILITIES,
+       * because attendance and shifts are operational facts rather than financial ones.
+       * The compensation half of HR IS in that list, and the isolation suite asserts that
+       * per capability rather than per route.
+       */
+      check(route.path.startsWith('/api/hr/'),
+        `${where}: an HR-writing route lives under /api/hr/`);
+      check(route.capability.startsWith('hr.'),
+        `${where}: an HR-writing route demands an HR capability (has ${route.capability})`);
+      check(route.method === 'POST',
+        `${where}: an HR write is a POST — people history is append-only, and a correction `
+        + 'is a new record rather than an edit of an old one');
     } else if (finance) {
       /*
        * The finance class. Every clause here is what stops it becoming the loophole the
