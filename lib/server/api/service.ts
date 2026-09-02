@@ -28,6 +28,17 @@ import { registerHrHandlers } from './hr-handlers';
 import { HrService, periodStartOf } from '@/lib/server/hr/service';
 import { InMemoryHrRepository, type HrRepository } from '@/lib/server/hr/repository';
 import { SupabaseHrRepository } from '@/lib/server/hr/supabase-repository';
+import { registerOperationsHandlers } from './operations-handlers';
+import { OperationsPeopleService, type OperationalTask, type SheetWriteContext } from '@/lib/server/operations/service';
+import {
+  InMemoryOperationsRepository, SupabaseOperationsRepository,
+  type OperationsRepository,
+} from '@/lib/server/operations/repository';
+import type { TaskType } from '@/lib/server/operations/types';
+import { OPEN_HOUSEKEEPING_STATUSES, OPEN_MAINTENANCE_STATUSES } from '@/lib/shared/domain';
+import { MUTATION_DEFINITIONS } from './mutation-services';
+import { executeMutation } from './mutations';
+import { randomUUID } from 'node:crypto';
 import type { MutationDependencies } from './mutations';
 import { resolveEnvironment, type ResolvedEnvironment } from '@/lib/server/environment/config';
 import { createRepositories } from '@/lib/server/sheets/repositories';
@@ -220,8 +231,115 @@ export function getApiRouter(): ApiRouter {
     writesPermitted: resolved.writesPermitted,
   }));
 
+  /*
+   * PEOPLE ON OPERATIONS (M-OPS-2). The bridge, and the only place the two stores meet.
+   *
+   * `tasks` reads the CALLER'S OWN workbook through the tenant-resolved repositories, so a
+   * task reference can only ever be checked against their own sheet — which is what makes
+   * a foreign TaskID a miss rather than a refusal. `writeAssignee` runs the EXISTING
+   * verified mutation pipeline rather than touching a sheets client, so the workbook write
+   * keeps its contract check, its read-after-write and its audit record.
+   */
+  const opsRepo = operationsRepository(supabaseClient);
+  registerOperationsHandlers(built, async () => ({
+    service: new OperationsPeopleService({
+      hr: new HrService({
+        repo: hrRepo,
+        propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+        isPeriodClosed: async (tenant, isoDate) => {
+          const period = await financeRepo.getPeriod(tenant, periodStartOf(isoDate));
+          return period?.status === 'CLOSED';
+        },
+        audit,
+      }),
+      assignments: opsRepo,
+      tasks: async (tenant, taskType) => operationalTasks(await deps.reposFor(tenant.tenantId), taskType),
+      propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+      writeAssignee: (write, taskType, taskRef, name) =>
+        writeAssigneeThroughPipeline(deps, write, taskType, taskRef, name),
+      audit,
+    }),
+    store: operationStore,
+    audit,
+    writesPermitted: resolved.writesPermitted,
+  }));
+
   routerSlot.write(built);
   return built;
+}
+
+/**
+ * The tenant's own tasks, as much of them as the assignment service needs.
+ *
+ * Nothing is copied into Postgres: this reads the workbook every time, so the sheet stays
+ * the authority for status and for the name currently on the row.
+ */
+async function operationalTasks(
+  repos: Awaited<ReturnType<MutationDependencies['reposFor']>>, taskType: TaskType,
+): Promise<readonly OperationalTask[]> {
+  if (taskType === 'HOUSEKEEPING') {
+    return (await repos.housekeeping.readAll()).map((task) => ({
+      taskRef: task.taskId,
+      propertyId: task.propertyId || null,
+      assigneeName: task.cleaner || null,
+      status: task.status,
+      // The application's own definition of "not finished", already established in
+      // lib/shared/domain.ts. Not a second one.
+      open: OPEN_HOUSEKEEPING_STATUSES.includes(task.status),
+    }));
+  }
+  return (await repos.maintenance.readAll()).map((ticket) => ({
+    taskRef: ticket.ticketId,
+    propertyId: ticket.propertyId || null,
+    assigneeName: ticket.assignedTo || null,
+    status: ticket.status,
+    open: OPEN_MAINTENANCE_STATUSES.includes(ticket.status),
+  }));
+}
+
+/**
+ * Writes the assignee's name into the workbook through the EXISTING mutation pipeline.
+ *
+ * Reusing `housekeeping.update` / `maintenance.update` rather than reaching for a sheets
+ * client means this write keeps everything that pipeline provides: the contract check that
+ * refuses a calculated column, the read-after-write verification, the operation ledger and
+ * the audit record. A second write path to the same sheet is exactly what the mutation
+ * layer exists to prevent.
+ *
+ * It also moves the status the way the workbook already does — `housekeeping.create`
+ * already sets FinalStatus to 'Assigned' when a cleaner is named, so assigning an existing
+ * task does the same rather than leaving a named task sitting in Pending.
+ */
+async function writeAssigneeThroughPipeline(
+  deps: MutationDependencies,
+  write: SheetWriteContext,
+  taskType: TaskType,
+  taskRef: string,
+  name: string,
+): Promise<void> {
+  const housekeeping = taskType === 'HOUSEKEEPING';
+  const definition = MUTATION_DEFINITIONS[housekeeping ? 'housekeeping.update' : 'maintenance.update'];
+  if (!definition) throw new Error(`No mutation definition for ${taskType}`);
+
+  const body = housekeeping
+    ? { operationId: randomUUID(), cleaner: name, finalStatus: 'Assigned' }
+    : { operationId: randomUUID(), assignedTo: name, status: 'Assigned' };
+
+  await executeMutation(definition, {
+    // The REAL caller, not a synthesised one: the pipeline authenticates, audits and
+    // allocates from this context, and a fabricated actor would put a write in the trail
+    // under somebody who did not make it.
+    auth: write.auth,
+    request: {
+      method: 'PATCH',
+      path: housekeeping ? `/api/housekeeping/${taskRef}` : `/api/maintenance/${taskRef}`,
+      headers: {},
+      query: {},
+      params: { id: taskRef },
+      body,
+      requestId: write.requestId,
+    },
+  }, deps);
 }
 
 
@@ -242,6 +360,16 @@ const aiSinkSlot = processSlot<AiUsageSink>('api.service.aiSink');
  */
 const financeRepoSlot = processSlot<FinanceRepository>('api.service.financeRepo');
 const hrRepoSlot = processSlot<HrRepository>('api.service.hrRepo');
+const opsRepoSlot = processSlot<OperationsRepository>('api.service.opsRepo');
+
+function operationsRepository(supabaseClient: unknown): OperationsRepository {
+  if (supabaseClient) return new SupabaseOperationsRepository(supabaseClient);
+  const existing = opsRepoSlot.read();
+  if (existing) return existing;
+  const created = new InMemoryOperationsRepository();
+  opsRepoSlot.write(created);
+  return created;
+}
 
 function hrRepository(supabaseClient: unknown): HrRepository {
   if (supabaseClient) return new SupabaseHrRepository(supabaseClient);

@@ -70,6 +70,19 @@ export const CAPABILITIES = [
    */
   'hr.read', 'hr.manage', 'hr.approve',
   'hr.compensation.read', 'hr.compensation.manage', 'hr.payroll.approve',
+  /*
+   * PEOPLE ON OPERATIONS (M-OPS-2). Deliberately NOT `hr.read`.
+   *
+   * A supervisor needs to know who is on shift tonight and who owns which turnover. They do
+   * not need a contact directory, and `hr.read` reaches `/api/hr/employees`, which carries
+   * `contactRef` and `email`. Granting it to run a housekeeping board would widen an
+   * operations login into the staff directory as a side effect.
+   *
+   * So these two are narrower by construction: `operations.staff.read` serves the roster
+   * projection — name, code, department, designation, shift, attendance, open task count —
+   * and nothing else exists on the type to leak.
+   */
+  'operations.staff.read', 'operations.assign',
   // Administration
   'settings.read', 'settings.write', 'users.manage', 'audit.read',
   /**
@@ -121,6 +134,7 @@ const GRANTS: Record<Role, readonly Capability[]> = {
      */
     'hr.read', 'hr.manage', 'hr.approve',
     'hr.compensation.read', 'hr.compensation.manage',
+    'operations.staff.read', 'operations.assign',
     'audit.read',               // full internal READ access, per the Phase 5A role brief
     'demo.control',             // demo-only in practice; the environment gate decides
     'ai.copilot', 'ai.operations',
@@ -134,6 +148,12 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     // check-in/check-out, housekeeping, maintenance, inventory. NO financial writer,
     // NO investor writer, NO property-master or settings writer.
     'reservations.write', 'housekeeping.write', 'maintenance.write', 'inventory.write',
+    /*
+     * Who is working, and who owns which task. This is the operational half of the people
+     * domain and nothing more: no compensation capability, and not `hr.read` either — see
+     * the capability list for why the narrower pair exists.
+     */
+    'operations.staff.read', 'operations.assign',
     'ai.operations',
   ],
 

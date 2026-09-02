@@ -89,6 +89,16 @@ export interface RouteDefinition {
    * flag would let an HR route satisfy the governance check with a finance capability.
    */
   writesHr?: true;
+  /**
+   * True on a non-GET route that writes the OPERATIONS overlay (M-OPS-2).
+   *
+   * A fifth classification, for the reason the third and fourth exist: this one writes BOTH
+   * the tenant's workbook (through the existing verified mutation pipeline, which owns the
+   * sheet) AND a Postgres overlay carrying the employee reference. It is not a workbook
+   * mutation — `mutates` routes are cross-checked against MUTATION_DEFINITIONS and this has
+   * no definition of its own — and it is plainly not non-mutating.
+   */
+  writesOps?: true;
   summary: string;
 }
 
@@ -352,6 +362,27 @@ export const API_ROUTES: readonly RouteDefinition[] = [
     writesHr: true, action: 'hr.payroll.post', entityType: 'HR_PAYROLL',
     summary: 'Post an approved run — this creates obligations, it does not pay them' },
 
+  /* ---------------- People on operations (M-OPS-2) ----------------
+   * The bridge between the workbook's tasks and the people who do them. The task, its
+   * status, its inspection and its cost link stay in the workbook; what these routes add is
+   * WHICH employee, WHO decided, WHEN, and what came before.
+   *
+   * `operations.staff.read` is narrower than `hr.read` on purpose: it serves the roster —
+   * name, code, department, designation, shift, attendance, open tasks — and never the
+   * contact details `/api/hr/employees` carries, nor anything about pay.               */
+  { method: 'GET', path: '/api/operations/staffing', capability: 'operations.staff.read',
+    action: 'operations.staffing.read',
+    summary: "Who is working today, by department, with coverage gaps" },
+  { method: 'GET', path: '/api/operations/assignments', capability: 'operations.staff.read',
+    action: 'operations.assignments.read',
+    summary: 'Current task assignments, or one task history' },
+  { method: 'GET', path: '/api/operations/metrics', capability: 'operations.staff.read',
+    action: 'operations.metrics.read',
+    summary: 'Open and unassigned counts for housekeeping and maintenance' },
+  { method: 'POST', path: '/api/operations/assignments', capability: 'operations.assign',
+    writesOps: true, action: 'operations.task.assign', entityType: 'OPS_ASSIGNMENT',
+    summary: 'Assign or reassign a task to an employee — supersedes, never overwrites' },
+
   /* ---------------- Administration ---------------- */
   { method: 'GET', path: '/api/settings', capability: 'settings.read',
     action: 'settings.read', summary: 'Business rules (read-only; the workbook owns them)' },
@@ -471,11 +502,12 @@ export function assertWriteGovernance(
     const exempt = route.nonMutating === true;
     const finance = route.writesFinance === true;
     const people = route.writesHr === true;
+    const operations = route.writesOps === true;
 
-    const classifications = [mutating, exempt, finance, people].filter(Boolean).length;
+    const classifications = [mutating, exempt, finance, people, operations].filter(Boolean).length;
     check(classifications === 1,
-      `${where} must declare exactly one of mutates:true, writesFinance:true, writesHr:true `
-      + 'or nonMutating:true');
+      `${where} must declare exactly one of mutates:true, writesFinance:true, writesHr:true, `
+      + 'writesOps:true or nonMutating:true');
     check(route.method !== 'DELETE',
       `${where}: no DELETE route may exist — removal is a status transition`);
     check((route.investorScoped ?? false) === false,
@@ -484,6 +516,21 @@ export function assertWriteGovernance(
     if (mutating) {
       check(route.capability.endsWith('.write'),
         `${where} must demand a .write capability (has ${route.capability})`);
+    } else if (operations) {
+      /*
+       * The operations class. It writes the workbook as well as the overlay, so it demands
+       * an `operations.` capability rather than a `.write` one — the workbook write it
+       * performs runs the existing pipeline, which does its own capability check on the
+       * definition it executes.
+       */
+      check(route.path.startsWith('/api/operations/'),
+        `${where}: an operations-writing route lives under /api/operations/`);
+      check(route.capability.startsWith('operations.'),
+        `${where}: an operations-writing route demands an operations capability `
+        + `(has ${route.capability})`);
+      check(route.method === 'POST',
+        `${where}: an operations write is a POST — an assignment supersedes rather than `
+        + 'overwrites, so there is nothing to PATCH');
     } else if (people) {
       /*
        * The people class. The same bar as finance, with one difference that matters: an HR
