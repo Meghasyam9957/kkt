@@ -818,8 +818,16 @@ async function nameOnSheetOnly(token: string, taskRef: string, name: string) {
   expect(res.status, JSON.stringify(res.body)).toBe(200);
 }
 
-const rowFor = (report: { rows: readonly { taskRef: string }[] }, taskRef: string) =>
-  report.rows.find((r) => r.taskRef === taskRef);
+/**
+ * One task's row out of a reconciliation report.
+ *
+ * Generic over the row so the caller keeps the full type. Narrowing the parameter to
+ * `{ taskRef: string }` erased every other field, which made `row?.status` a type error at
+ * every call site — the helper was throwing away exactly the thing being asserted.
+ */
+const rowFor = <T extends { taskRef: string }>(
+  report: { rows: readonly T[] }, taskRef: string,
+): T | undefined => report.rows.find((r) => r.taskRef === taskRef);
 
 describe('reconciliation · what the sheet and the record each say', () => {
   it('calls an assignment we made, and echoed, MATCHED', async () => {
@@ -1108,7 +1116,7 @@ describe('M-OPS-3 · the new surfaces keep the existing boundaries', () => {
   it('keeps an investor out of every operations surface', async () => {
     for (const path of ['/api/operations/reconciliation', '/api/operations/urgent',
       '/api/operations/staffing', '/api/operations/assignments']) {
-      const res = await h.request(USERS.investorA.token, 'GET', path);
+      const res = await h.request(USERS.investorA!.token, 'GET', path);
       expect([401, 403], `${path} must refuse an investor`).toContain(res.status);
     }
   });
@@ -1130,11 +1138,16 @@ describe('M-OPS-3 · the new surfaces keep the existing boundaries', () => {
     await h.request(OPS_A.token, 'POST', '/api/operations/assignments', {
       operationId: op(), taskType: 'HOUSEKEEPING', taskRef: task, employeeId: employee.id,
     });
-    const entries = JSON.stringify(h.wb.deps.audit ? await h.wb.auditEntries?.() ?? [] : []);
-    if (entries !== '[]') {
-      expect(entries, 'a staff-movement record is not what an audit trail is for')
-        .not.toContain('Anita Rao');
-    }
+    /*
+     * Read from the harness's own sink rather than a method invented for the occasion. The
+     * assertion is the point: the trail records WHICH TASK was assigned and by whom, and
+     * never the employee's name — a list of who was put on which turnover is a
+     * staff-movement record nobody asked for.
+     */
+    const entries = h.wb.audit.byAction('operations.task.assign.applied');
+    expect(entries.length, 'the assignment is audited').toBeGreaterThan(0);
+    expect(JSON.stringify(entries), 'the trail names the task, never the person')
+      .not.toContain('Anita Rao');
   });
 });
 

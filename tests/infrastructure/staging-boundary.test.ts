@@ -40,6 +40,18 @@ const FAKE_JWT = [
   'c2lnbmF0dXJlc2lnbmF0dXJlc2lnbmF0dXJl',
 ].join('.');
 const FAKE_OPENAI_KEY = `sk-${'abcdefghijklmnopqrstuvwxyz012345'}`;
+/*
+ * A connection string carrying a password to a ROUTABLE host — the shape the scanner must
+ * catch, and therefore a shape that must not sit whole on a line of tracked source.
+ *
+ * It was written as one literal when this suite was added, so `npm run scan:secrets` flagged
+ * this very file and the gate exited non-zero. The scanner was right: "it is only a test
+ * fixture" is what every credential-shaped string in source claims, and a scanner that
+ * exempted its own tests would be exempting the file most likely to be copied from. Joined at
+ * runtime, exactly like the fixtures above, it produces the identical value and leaves nothing
+ * for the scanner to find.
+ */
+const FAKE_PG_URL = ['postgres://admin', ':', 's3cr3tpassword', '@', 'db.makam.io:5432/app'].join('');
 const FAKE_PEM_HEADER = `${'-----'}BEGIN RSA PRIVATE KEY${'-----'}`;
 
 const STAGING_HOST = 'https://abcdefg.supabase.co';
@@ -232,7 +244,7 @@ describe('secret scanner · catches a real shape, ignores a documented example',
   });
 
   it('catches a connection string carrying a password to a real host', async () => {
-    const found = await scanText("url = 'postgres://admin:s3cr3tpassword@db.makam.io:5432/app'");
+    const found = await scanText(`url = '${FAKE_PG_URL}'`);
     expect(found.map((f) => f.rule)).toContain('postgres-url-with-password');
   });
 

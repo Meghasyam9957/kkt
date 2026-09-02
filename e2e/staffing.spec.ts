@@ -24,8 +24,21 @@ async function signInAs(page: Page, label: string): Promise<void> {
   await page.waitForSelector('main#main');
 }
 
-/** Every word that would mean money about a person. None may reach this page. */
-const COMPENSATION = /\bsalary\b|\bwage\b|\bpayroll\b|\bgross\b|\bnet pay\b|\bctc\b|\bbank\b|\bifsc\b|\bupi\b|\badvance\b/i;
+/**
+ * A compensation FIELD, as it would appear if one were serialised into the page.
+ *
+ * This was an English-WORD regex until M-INV-1, and the distinction is not pedantry. The
+ * staffing card explains that recording attendance is what lets PAYROLL be approved without
+ * an override — useful, true, and entirely prose. The word regex failed on that sentence, so
+ * the test was pushing a helpful explanation out of the product to satisfy itself, while a
+ * payload genuinely carrying `"grossPay":` would sail past a reader who had learned to expect
+ * the word rather than the field.
+ *
+ * `e2e/assignment.spec.ts` had already reached this conclusion and matched fields; this file
+ * was left behind. Same reasoning, now in both places.
+ */
+const COMPENSATION =
+  /"(salary|grossPay|netPay|gross|net|ctc|wage|payroll|bankAccount|ifsc|upi|advance|contactRef)"\s*:/i;
 
 test('today shows who is working, beside what is happening', async ({ page }) => {
   await signInAs(page, 'Demo Operations Manager');
@@ -40,11 +53,24 @@ test('today shows who is working, beside what is happening', async ({ page }) =>
   await expect(staffing).toBeVisible();
 
   /*
-   * Nobody is on the books in demo, and the section says so in words. This is the
-   * assertion the milestone actually cares about: an empty roster must read as "nobody has
-   * been added yet", never as an empty table that looks like everyone is absent.
+   * EITHER OUTCOME IS THE PRODUCT WORKING, and this assertion accepts both.
+   *
+   * When M-OPS-2 wrote this, the demo HR store was always empty, so "Nobody is on the books
+   * yet" was the only reachable state. M-OPS-3 added `ensureDemoWorkforce`, which seeds the
+   * roster the first time any operations surface reads it — so whether names appear here now
+   * depends on what ran before, which made this test look intermittently flaky when it was
+   * simply asserting a state the product had stopped guaranteeing.
+   *
+   * What the milestone actually cares about survives, and is what is asserted: an EMPTY
+   * roster must read as "nobody has been added yet", never as an empty table that looks like
+   * everybody is absent. A seeded roster must name people.
    */
-  await expect(staffing).toContainText(/Nobody is on the books yet/i);
+  const words = await staffing.innerText();
+  const empty = /Nobody is on the books yet/i.test(words);
+  const named = /[A-Z]{2}-\d{3}/.test(words);   // an employee code, e.g. HK-001
+  expect(empty || named,
+    'the staffing card either names people or says plainly that nobody is on the books')
+    .toBe(true);
 });
 
 test('no compensation field reaches the browser on today', async ({ page }) => {
