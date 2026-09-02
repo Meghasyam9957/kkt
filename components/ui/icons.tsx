@@ -106,6 +106,10 @@ export const NAV_ICONS: Readonly<Record<string, IconName>> = {
   Maintenance: 'maintenance',
   Inventory: 'inventory',
   'Guest Requests': 'guest',
+  // The workforce register. Borrows the guest glyph — both are about people — rather
+  // than minting a new one, because an icon set stops meaning anything once every screen
+  // has its own.
+  People: 'guest',
   Revenue: 'revenue',
   // The payables/receivables ledger. It borrows the cash-flow glyph because both are
   // about money moving rather than money earned — and a new glyph for a new screen is

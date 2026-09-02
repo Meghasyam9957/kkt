@@ -69,6 +69,18 @@ export const NAVIGATION: NavSection[] = [
     ],
   },
   {
+    title: 'People',
+    items: [
+      /*
+       * The workforce register (M-HR-1). It carries `hr.read`, which covers people,
+       * attendance, leave and shifts but NOT compensation — salary and payroll are a
+       * strictly smaller audience, and the page assembles their figures only for a caller
+       * who holds `hr.compensation.read`.
+       */
+      { label: 'People', href: '/admin/hr', capability: 'hr.read' },
+    ],
+  },
+  {
     title: 'Finance',
     items: [
       { label: 'Revenue', href: '/admin/finance/revenue', capability: 'revenue.read' },
