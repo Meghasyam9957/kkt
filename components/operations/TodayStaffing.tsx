@@ -3,6 +3,7 @@ import { operationsServiceFor } from '@/lib/server/api/service';
 import { Card, CardHeader, CardBody, StatusPill } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { staffingView } from '@/lib/server/operations/projections';
+import { ensureDemoWorkforce } from '@/lib/server/operations/demo-workforce';
 
 /**
  * WHO IS WORKING TODAY — the staffing half of the command desk.
@@ -28,6 +29,7 @@ export async function TodayStaffing({ property }: { property?: string }) {
   // that explains an absence nobody asked about.
   if (!access.allowed) return null;
 
+  await ensureDemoWorkforce();
   const service = operationsServiceFor();
   const today = new Date().toISOString().slice(0, 10);
 

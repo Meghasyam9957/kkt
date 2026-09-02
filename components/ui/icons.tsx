@@ -106,6 +106,8 @@ export const NAV_ICONS: Readonly<Record<string, IconName>> = {
   Maintenance: 'maintenance',
   Inventory: 'inventory',
   'Guest Requests': 'guest',
+  // A magnifying glass: this screen looks for disagreements rather than recording work.
+  Reconciliation: 'audit',
   // The workforce register. Borrows the guest glyph — both are about people — rather
   // than minting a new one, because an icon set stops meaning anything once every screen
   // has its own.

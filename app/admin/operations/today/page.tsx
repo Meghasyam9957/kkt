@@ -20,6 +20,7 @@ import { Suspense } from 'react';
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
 import { TodayBoard } from '@/components/operations/TodayBoard';
 import { TodayStaffing } from '@/components/operations/TodayStaffing';
+import { TodayUrgent } from '@/components/operations/TodayUrgent';
 import { LoadingBlock } from '@/components/ui/primitives';
 
 export const metadata = { title: "Today — MAKAM Home Stays" };
@@ -37,6 +38,14 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
     >
       {(board) => (
         <>
+          {/*
+            * Above the board on purpose. Urgent work with no owner is the one thing on this
+            * screen that will not resolve itself, and it renders nothing at all when there is
+            * none — so it costs no space on an ordinary morning.
+            */}
+          <Suspense fallback={null}>
+            <TodayUrgent property={params.property} />
+          </Suspense>
           <TodayBoard board={board} />
           {/*
             * Streamed rather than awaited: staffing comes from the people domain, and the

@@ -580,6 +580,39 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    on the books yet". Deliberately NOT .sv-state, which is the centred full-block empty
    state — this sits inline under a card header, in the muted body voice, because a
    settled position is a reading and not an absence of one. */
+/* Urgent work with no owner. Prominent by POSITION and by one pill, never by colouring a
+   whole row — a board where the pressing item shouts is one where everything else reads as
+   unimportant, and by the third morning nothing is read at all. */
+.sv-urgentlist { display: flex; flex-direction: column; gap: var(--space-4); }
+.sv-urgentlist__item { padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
+.sv-urgentlist__item:last-child { padding-bottom: 0; border-bottom: none; }
+.sv-urgentlist__head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.sv-urgentlist__title { font-weight: 500; }
+.sv-urgentlist__action { margin-top: var(--space-3); }
+
+/* ---- Operations rows: who holds a task, and the actions on it (M-OPS-3) ---- */
+
+/* Two or three small buttons on one row. Wraps rather than overflowing, because the
+   housekeeping board stacks per record on a phone and a row of buttons that scrolled
+   sideways would put the second action out of reach exactly where thumbs are. */
+.sv-rowactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* The person on a task, with any disagreement about them beside the name rather than
+   underneath it — a supervisor scans this column, and a second line per row would double
+   the height of a board read at arm's length. */
+.sv-assigned {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+.sv-assigned__name { font-weight: 500; }
+
 .sv-empty {
   color: var(--text-muted);
   font-size: 0.8125rem;

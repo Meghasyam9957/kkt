@@ -66,6 +66,12 @@ export const NAVIGATION: NavSection[] = [
       { label: 'Maintenance', href: '/admin/operations/maintenance', capability: 'maintenance.read' },
       { label: 'Inventory', href: '/admin/operations/inventory', capability: 'inventory.read' },
       { label: 'Guest Requests', href: '/admin/operations/requests', capability: 'operations.view' },
+      /*
+       * Where the workbook's name and the assignment record disagree. Carries
+       * `operations.staff.read` rather than `operations.view`: it names people, and the
+       * narrower capability is the one that exists for exactly that.
+       */
+      { label: 'Reconciliation', href: '/admin/operations/reconciliation', capability: 'operations.staff.read' },
     ],
   },
   {
