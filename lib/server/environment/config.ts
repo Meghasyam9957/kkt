@@ -156,6 +156,20 @@ export function resolveEnvironment(env: EnvLike = process.env): ResolvedEnvironm
 }
 
 /**
+ * `LIVE_DATA_ENABLED` — whether this deployment reads its workbook rather than the
+ * generated demonstration dataset.
+ *
+ * It lives here, beside the other environment reads, because two modules now need the
+ * same answer: `lib/data/providers` (which serves it to pages as `isLiveDataEnabled`) and
+ * `lib/server/tenant/data-source.ts` (which decides what a tenant's binding resolves to).
+ * Two independent reads of one variable is how the read side and the write side of a
+ * system drift into disagreeing about which data they are looking at.
+ */
+export function liveDataEnabled(env: EnvLike = process.env): boolean {
+  return String(env.LIVE_DATA_ENABLED ?? 'false').toLowerCase() === 'true';
+}
+
+/**
  * `<PREFIX>WRITES_ENABLED`. Demo defaults ON (a demo that cannot demonstrate writing is
  * not a demo); production defaults OFF and only the explicit string 'true' enables it.
  */

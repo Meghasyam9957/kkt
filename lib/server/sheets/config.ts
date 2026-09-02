@@ -56,6 +56,46 @@ export function createLiveSheetsClient(
   });
 }
 
+/**
+ * Build a client for ONE TENANT'S workbook.
+ *
+ * The split this function embodies is the heart of M-SAAS-1:
+ *
+ *   the WORKBOOK is per tenant   — `spreadsheetId`, from the tenant registry
+ *   the CREDENTIAL is per deployment — one service identity, from the environment
+ *
+ * `spreadsheetId` must come from `tenant_workbooks` via
+ * `lib/server/tenant/data-source.ts`, and from nowhere else. It is not a parameter a
+ * request can reach: no route accepts a workbook id, no handler forwards one, and the
+ * registry lookup that produces it takes a tenant id and nothing else.
+ *
+ * The consequence of the credential being shared is written down rather than left
+ * implicit: one service account with access to every tenant workbook means a compromise
+ * of it reaches every tenant. That is the accepted trade for this milestone and the
+ * alternative is recorded in docs/MSAAS1_DATA_BOUNDARY.md §5.
+ */
+export function createTenantSheetsClient(
+  resolved: ResolvedEnvironment,
+  spreadsheetId: string,
+): GoogleSheetsClient {
+  const trimmed = spreadsheetId.trim();
+  if (trimmed === '') {
+    // A blank id would make the Google client fall back to whatever the caller's default
+    // is. Refusing is the only safe reading: we do not know whose workbook was meant.
+    throw new Error(
+      'A tenant workbook client needs a spreadsheet id. Refusing to construct one without, '
+      + 'because the result would read an unidentified workbook.',
+    );
+  }
+  // The credential still comes from the environment — and only from here, so the security
+  // suite's rule that no client-reachable module reads it continues to hold.
+  const credentials = requireSheets(resolved);
+  return new GoogleSheetsApiClient({
+    spreadsheetId: trimmed,
+    serviceAccountJsonBase64: credentials.serviceAccountJsonBase64,
+  });
+}
+
 function isResolved(value: EnvLike | ResolvedEnvironment): value is ResolvedEnvironment {
   return typeof (value as ResolvedEnvironment).env === 'string'
     && 'descriptor' in (value as ResolvedEnvironment);
