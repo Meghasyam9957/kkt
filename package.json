@@ -16,7 +16,9 @@
     "db:status": "tsx scripts/db.ts status",
     "db:migrate": "tsx scripts/db.ts migrate",
     "test:db": "vitest run tests/infrastructure",
-    "gate": "npm run contract:check && npm run typecheck && npm run lint && npm run db:check && npm run test && npm run build && node scripts/parity-report.mjs",
+    "test:staging": "vitest run --config vitest.staging.config.mts",
+    "scan:secrets": "node scripts/scan-secrets.mjs",
+    "gate": "npm run contract:check && npm run typecheck && npm run lint && npm run scan:secrets && npm run db:check && npm run test && npm run build && node scripts/parity-report.mjs",
     "parity:preflight": "node scripts/live-parity-preflight.mjs",
     "dev": "next dev",
     "build": "next build",
@@ -38,6 +40,7 @@
     "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "server-only": "^0.0.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -134,7 +134,10 @@ describe('environment · the test suite cannot reach production', () => {
   });
 
   it('refuses a hosted Supabase project unless it is explicitly disclaimed', () => {
-    const hosted = { [DB_ENV_NAMES.url]: 'postgres://u:p@abcdefg.supabase.co:5432/postgres' };
+    // No password in the fixture: the guard classifies by hostname alone, so writing one
+    // would add nothing to the test and give the secret scanner a real credential shape
+    // pointed at a real domain to worry about.
+    const hosted = { [DB_ENV_NAMES.url]: 'postgres://user@abcdefg.supabase.co:5432/postgres' };
     expect(() => resolveTestDatabase(hosted)).toThrow(/hosted Supabase/i);
     expect(resolveTestDatabase({ ...hosted, [DB_ENV_NAMES.confirmation]: 'yes' }).kind)
       .toBe('POSTGRES');
