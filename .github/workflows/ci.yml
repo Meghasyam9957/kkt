@@ -1,0 +1,133 @@
+name: CI
+
+# Every push and every pull request answers the four questions M-INFRA-1 exists to keep
+# answered:
+#
+#   Can a clean database be created from the migrations?
+#   Do the row-level-security tests pass against a real PostgreSQL server?
+#   Does the application still build?
+#   Do the existing tests still pass?
+#
+# NO SECRETS ARE USED OR NEEDED. This workflow declares no `secrets` context, no
+# environment, and no credentials. The database it tests against is a throwaway container
+# that exists for the length of the job, and the application code under test runs in DEMO,
+# which loads the in-process dataset and reaches no network. Nothing here can print a
+# production credential because nothing here is given one.
+#
+# It also cannot reach production: the suite refuses a DATABASE_URL whose host matches a
+# configured PRODUCTION_SUPABASE_URL, and no such variable is set here — see
+# lib/server/db/test-database.ts.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A second push supersedes the first rather than queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only. A CI job that cannot write cannot be turned into one that publishes.
+permissions:
+  contents: read
+
+env:
+  # Keeps every step honest about which configuration it is exercising.
+  APP_ENV: demo
+
+jobs:
+  checks:
+    name: Contract, types, lint, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Contract check
+        run: npm run contract:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # The fastest useful database signal, and it needs no service container: apply every
+      # migration to a brand-new in-memory PostgreSQL and report the schema. If a migration
+      # cannot build a clean database, nothing below is worth running.
+      - name: Migrations build a clean database
+        run: npm run db:check
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Offline parity report
+        run: node scripts/parity-report.mjs
+
+  database:
+    name: Migrations and RLS on a real PostgreSQL server
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The same suite the `checks` job runs in WebAssembly, re-run against a normal
+    # PostgreSQL server build. Two engines rather than one is the point: it stops the suite
+    # quietly coming to depend on a PGlite behaviour that a real server does not share.
+    services:
+      postgres:
+        # The official image ships contrib, which `create extension pgcrypto` in 0001 needs.
+        image: postgres:16
+        env:
+          # A throwaway container on the job's own network, reachable only from this job and
+          # destroyed with it. These are not credentials to anything that outlives the run.
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Migrations, schema, RLS and boundaries against PostgreSQL 16
+        # The harness creates a fresh database per test file and drops it afterwards, so the
+        # container is never reused between files and no test can see another's rows.
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: npm run test:db
+
+      - name: Confirm the suite refuses a production target
+        # A negative test of the guard itself, in CI, because the guard is the only thing
+        # standing between this job and somebody's real database on the day a URL is pasted
+        # into the wrong place. The step PASSES only when the run is refused.
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          PRODUCTION_DATABASE_URL: postgres://someone:else@localhost:5432/postgres
+        run: |
+          if npm run test:db > guard.log 2>&1; then
+            echo "The suite ran against a host configured as production. The guard failed."
+            exit 1
+          fi
+          grep -q "production database" guard.log || {
+            echo "It failed, but not because of the production guard:"; tail -30 guard.log; exit 1; }
+          echo "Refused, as intended."
