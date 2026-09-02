@@ -8,7 +8,7 @@ import { requireTenantContext } from '@/lib/server/auth/page-guard';
 export const metadata = { title: 'Housekeeping — MAKAM Home Stays' };
 
 async function NewTurnoverAction() {
-  const propertyIds = await getDataProvider(await requireTenantContext()).getPropertyIds();
+  const propertyIds = await (await getDataProvider(await requireTenantContext())).getPropertyIds();
   return (
     <NewRecordButton
       label="+ New Turnover"

@@ -27,7 +27,7 @@ async function NewValuedBookingAction() {
   const access = await checkPageAccess('revenue.read');
   if (!access.allowed) return null;
 
-  const provider = getDataProvider(await requireTenantContext());
+  const provider = await getDataProvider(await requireTenantContext());
   const [propertyIds, platforms] = await Promise.all([
     provider.getPropertyIds(), provider.getPlatforms(),
   ]);

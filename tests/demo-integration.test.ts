@@ -29,7 +29,7 @@ function harness() {
   const client = getSharedDemoClient();
   const audit = new AuditLogger(new InMemoryAuditSink());
   const deps: MutationDependencies = {
-    repos: createRepositories(client),
+    reposFor: async () => createRepositories(client),
     store: new InMemoryOperationStore(),
     allocator: new IdAllocator(new InMemorySequenceStore(), audit),
     audit,

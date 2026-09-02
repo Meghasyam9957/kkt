@@ -72,7 +72,7 @@ export default async function PortfolioPage() {
     );
   }
 
-  const provider = getDataProvider(access.tenant);
+  const provider = await getDataProvider(access.tenant);
   const { workbook, monthKey } = await loadWorkbookForInvestor(provider);
   const service = new InvestorService(workbook);
 

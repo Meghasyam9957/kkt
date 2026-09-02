@@ -19,7 +19,7 @@ export default async function DashboardPage({
   if (!access.allowed) return <AccessDenied role={access.session.role} />;
 
   const params = await searchParams;
-  const provider = getDataProvider(await requireTenantContext());
+  const provider = await getDataProvider(await requireTenantContext());
   const months = await provider.getAvailableMonths();
   const month = params.month && months.includes(params.month)
     ? params.month

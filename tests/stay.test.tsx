@@ -127,7 +127,7 @@ describe('stay · arrival', () => {
     expect(again.status).toBe(422);
 
     // And the first arrival's time was not overwritten by the refused one.
-    const rows = await h.deps.repos.reservations.readAll();
+    const rows = await h.repos.reservations.readAll();
     expect(rows.find((b) => b.BookingID === id)!.CheckInTime).toBe('14:00');
   });
 
@@ -157,7 +157,7 @@ describe('stay · arrival', () => {
     expect(late.status).toBe(422);
     expect(late.body.error.details.join(' ')).toMatch(/cannot move to "Checked In"/);
 
-    const rows = await h.deps.repos.reservations.readAll();
+    const rows = await h.repos.reservations.readAll();
     const after = rows.filter((b) => b.BookingID === id);
     expect(after).toHaveLength(1);
     expect(after[0]!.CheckInTime).toBe('14:35');
@@ -240,7 +240,7 @@ describe('stay · departure', () => {
     const late = await h.request('operations', 'POST', `/api/reservations/${id}/check-out`, payload);
     expect(late.status).toBe(422);
 
-    const rows = await h.deps.repos.reservations.readAll();
+    const rows = await h.repos.reservations.readAll();
     const after = rows.find((b) => b.BookingID === id)!;
     expect(after.BookingStatus).toBe('Checked Out');
     expect(after.CheckOutTime).toBe('11:20');
@@ -546,7 +546,7 @@ describe('stay · disclosure', () => {
       { operationId: randomUUID(), checkInTime: '14:35' });
     expect(res.status).toBe(403);
     // Refused BEFORE anything is validated or written: the booking is untouched.
-    const rows = await h.deps.repos.reservations.readAll();
+    const rows = await h.repos.reservations.readAll();
     expect(rows.find((b) => b.BookingID === id)!.BookingStatus).toBe('Confirmed');
   });
 });

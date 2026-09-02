@@ -165,9 +165,9 @@ describe('mutations · calc protection', () => {
   it('the repository layer refuses a calc key even if a definition tried to emit one', async () => {
     // Defence in depth below the schema: updateById throws on calc keys — proven against
     // a row that really exists, so the row lookup cannot mask the rule.
-    const [firstExpense] = await h.deps.repos.expenses.readAll();
+    const [firstExpense] = await h.repos.expenses.readAll();
     expect(firstExpense).toBeTruthy();
-    await expect(h.deps.repos.expenses.updateByIdVerified(
+    await expect(h.repos.expenses.updateByIdVerified(
       (firstExpense as { ExpenseID: string }).ExpenseID, { TotalAmount: 1 },
     )).rejects.toThrow(/calculated column/);
   });
@@ -567,7 +567,7 @@ describe('mutations · reservation lifecycle', () => {
     expect(res.body.record.BookingStatus).toBe('Cancelled');
     expect(String(res.body.record.Notes)).toContain('Guest called to cancel');
     // Still present in the sheet.
-    const bookings = await h.deps.repos.reservations.readAll();
+    const bookings = await h.repos.reservations.readAll();
     expect(bookings.some((b) => b.BookingID === id)).toBe(true);
   });
 
@@ -586,7 +586,7 @@ describe('mutations · reservation lifecycle', () => {
     expect(String(res.body.record.Notes)).toContain('No-show via web');
     expect(String(res.body.record.Notes)).toContain('Guest never arrived');
 
-    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    const stored = (await h.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
     expect(stored.BookingStatus).toBe('No Show');
   });
 
@@ -599,7 +599,7 @@ describe('mutations · reservation lifecycle', () => {
     await h.request('operations', 'POST', `/api/reservations/${noShow}/cancel`,
       { operationId: randomUUID(), reason: 'Did not arrive', noShow: true });
 
-    const rows = await h.deps.repos.reservations.readAll();
+    const rows = await h.repos.reservations.readAll();
     expect(rows.find((b) => b.BookingID === cancelled)!.BookingStatus).toBe('Cancelled');
     expect(rows.find((b) => b.BookingID === noShow)!.BookingStatus).toBe('No Show');
   });
@@ -609,7 +609,7 @@ describe('mutations · reservation lifecycle', () => {
     await h.request('operations', 'POST', `/api/reservations/${id}/check-in`,
       { operationId: randomUUID(), checkInTime: '14:35' });
 
-    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    const stored = (await h.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
     expect(stored.CheckInTime).toBe('14:35');
     // A time nobody supplied stays absent rather than becoming an empty string, so the
     // detail panel can tell "not recorded" from "recorded as nothing".
@@ -628,7 +628,7 @@ describe('mutations · reservation lifecycle', () => {
       .toContain('checkOutDate must be after checkInDate');
 
     // The stay is untouched by the refusal.
-    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    const stored = (await h.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
     expect(stored.CheckOutDate).toBe(isoToSerial('2026-09-03'));
   });
 
@@ -638,7 +638,7 @@ describe('mutations · reservation lifecycle', () => {
       { operationId: randomUUID(), checkOutDate: '2026-09-06' });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    const stored = (await h.deps.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
+    const stored = (await h.repos.reservations.readAll()).find((b) => b.BookingID === id)!;
     expect(stored.CheckOutDate).toBe(isoToSerial('2026-09-06'));
     expect(stored.CheckInDate).toBe(isoToSerial('2026-09-01'));
   });

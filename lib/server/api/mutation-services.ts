@@ -460,12 +460,20 @@ export function registerMutationHandlers(
     });
   }
 
-  // Operation-status polling: own operations only. The actor id comes from the session;
-  // an id in the path names WHICH operation, never WHOSE.
+  /*
+   * Operation-status polling: own operations only.
+   *
+   * Two independent checks, and both are server-resolved. The ACTOR must match, so one
+   * colleague cannot poll another's operation; and the TENANT must match, so the day a
+   * support principal holds memberships in two customers, the same user id polling the
+   * same operation id does not cross between them. An id in the path names WHICH
+   * operation, never WHOSE.
+   */
   router.register('GET', '/api/operations-log/:id', async (ctx) => {
     const id = ctx.request.params?.id ?? '';
     const record = await deps.store.get(id);
-    if (!record || record.actorId !== (ctx.auth.userId ?? null)) {
+    const sameTenant = !!record && !!ctx.auth.tenantId && record.tenantId === ctx.auth.tenantId;
+    if (!record || !sameTenant || record.actorId !== (ctx.auth.userId ?? null)) {
       // The same answer for "not yours" and "does not exist": no probe oracle.
       return { __mutationError: true, status: 404, code: 'NOT_FOUND', message: 'No such operation.' };
     }

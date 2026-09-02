@@ -13,7 +13,7 @@ export const metadata = { title: 'Expenses — MAKAM Home Stays' };
  * ReadOnlyPage, never before it.
  */
 async function NewExpenseAction() {
-  const propertyIds = await getDataProvider(await requireTenantContext()).getPropertyIds();
+  const propertyIds = await (await getDataProvider(await requireTenantContext())).getPropertyIds();
   return (
     <NewRecordButton
       label="+ New Expense"

@@ -23,8 +23,6 @@ import { registerCopilotHandlers } from './copilot-service';
 import type { MutationDependencies } from './mutations';
 import { resolveEnvironment, type ResolvedEnvironment } from '@/lib/server/environment/config';
 import { createRepositories } from '@/lib/server/sheets/repositories';
-import { createLiveSheetsClient } from '@/lib/server/sheets/config';
-import { InMemorySheetsClient, type GoogleSheetsClient } from '@/lib/server/sheets/client';
 import {
   IdAllocator, PostgresSequenceStore, InMemorySequenceStore, type SequenceStore,
 } from '@/lib/server/ids/allocator';
@@ -35,6 +33,7 @@ import { AuditLogger, InMemoryAuditSink, SupabaseAuditSink, CompositeAuditSink }
 import { SupabaseAuthProvider } from '@/lib/server/auth/session';
 import { DemoAuthProvider } from '@/lib/server/auth/demo-identities';
 import { getDataProvider, getReadCache } from '@/lib/data/providers';
+import { resolveTenantDataSource } from '@/lib/server/tenant/data-source';
 import { ALL_FEATURES_OFF } from '@/lib/server/ai/guardrails';
 import { DiscardingAiUsageSink, InMemoryAiUsageSink, type AiUsageSink } from '@/lib/server/ai/provider';
 import { resolveAiProvider } from '@/lib/server/ai/dispatch';
@@ -45,7 +44,6 @@ import {
 import { aiRateLimiterFor, aiRateLimitState } from '@/lib/server/ai/rate-limit';
 import type { AiProvider } from '@/lib/server/ai/provider';
 import type { CopilotRuntime } from '@/lib/server/ai/copilot';
-import { getSharedDemoClient } from '@/lib/server/demo/live-store';
 import { processSlot } from '@/lib/server/runtime/process-state';
 
 /*
@@ -85,10 +83,6 @@ export function getApiRouter(): ApiRouter {
 
   const supabaseClient = resolved.supabase ? makeSupabaseClient(resolved) : null;
 
-  const sheetsClient: GoogleSheetsClient = resolved.sheets
-    ? createLiveSheetsClient(resolved)
-    : demoInMemoryClient(resolved);
-
   const sequences: SequenceStore = supabaseClient
     ? new PostgresSequenceStore(supabaseClient)
     : new InMemorySequenceStore();
@@ -109,7 +103,22 @@ export function getApiRouter(): ApiRouter {
     : new DemoAuthProvider(resolved);
 
   const deps: MutationDependencies = {
-    repos: createRepositories(sheetsClient),
+    /*
+     * ONE SET OF REPOSITORIES PER TENANT, resolved on the write.
+     *
+     * This was `repos: createRepositories(sheetsClient)` — a single client built here,
+     * at router construction, from the environment, and cached in a process slot for the
+     * life of the process. Every tenant's writes went through it. The router is still
+     * built once (it holds the operation ledger and the id sequences, which must be
+     * process-wide), but the WORKBOOK is now resolved per write from the tenant registry,
+     * so a router shared by two tenants no longer means a workbook shared by two tenants.
+     *
+     * `resolveTenantDataSource` caches the binding, so this is a map lookup on the warm
+     * path rather than a control-plane round trip per write.
+     */
+    reposFor: async (tenantId) => createRepositories(
+      (await resolveTenantDataSource(tenantId)).client,
+    ),
     store: operationStore,
     allocator: new IdAllocator(sequences, audit),
     audit,
@@ -216,21 +225,6 @@ function buildAiProvider(providerId: string | null, prefix: string): AiProvider 
     return apiKey ? new OpenAiProvider({ apiKey }) : null;
   }
   return resolveAiProvider(providerId);
-}
-
-/**
- * Demo with no configured workbook: the same client interface production uses, backed by
- * the deterministic demo grids. Only reachable when the environment permits fixtures —
- * production throws in `createLiveSheetsClient` long before this could run.
- */
-function demoInMemoryClient(resolved: ResolvedEnvironment): GoogleSheetsClient {
-  if (!resolved.fixturesPermitted) {
-    // createLiveSheetsClient would already have thrown; this is belt and braces.
-    throw new Error('No workbook configured and fixtures are not permitted in this environment.');
-  }
-  // THE shared store — the same instance the read provider derives its views from, so a
-  // verified write is visible on the very next page render.
-  return getSharedDemoClient();
 }
 
 function makeSupabaseClient(resolved: ResolvedEnvironment): any {

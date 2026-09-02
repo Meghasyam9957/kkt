@@ -195,7 +195,7 @@ describe('invariant 4 · production cannot use demo data', () => {
 
     // The alternative — quietly serving fixtures — would put fictional figures in front of
     // someone making a real decision. There is no such fallback.
-    expect(() => getDataProvider(TEST_TENANT)).toThrow(/no fixture mode/i);
+    await expect(getDataProvider(TEST_TENANT)).rejects.toThrow(/no fixture mode/i);
     __setDataProviderForTests(null);
   });
 

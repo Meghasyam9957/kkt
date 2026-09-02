@@ -15,7 +15,7 @@ import type { ReservationRow } from '@/lib/data/providers/types';
 export const metadata = { title: 'Bookings — MAKAM Home Stays' };
 
 async function NewBookingAction() {
-  const provider = getDataProvider(await requireTenantContext());
+  const provider = await getDataProvider(await requireTenantContext());
   const [propertyIds, platforms] = await Promise.all([
     provider.getPropertyIds(), provider.getPlatforms(),
   ]);
@@ -56,7 +56,7 @@ async function WorkspaceLoader({ rows, scope, params }: {
   params: SearchParams;
 }) {
   const tenant = await requireTenantContext();
-  const provider = getDataProvider(tenant);
+  const provider = await getDataProvider(tenant);
   const filters = await resolveFilters(params, tenant);
   const requested = typeof params.booking === 'string' ? params.booking.trim() : '';
 

@@ -29,7 +29,7 @@ import type { Repositories, SheetRepository, VerifiedWrite } from '@/lib/server/
 import { SheetWriteVerifyError } from '@/lib/server/sheets/repositories';
 import { SheetWriteForbiddenError, type Row } from '@/lib/server/sheets/client';
 import { IdAllocator } from '@/lib/server/ids/allocator';
-import { requireTenant } from '@/lib/server/tenant/context';
+import { requireTenant, type TenantId } from '@/lib/server/tenant/context';
 import { requestHashOf, type OperationStore } from '@/lib/server/ops/operation-store';
 import type { AuditService } from '@/lib/server/audit/logger';
 import type { HandlerContext } from '@/lib/server/auth/guard';
@@ -92,7 +92,17 @@ export interface MutationDefinition {
 }
 
 export interface MutationDependencies {
-  repos: Repositories;
+  /**
+   * The repositories for ONE TENANT'S workbook, resolved per write.
+   *
+   * This used to be a plain `repos: Repositories` — one set, built once per process from
+   * one sheets client. Every layer of the pipeline below was already tenant-aware (the id
+   * scope, the operation ledger, the cache prefix, the audit record) and yet every write
+   * landed in the same workbook, because the tenant was used for everything except
+   * choosing where the bytes went. Making this a FUNCTION OF THE TENANT is what closes
+   * that: there is no longer a `deps.repos` to reach for without saying whose.
+   */
+  reposFor: (tenantId: TenantId) => Promise<Repositories>;
   store: OperationStore;
   allocator: IdAllocator;
   audit: AuditService;
@@ -146,6 +156,14 @@ export async function executeMutation(
    */
   const tenantId = requireTenant(ctx.auth, 'executeMutation').tenantId;
 
+  /*
+   * WHERE the bytes land. Resolved from the tenant registry, before any validation reads
+   * a row and long before anything is written — so a business check and the write it
+   * guards are looking at the same customer's workbook, and an unregistered or suspended
+   * tenant is refused here rather than after a partial effect.
+   */
+  const repos = await deps.reposFor(tenantId);
+
   /* ---- 3 · contract validation ----------------------------------- */
   // Probe the mapping with a placeholder id: every key it can ever emit must be a
   // role:'in' column of the target sheet. This runs BEFORE anything is written and is
@@ -162,7 +180,7 @@ export async function executeMutation(
   /* ---- 4 · business validation ----------------------------------- */
   if (def.validate) {
     const problems = await def.validate({
-      repos: deps.repos, input, auth: ctx.auth,
+      repos, input, auth: ctx.auth,
       ...(entityId !== undefined ? { entityId } : {}),
     });
     if (problems.length > 0) {
@@ -222,7 +240,7 @@ export async function executeMutation(
         // shared memo would let the second one skip its own seeding entirely.
         const scope = `tenant:${tenantId}:${def.sheet}:${year}`;
         if (!seededScopes(deps).has(scope)) {
-          const existing = await repositoryFor(deps.repos, def.sheet).allIds();
+          const existing = await repositoryFor(repos, def.sheet).allIds();
           await deps.allocator.seedFromExistingIds(tenantId, def.sheet, year, existing);
           seededScopes(deps).add(scope);
         }
@@ -247,7 +265,7 @@ export async function executeMutation(
     // Undefined means "field not supplied" — it must never reach a cell write, where it
     // would overwrite an existing value with a blank.
     const columns = stripUndefined(withSerialDates(def.toColumns(input, id), def.dateColumns));
-    const repo = repositoryFor(deps.repos, def.sheet);
+    const repo = repositoryFor(repos, def.sheet);
     let verified: VerifiedWrite;
     if (def.kind === 'create') {
       verified = await repo.createRowVerified({ ...columns, [def.idKey]: id });

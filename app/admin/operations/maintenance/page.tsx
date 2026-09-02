@@ -8,7 +8,7 @@ import { requireTenantContext } from '@/lib/server/auth/page-guard';
 export const metadata = { title: 'Maintenance — MAKAM Home Stays' };
 
 async function NewIssueAction() {
-  const propertyIds = await getDataProvider(await requireTenantContext()).getPropertyIds();
+  const propertyIds = await (await getDataProvider(await requireTenantContext())).getPropertyIds();
   return (
     <NewRecordButton
       label="+ New Maintenance Issue"

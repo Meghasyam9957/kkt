@@ -20,7 +20,7 @@
  * Two fictional tenants exist only here. Nothing observable to Srivillu changes: it is
  * tenant #1, and every one of its existing tests still passes unaltered.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -44,6 +44,13 @@ import type { AuthContext } from '@/lib/server/auth/session';
 import { TENANT_A, TENANT_B, USERS } from './support/harness';
 import { createWriteHarness } from './support/write-harness';
 import { readSource as read, codeOf } from './support/source';
+import {
+  useTenantWorkbooks, useEnvironmentTenant, useTwoTenantWorkbooks, resetTenantWorkbooks,
+} from './support/tenant-registry';
+import {
+  TenantWorkbookNotConfiguredError, TenantWorkbookSuspendedError,
+  StaticTenantWorkbookRegistry, environmentBinding, workbookBinding,
+} from '@/lib/server/tenant/workbook-registry';
 
 /** A demo environment with no Supabase, so the injected provider is the one consulted. */
 const DEMO_ENV = { APP_ENV: 'demo' } as unknown as NodeJS.ProcessEnv;
@@ -59,7 +66,14 @@ const ACTOR_B = actorIn(TENANT_B, 'u-b');
 const contextFor = (tenantId: string) =>
   requireTenant({ tenantId, userId: 'u-x', role: 'ADMIN' }, 'test');
 
-beforeEach(() => { __setDataProviderForTests(null); __resetReadCacheForTests(); });
+beforeEach(() => {
+  __setDataProviderForTests(null);
+  __resetReadCacheForTests();
+  // Since M-SAAS-1 a provider comes from the tenant workbook registry, so a suite that
+  // exercises the real one must register its tenants. TENANT_A stands in for Srivillu on
+  // the environment's workbook; TENANT_B is a second customer on its own.
+  useTwoTenantWorkbooks(TENANT_A, TENANT_B);
+});
 
 /* ================================================================== *
  * 1 · THE CONTEXT — resolved from identity, immutable, fail-closed
@@ -251,18 +265,54 @@ describe('tenant · cache isolation', () => {
  * ================================================================== */
 
 describe('tenant · provider isolation', () => {
-  it('refuses to hand out a provider without a tenant', () => {
-    expect(() => getDataProvider(undefined as never)).toThrow(MissingTenantError);
-    expect(() => getDataProvider({ tenantId: '', userId: 'u', role: 'ADMIN' } as never))
-      .toThrow(MissingTenantError);
+  /*
+   * A tenant bound to a NAMED workbook needs the deployment's Google credential to build
+   * a client for it — that is the M-SAAS-1 split: workbook per tenant, credential per
+   * deployment. These are fictional values built at runtime so no credential-shaped
+   * literal exists in the source tree.
+   */
+  const withoutCredentials = { ...process.env };
+  beforeEach(() => {
+    process.env.DEMO_GOOGLE_SHEET_ID = 'demo-spreadsheet-id';
+    process.env.DEMO_GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 = Buffer
+      .from(JSON.stringify({ client_email: 'demo@example.invalid' }), 'utf8')
+      .toString('base64');
+  });
+  afterEach(() => { process.env = { ...withoutCredentials }; resetTenantWorkbooks(); });
+
+  it('refuses to hand out a provider without a tenant', async () => {
+    await expect(getDataProvider(undefined as never)).rejects.toThrow(MissingTenantError);
+    await expect(getDataProvider({ tenantId: '', userId: 'u', role: 'ADMIN' } as never))
+      .rejects.toThrow(MissingTenantError);
   });
 
-  it('gives two tenants two different provider instances', () => {
-    const a = getDataProvider(contextFor(TENANT_A));
-    const b = getDataProvider(contextFor(TENANT_B));
+  it('refuses a tenant that is not in the workbook registry', async () => {
+    /*
+     * The fail-closed rule that makes the rest of this suite mean anything. An
+     * unregistered tenant does NOT inherit the deployment's workbook, does not fall back
+     * to the first tenant and does not get fixtures — it gets nothing, because the
+     * alternative is serving one customer another customer's business records.
+     */
+    await expect(getDataProvider(contextFor('tenant-never-provisioned')))
+      .rejects.toThrow(TenantWorkbookNotConfiguredError);
+  });
+
+  it('refuses a tenant whose data source is suspended', async () => {
+    useTenantWorkbooks([
+      { tenantId: TENANT_A, kind: 'GOOGLE_SHEETS', workbookId: 'wb-a', status: 'SUSPENDED' },
+    ]);
+    // Suspension is a deliberate instruction to stop serving a customer. Honouring it
+    // only in the interface would leave the data path open.
+    await expect(getDataProvider(contextFor(TENANT_A)))
+      .rejects.toThrow(TenantWorkbookSuspendedError);
+  });
+
+  it('gives two tenants two different provider instances', async () => {
+    const a = await getDataProvider(contextFor(TENANT_A));
+    const b = await getDataProvider(contextFor(TENANT_B));
     expect(a).not.toBe(b);
     // …and the same tenant the same one, so this is a registry rather than a leak.
-    expect(getDataProvider(contextFor(TENANT_A))).toBe(a);
+    expect(await getDataProvider(contextFor(TENANT_A))).toBe(a);
   });
 
   it('binds a live provider to one tenant at construction, and refuses without one', () => {
@@ -284,8 +334,11 @@ describe('tenant · provider isolation', () => {
     // The old shape, in as many words: `let liveProvider ... = null`.
     expect(code).not.toMatch(/let\s+liveProvider/);
     // The registry is keyed by tenant, and the key is not optional.
-    expect(code).toContain('Map<TenantId, DashboardDataProvider>');
+    expect(code).toContain('Map<TenantId, CachedProvider>');
     expect(code).toMatch(/getDataProvider\(tenant: TenantContext\)/);
+    // The workbook is resolved from the registry, never from the environment directly.
+    expect(code).toContain('resolveTenantDataSource(tenant.tenantId)');
+    expect(code).not.toContain('createLiveSheetsClient(resolved)');
   });
 
   it('reads the tenant into every cache key it builds', () => {
@@ -471,21 +524,36 @@ describe('tenant · the boundary as it actually stands', () => {
     expect(sql).toMatch(/insert into memberships[\s\S]*select u\.id, t\.id, u\.role, u\.status/);
   });
 
-  it('DOES NOT yet scope objects, because one workbook is still configured', () => {
+  it('NOW scopes the data source itself — the M-SAAS-0 expectation, flipped', async () => {
     /*
-     * Stated as a test so it is not mistaken for done. M-SAAS-0 establishes WHO is
-     * asking at every layer; it does not give two tenants two data sources, so an
-     * object-level tenant check has nothing to compare against yet — every tenant
-     * currently resolves to the one configured workbook.
+     * M-SAAS-0 left this recorded as a deliberate gap: it established WHO was asking at
+     * every layer but gave both tenants the same workbook, so an object-level check had
+     * nothing to compare against. M-SAAS-1 is the milestone that closes it, and this is
+     * the same case rewritten to assert the opposite.
      *
-     * The next milestone binds a provider to a per-tenant workbook. When it does, this
-     * expectation flips, and the failure will say so rather than passing silently.
+     * Registered here as two GOOGLE_SHEETS bindings so the workbook ids are visible in
+     * the assertion — the environment binding is proved separately, in the isolation
+     * suite, where it is the one that stands in for Srivillu.
      */
-    const a = getDataProvider(contextFor(TENANT_A));
-    const b = getDataProvider(contextFor(TENANT_B));
-    expect(a).not.toBe(b);                       // different instances, today
-    expect(a.kind).toBe(b.kind);                 // …over the same configured source
+    useTenantWorkbooks([
+      workbookBinding(TENANT_A, 'workbook-a'),
+      workbookBinding(TENANT_B, 'workbook-b'),
+    ]);
+    const registry = new StaticTenantWorkbookRegistry([
+      workbookBinding(TENANT_A, 'workbook-a'),
+      workbookBinding(TENANT_B, 'workbook-b'),
+    ]);
+
+    const a = await registry.lookup(TENANT_A);
+    const b = await registry.lookup(TENANT_B);
+    expect(a.workbookId).toBe('workbook-a');
+    expect(b.workbookId).toBe('workbook-b');
+    // Two customers, two data sources. This is the sentence M-SAAS-0 could not write.
+    expect(a.workbookId).not.toBe(b.workbookId);
+
+    // …and the code no longer reaches past the registry to the environment.
     const code = codeOf(read('lib/data/providers/index.ts'));
-    expect(code).toContain('createLiveSheetsClient(resolved)');
+    expect(code).not.toContain('createLiveSheetsClient(resolved)');
+    expect(code).toContain('resolveTenantDataSource');
   });
 });

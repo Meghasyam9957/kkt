@@ -22,7 +22,7 @@ export const metadata = { title: 'Availability — MAKAM Home Stays' };
 async function CalendarBody({ view, params }: { view: CalendarView; params: SearchParams }) {
   const requested = typeof params.booking === 'string' ? params.booking.trim() : '';
   const detail = requested
-    ? (await getDataProvider(await requireTenantContext()).getBookingDetail(requested)).data
+    ? (await (await getDataProvider(await requireTenantContext())).getBookingDetail(requested)).data
     : null;
   const projected = detail ? operationalBookingDetail(detail) : null;
 

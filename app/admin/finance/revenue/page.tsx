@@ -6,7 +6,7 @@ import { getDataProvider } from '@/lib/data/providers';
 import { requireTenantContext } from '@/lib/server/auth/page-guard';
 
 async function NewRevenueAction() {
-  const provider = getDataProvider(await requireTenantContext());
+  const provider = await getDataProvider(await requireTenantContext());
   const [propertyIds, platforms] = await Promise.all([provider.getPropertyIds(), provider.getPlatforms()]);
   return (
     <NewRecordButton

@@ -96,7 +96,7 @@ describe('turnover · what BookingID actually is', () => {
     expect(second.status).toBe(200);
     expect(first.body.record.TaskID).not.toBe(second.body.record.TaskID);
 
-    const tasks = await h.deps.repos.housekeeping.readAll();
+    const tasks = await h.repos.housekeeping.readAll();
     expect(tasks.filter((t) => t.bookingId === bookingId)).toHaveLength(2);
   });
 
@@ -266,7 +266,7 @@ describe('turnover · the register', () => {
     const res = await h.request('operations', 'PATCH', `/api/housekeeping/${id}`, submitted);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
-    const stored = (await h.deps.repos.housekeeping.readAll()).find((t) => t.taskId === id)!;
+    const stored = (await h.repos.housekeeping.readAll()).find((t) => t.taskId === id)!;
     expect(OPEN_HOUSEKEEPING_STATUSES, `${stored.status} is still outstanding work`)
       .not.toContain(stored.status);
   });
@@ -424,7 +424,7 @@ describe('turnover · disclosure', () => {
     expect(done.body.record.InspectionStatus).toBe('Passed');
     expect(done.body.record.Cleaner).toBe('Lakshmi');
 
-    const stored = (await h.deps.repos.housekeeping.readAll()).find((t) => t.taskId === id)!;
+    const stored = (await h.repos.housekeeping.readAll()).find((t) => t.taskId === id)!;
     expect(stored.status).toBe('Completed');
     expect(stored.inspectionStatus).toBe('Passed');
     expect(stored.cleaner).toBe('Lakshmi');

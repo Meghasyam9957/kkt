@@ -94,8 +94,17 @@ export async function POST(request: Request): Promise<Response> {
           // In-memory operation/sequence state (used when Supabase is absent) must not
           // survive a reset that claims the environment is back to seed.
           __resetApiService();
-          // Only after a VERIFIED restore: a refused reset must not invalidate good cache.
-          getReadCache().invalidate('');
+          /*
+           * Only after a VERIFIED restore: a refused reset must not invalidate good cache.
+           *
+           * Scoped to the acting tenant. `invalidate('')` prefixes every key in the
+           * process, so one tenant's demo-control holder could empty every other tenant's
+           * cache — a denial of service one customer can inflict on the rest, and a
+           * thundering herd against the workbook read quota. The demonstration deployment
+           * has one tenant, so this changes nothing observable today; it stops being true
+           * the moment a second one exists.
+           */
+          getReadCache().invalidate(`tenant=${session.tenantId}|`);
           await audit(session, 'demo.reset.live', {
             restoredRows: report.restoredRows,
             clearedRows: report.clearedRows,

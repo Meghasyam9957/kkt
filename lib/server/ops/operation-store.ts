@@ -38,6 +38,17 @@ export interface BeginResult {
 
 export interface OperationRecord {
   operationId: string;
+  /**
+   * WHOSE operation this is.
+   *
+   * Carried on the READ as well as the write. `begin` already refuses a foreign operation
+   * id, so replay is closed; this closes the other direction — a reader that scopes only
+   * by actor. Actor scoping stands in for tenant scoping exactly as long as a user id
+   * belongs to one tenant, and `lib/server/auth/session.ts` already contemplates a
+   * support principal holding memberships in several. When that lands, an actor-only
+   * check becomes a cross-tenant read; this field is what a handler compares instead.
+   */
+  tenantId: string;
   actorId: string | null;
   actorRole: string | null;
   action: string;
@@ -143,7 +154,8 @@ export class PostgresOperationStore implements OperationStore {
     if (error) throw new Error(error.message);
     if (!data) return null;
     return {
-      operationId: data.operation_id, actorId: data.actor_id, actorRole: data.actor_role,
+      operationId: data.operation_id, tenantId: String(data.tenant_id ?? ''),
+      actorId: data.actor_id, actorRole: data.actor_role,
       action: data.action, entityType: data.entity_type ?? undefined,
       entityId: data.entity_id ?? undefined, status: data.status,
       result: data.result ?? undefined, error: data.error ?? undefined,

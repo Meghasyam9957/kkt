@@ -107,7 +107,7 @@ function setup(
     audit: new AuditLogger(audit),
   });
   // The same instance every request, so a test can read what accumulated across them.
-  registerCopilotHandlers(router, () => data, () => runtime);
+  registerCopilotHandlers(router, async () => data, () => runtime);
 
   return {
     audit,

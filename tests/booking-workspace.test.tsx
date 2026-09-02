@@ -43,6 +43,7 @@ import { OCCUPANCY_STATUSES } from '@/lib/shared/domain';
 import type { PropertyOption, ReservationRow } from '@/lib/data/providers/types';
 
 import { readSource as read, codeOf } from './support/source';
+import { useEnvironmentTenant, resetTenantWorkbooks } from './support/tenant-registry';
 
 /** Filters are resolved for a tenant; this suite uses one. */
 const TEST_TENANT = { tenantId: 'tenant-test', userId: 'u-test', role: 'ADMIN' as const };
@@ -129,7 +130,13 @@ const bodyRows = (container: HTMLElement) =>
 const firstCellText = (container: HTMLElement, column = 0) =>
   bodyRows(container).map((tr) => tr.children[column]?.textContent ?? '');
 
-beforeEach(() => { replaced.length = 0; refresh.mockClear(); cleanup(); });
+beforeEach(() => {
+  replaced.length = 0; refresh.mockClear(); cleanup();
+  // `resolveFilters` reads the tenant's own months, so the tenant needs a data source.
+  // Registered on the environment's, exactly as Srivillu is.
+  useEnvironmentTenant(TEST_TENANT.tenantId);
+});
+afterEach(() => { resetTenantWorkbooks(); });
 afterEach(() => { vi.restoreAllMocks(); });
 
 /* ================================================================== *

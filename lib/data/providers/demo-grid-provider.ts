@@ -22,10 +22,12 @@ import {
 } from '@/lib/server/sheets/repositories';
 import { getSharedDemoClient, demoStoreVersion } from '@/lib/server/demo/live-store';
 import { currentDataset } from '@/lib/server/demo/store';
+import type { WorkbookData } from '@/lib/shared/domain';
 
 export class DemoGridProvider implements DashboardDataProvider {
   readonly kind = 'FIXTURE' as const;
   private inner: FixtureDashboardDataProvider | null = null;
+  private workbook: WorkbookData | null = null;
   private version: string | null = null;
   private loading: Promise<FixtureDashboardDataProvider> | null = null;
 
@@ -51,8 +53,23 @@ export class DemoGridProvider implements DashboardDataProvider {
     ops.unavailableCounters = dataset.ops.unavailableCounters.filter((k) => k !== 'guestRequests');
 
     this.inner = new FixtureDashboardDataProvider({ workbook, ops, rent });
+    this.workbook = workbook;
     this.version = version;
     return this.inner;
+  }
+
+  /**
+   * The raw records, for the one screen that needs them.
+   *
+   * Investor screens filter records by a server-resolved investor id, so they are the
+   * single place a record-level read is required. Exposing it HERE — on the provider —
+   * is what lets `loadWorkbookForInvestor` stop reaching past its provider to the
+   * process-global demo dataset. It reads this provider's own client, so the records it
+   * returns are the ones this provider's tenant is bound to.
+   */
+  async workbookData(): Promise<WorkbookData> {
+    await this.ensure();
+    return this.workbook!;
   }
 
   /* Delegation — every provider method goes through ensure() so no read can ever see

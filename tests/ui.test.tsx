@@ -14,6 +14,7 @@ import path from 'node:path';
 
 import { FixtureDashboardDataProvider, minimizeGuestName } from '@/lib/data/providers/fixture-provider';
 import { isDemoMode, isLiveDataEnabled, getDataProvider, __setDataProviderForTests } from '@/lib/data/providers';
+import { useEnvironmentTenant, resetTenantWorkbooks } from './support/tenant-registry';
 import { buildDemoWorkbook, buildDemoOps, DEMO_PROPERTIES } from '@/lib/data/fixtures/workbook';
 import { computeMonthlySeries, computeByProperty, monthPeriod, fyMonthKeysFor } from '@/lib/server/analytics/kpi';
 import { DashboardContent } from '@/components/dashboard/DashboardView';
@@ -252,8 +253,11 @@ describe('5 · demo mode is unmistakable', () => {
     expect(meta.source).toBe('FIXTURE');
   });
 
-  it('refuses to serve fixtures while claiming to be live', () => {
+  it('refuses to serve fixtures while claiming to be live', async () => {
     __setDataProviderForTests(null);
+    // The tenant is registered on the environment's workbook, exactly as Srivillu is, so
+    // what this case exercises is the ENVIRONMENT failing — not a missing registration.
+    useEnvironmentTenant(TEST_TENANT.tenantId);
     const original = { ...process.env };
     process.env.LIVE_DATA_ENABLED = 'true';
     delete process.env.DEMO_GOOGLE_SHEET_ID;
@@ -264,17 +268,19 @@ describe('5 · demo mode is unmistakable', () => {
     // missing so an operator can fix it, and it must say plainly that it will not
     // substitute another source.
     let thrown: Error | null = null;
-    try { getDataProvider(TEST_TENANT); } catch (error) { thrown = error as Error; }
+    try { await getDataProvider(TEST_TENANT); } catch (error) { thrown = error as Error; }
     expect(thrown, 'live mode with no connection must throw').not.toBeNull();
     expect(thrown!.message).toMatch(/DEMO_GOOGLE_SHEET_ID/);
     expect(thrown!.message).toMatch(/will not fall back/i);
 
     process.env = original;
     __setDataProviderForTests(null);
+    resetTenantWorkbooks();
   });
 
-  it('with live enabled AND configured, the provider is the Sheets one — never a fixture', () => {
+  it('with live enabled AND configured, the provider is the Sheets one — never a fixture', async () => {
     __setDataProviderForTests(null);
+    useEnvironmentTenant(TEST_TENANT.tenantId);
     const original = { ...process.env };
     process.env.LIVE_DATA_ENABLED = 'true';
     process.env.APP_ENV = 'demo';
@@ -284,11 +290,12 @@ describe('5 · demo mode is unmistakable', () => {
       .from(JSON.stringify({ client_email: 'demo@example.invalid' }), 'utf8')
       .toString('base64');
 
-    const provider = getDataProvider(TEST_TENANT);
+    const provider = await getDataProvider(TEST_TENANT);
     expect(provider.kind).toBe('GOOGLE_SHEETS');
 
     process.env = original;
     __setDataProviderForTests(null);
+    resetTenantWorkbooks();
   });
 });
 

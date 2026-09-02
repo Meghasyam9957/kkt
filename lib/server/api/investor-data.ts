@@ -13,8 +13,6 @@ import '@/lib/server/only';
 import type { DashboardDataProvider } from '@/lib/data/providers/types';
 import type { WorkbookData } from '@/lib/shared/domain';
 import { buildDemoDataset } from '@/lib/data/demo/dataset';
-import { currentDataset } from '@/lib/server/demo/store';
-import { resolveEnvironment } from '@/lib/server/environment/config';
 
 export interface InvestorDataContext {
   workbook: WorkbookData;
@@ -25,13 +23,18 @@ export async function loadWorkbookForInvestor(
   provider: DashboardDataProvider,
 ): Promise<InvestorDataContext> {
   const meta = await provider.getSourceMeta();
-  const resolved = resolveEnvironment();
 
-  // In demo the dataset is already in memory; reading it directly avoids rebuilding the
-  // whole workbook for one screen. In production it comes from the provider's own source.
-  const workbook = resolved.env === 'demo'
-    ? currentDataset().workbook
-    : (await provider.getMonthlySeries({ month: meta.period }), await loadFromProvider(provider));
+  /*
+   * THROUGH THE PROVIDER, in every environment.
+   *
+   * This used to branch: demo read `currentDataset().workbook` directly, which meant a
+   * tenant-scoped provider was obtained by the caller and then thrown away — the only
+   * place in the application where that happened. It read the same records in practice,
+   * because the demonstration dataset is process-global; but it was a data path with no
+   * tenant on it, sitting behind a call site that looked scoped. The demo provider now
+   * exposes its own records, so there is one path and it is the tenant's.
+   */
+  const workbook = await loadFromProvider(provider);
 
   return { workbook, monthKey: meta.period };
 }

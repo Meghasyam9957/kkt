@@ -77,14 +77,14 @@ export function registerForecastHandlers(
   // Every one resolves its provider from the caller's own tenant.
   router.register('GET', '/api/forecast/occupancy', async (ctx) =>
     forecastResponse(
-      await provider(requireTenant(ctx.auth, 'forecast.occupancy')).getForecast(NO_FILTERS),
+      await (await provider(requireTenant(ctx.auth, 'forecast.occupancy'))).getForecast(NO_FILTERS),
       'occupancy'));
   router.register('GET', '/api/forecast/revenue', async (ctx) =>
     forecastResponse(
-      await provider(requireTenant(ctx.auth, 'forecast.revenue')).getForecast(NO_FILTERS),
+      await (await provider(requireTenant(ctx.auth, 'forecast.revenue'))).getForecast(NO_FILTERS),
       'revenue'));
   router.register('GET', '/api/forecast/cashflow', async (ctx) =>
     forecastResponse(
-      await provider(requireTenant(ctx.auth, 'forecast.cashflow')).getForecast(NO_FILTERS),
+      await (await provider(requireTenant(ctx.auth, 'forecast.cashflow'))).getForecast(NO_FILTERS),
       'cashflow'));
 }

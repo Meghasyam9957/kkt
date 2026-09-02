@@ -37,7 +37,7 @@ function setup(): Setup {
     authProvider: new InMemoryAuthProvider(Object.values(USERS)),
     audit: new AuditLogger(audit),
   });
-  registerAnalyticsHandlers(router, () => provider);
+  registerAnalyticsHandlers(router, async () => provider);
   return {
     audit, provider,
     async request(user, path, query = {}) {

@@ -65,7 +65,7 @@ export function registerAnalyticsHandlers(
    * two different providers over two different cache keys.
    */
   const resolve = async (ctx: { request: ApiRequest; auth: HandlerContext['auth'] }) => {
-    const p = provider(requireTenant(ctx.auth, 'analytics handler'));
+    const p = await provider(requireTenant(ctx.auth, 'analytics handler'));
     return { p, filters: await filtersFrom(p, ctx.request) };
   };
 

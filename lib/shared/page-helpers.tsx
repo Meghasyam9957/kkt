@@ -10,6 +10,7 @@ import { PageHeader, Section, LoadingBlock, ErrorState } from '@/components/ui/p
 import { FilterBar } from '@/components/shell/FilterBar';
 import { getDataProvider } from '@/lib/data/providers';
 import type { Envelope, ReportFilters, DashboardDataProvider } from '@/lib/data/providers/types';
+import '@/lib/server/only';
 import { checkPageAccess } from '@/lib/server/auth/page-guard';
 import type { ShellSession } from '@/lib/server/auth/shell-session';
 import { AccessDenied } from '@/components/shell/AccessDenied';
@@ -49,7 +50,7 @@ export interface SearchParams {
 export async function resolveFilters(
   params: SearchParams, tenant: TenantContext,
 ): Promise<ReportFilters> {
-  const provider = getDataProvider(tenant);
+  const provider = await getDataProvider(tenant);
   const months = await provider.getAvailableMonths();
   const month = params.month && months.includes(params.month)
     ? params.month
@@ -117,7 +118,7 @@ export async function ReadOnlyPage<T>({
   const access = await checkPageAccess(capability);
   if (!access.allowed) return <AccessDenied role={access.session.role} />;
 
-  const provider = getDataProvider(access.tenant);
+  const provider = await getDataProvider(access.tenant);
   const filters = await resolveFilters(searchParams, access.tenant);
 
   let body: ReactNode;

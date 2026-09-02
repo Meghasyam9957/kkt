@@ -23,7 +23,12 @@ import type { DashboardDataProvider } from '@/lib/data/providers/types';
  * say whose data it is asking for; there is no ambient answer, so a handler that forgot
  * would not compile.
  */
-export type TenantProviderFactory = (tenant: TenantContext) => DashboardDataProvider;
+/*
+ * ASYNC since M-SAAS-1. The provider is no longer chosen from the environment; it is
+ * looked up from the tenant workbook registry, which is durable control-plane state. A
+ * handler therefore awaits its data source, and cannot obtain one without naming whose.
+ */
+export type TenantProviderFactory = (tenant: TenantContext) => Promise<DashboardDataProvider>;
 
 export interface RouteDefinition {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -166,7 +171,20 @@ export const API_ROUTES: readonly RouteDefinition[] = [
   { method: 'GET', path: '/api/settings', capability: 'settings.read',
     action: 'settings.read', summary: 'Business rules (read-only; the workbook owns them)' },
   { method: 'GET', path: '/api/audit', capability: 'audit.read',
-    action: 'audit.read', summary: 'Audit trail — SUPER_ADMIN only' },
+    /*
+     * DECLARED, NOT IMPLEMENTED. No handler is registered, so this authenticates,
+     * capability-checks, records the attempt and returns 501.
+     *
+     * The summary used to read "SUPER_ADMIN only", which was never true: `audit.read` is
+     * held by ADMIN as well (lib/shared/roles.ts). That mattered, because ADMIN is the
+     * exact role a per-tenant TENANT_ADMIN will be modelled on — so the registry was
+     * documenting a narrower gate than it enforced, for the one route where the
+     * difference is a cross-tenant read.
+     *
+     * When a handler is written it must read through `AuditReader.readForTenant`
+     * (lib/server/audit/logger.ts), which cannot be called without a tenant.
+     */
+    action: 'audit.read', summary: 'Audit trail — SUPER_ADMIN and ADMIN (not implemented)' },
   { method: 'GET', path: '/api/users', capability: 'users.manage',
     action: 'users.read', entityType: 'USER', summary: 'Application accounts — SUPER_ADMIN only' },
 

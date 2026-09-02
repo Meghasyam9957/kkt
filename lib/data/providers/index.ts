@@ -23,15 +23,19 @@
 import { FixtureDashboardDataProvider } from './fixture-provider';
 import { DemoGridProvider } from './demo-grid-provider';
 import { GoogleSheetsDashboardDataProvider } from './sheets-provider';
-import { createLiveSheetsClient } from '@/lib/server/sheets/config';
 import { ReadCache, configuredTtlMs } from '@/lib/server/cache/read-cache';
-import { resolveEnvironment, EnvironmentConfigError } from '@/lib/server/environment/config';
+import {
+  resolveEnvironment, liveDataEnabled, EnvironmentConfigError,
+} from '@/lib/server/environment/config';
 import { processSlot } from '@/lib/server/runtime/process-state';
-import { currentDataset, demoStatus } from '@/lib/server/demo/store';
+import { demoStatus } from '@/lib/server/demo/store';
 import type { DashboardDataProvider } from './types';
 import {
   isTenantId, MissingTenantError, type TenantContext, type TenantId,
 } from '@/lib/server/tenant/context';
+import {
+  resolveTenantDataSource, __resetTenantDataSourcesForTests, type TenantDataSource,
+} from '@/lib/server/tenant/data-source';
 
 export * from './types';
 export { FixtureDashboardDataProvider } from './fixture-provider';
@@ -40,8 +44,9 @@ export { GoogleSheetsDashboardDataProvider, LiveDataUnavailableError } from './s
 
 /** Whether this deployment reads its workbook rather than the generated demo dataset. */
 export function isLiveDataEnabled(): boolean {
-  const raw = process.env.LIVE_DATA_ENABLED ?? 'false';
-  return String(raw).toLowerCase() === 'true';
+  // The read itself lives beside the other environment reads so the tenant data-source
+  // resolver and this module cannot drift into disagreeing about which data is live.
+  return liveDataEnabled();
 }
 
 /** True while the figures on screen are fictional. Drives the DEMO / UAT badge. */
@@ -62,13 +67,25 @@ export function isDemoMode(): boolean {
  * tenant. The data itself lives in the shared `ReadCache`, whose keys now begin with the
  * tenant, so memory does not grow with the customer list simply by having a registry.
  */
-const providerSlot = processSlot<Map<TenantId, DashboardDataProvider>>('data.providers.byTenant');
+interface CachedProvider {
+  /**
+   * What this instance was built for. A provider is reused only while its tenant's
+   * binding — and, for a demonstration, its dataset version — is still the one it was
+   * constructed against. Comparing a fingerprint rather than trusting the tenant key
+   * means a re-pointed or suspended tenant gets a NEW provider rather than the old
+   * workbook's, which is the difference between a cache and a stale data source.
+   */
+  fingerprint: string;
+  provider: DashboardDataProvider;
+}
+
+const providerSlot = processSlot<Map<TenantId, CachedProvider>>('data.providers.byTenant');
 let injected: DashboardDataProvider | null = null;
 
-function providerRegistry(): Map<TenantId, DashboardDataProvider> {
+function providerRegistry(): Map<TenantId, CachedProvider> {
   const existing = providerSlot.read();
   if (existing) return existing;
-  const created = new Map<TenantId, DashboardDataProvider>();
+  const created = new Map<TenantId, CachedProvider>();
   providerSlot.write(created);
   return created;
 }
@@ -94,34 +111,6 @@ export function getReadCache(): ReadCache {
   return created;
 }
 
-/*
- * The fixtures-demo provider reads from the SHARED demo store — the same in-memory
- * workbook the mutation pipeline writes to (Phase C). It re-derives every view when the
- * store's version moves: a scenario switch, a reset, a guest-journey request, or a web
- * write. That is what makes "record an expense and the P&L moves" real behaviour in a
- * demo with no Google workbook configured.
- */
-const demoProviders = new Map<string, { key: string; provider: DashboardDataProvider }>();
-
-function demoFixtureProvider(tenantId: TenantId): DashboardDataProvider {
-  const status = demoStatus();
-  // The DemoGridProvider tracks write versions itself; this outer key only guards the
-  // dataset-served slices (guest requests) that sit outside the grid store.
-  const key = `${status.scenario}|${status.seededAt}|${status.mutations}`;
-  /*
-   * Keyed by TENANT as well. One deployment configures one workbook, so today two
-   * tenants would read the same records — but they must not share an instance, because
-   * an instance is what a later milestone binds to a workbook. Keeping them separate
-   * now means that milestone changes what a provider READS, not who holds one.
-   */
-  const existing = demoProviders.get(tenantId);
-  if (existing && existing.key === key) return existing.provider;
-
-  const provider = new DemoGridProvider();
-  demoProviders.set(tenantId, { key, provider });
-  return provider;
-}
-
 /**
  * THE data provider for one tenant.
  *
@@ -131,56 +120,90 @@ function demoFixtureProvider(tenantId: TenantId): DashboardDataProvider {
  * authenticated session — `checkPageAccess().tenant` on a page, `ctx.auth` in a handler —
  * so a request can never name its own.
  *
- * MAKAM is one workbook per tenant. Today exactly one tenant is configured and its
- * workbook is the environment's, which is why the resolution below is unchanged; what
- * changed is that the ANSWER is now keyed by who asked.
+ * WHY THIS IS ASYNC (M-SAAS-1). It used to be synchronous, because the answer came from
+ * the environment and the environment is a synchronous read. It now comes from the tenant
+ * workbook registry, which is durable state in the control plane — so the workbook a
+ * tenant reads is a fact about that tenant rather than a fact about the deployment. That
+ * is the entire point of the milestone, and the `await` is what it costs.
+ *
+ * MAKAM is one workbook per tenant. Today exactly one tenant is registered, and its
+ * binding is ENVIRONMENT — so Srivillu reads precisely the workbook it always did. What
+ * changed is that the answer is now looked up rather than assumed, and an unregistered
+ * tenant is refused instead of quietly inheriting the first customer's data.
  */
-export function getDataProvider(tenant: TenantContext): DashboardDataProvider {
+export async function getDataProvider(tenant: TenantContext): Promise<DashboardDataProvider> {
   // The test seam stays ahead of the tenant check so a suite can inject a double, but it
   // is still refused a provider without a tenant — the seam does not weaken the rule.
   if (!tenant || !isTenantId(tenant.tenantId)) throw new MissingTenantError('getDataProvider');
   if (injected) return injected;
 
+  /*
+   * The environment gate runs BEFORE the registry is consulted. A production deployment
+   * that has not enabled live data must fail on that fact alone, without a control-plane
+   * round trip and without its answer depending on which tenant asked.
+   */
+  assertEnvironmentCanServeData();
+
+  const source = await resolveTenantDataSource(tenant.tenantId);
+  const fingerprint = fingerprintOf(source);
+
   const registry = providerRegistry();
   const existing = registry.get(tenant.tenantId);
-  if (existing) return existing;
+  if (existing && existing.fingerprint === fingerprint) return existing.provider;
 
-  const created = buildProviderFor(tenant.tenantId);
-  registry.set(tenant.tenantId, created);
-  return created;
+  const provider = buildProviderFor(source);
+  registry.set(tenant.tenantId, { fingerprint, provider });
+  return provider;
 }
 
-function buildProviderFor(tenantId: TenantId): DashboardDataProvider {
+function assertEnvironmentCanServeData(): void {
   const resolved = resolveEnvironment();
-
-  if (resolved.env === 'production') {
-    if (!isLiveDataEnabled()) {
-      throw new EnvironmentConfigError(
-        'APP_ENV=production requires LIVE_DATA_ENABLED=true. Production has no fixture ' +
-        'mode: serving demonstration figures as business figures is not a state this ' +
-        'application will enter.',
-      );
-    }
-    // createLiveSheetsClient reads PRODUCTION_* only, and throws with the missing
-    // variable names if they are absent. It cannot reach the demo workbook.
-    return new GoogleSheetsDashboardDataProvider({
-      tenantId,
-      client: createLiveSheetsClient(resolved),
-      cache: getReadCache(),
-    });
+  if (resolved.env === 'production' && !isLiveDataEnabled()) {
+    throw new EnvironmentConfigError(
+      'APP_ENV=production requires LIVE_DATA_ENABLED=true. Production has no fixture ' +
+      'mode: serving demonstration figures as business figures is not a state this ' +
+      'application will enter.',
+    );
   }
+}
 
-  /* ---- demo ---- */
-  if (isLiveDataEnabled()) {
-    // The DEMO workbook, read through DEMO_* credentials only.
-    return new GoogleSheetsDashboardDataProvider({
-      tenantId,
-      client: createLiveSheetsClient(resolved),
-      cache: getReadCache(),
-    });
+/**
+ * What a cached provider was built for.
+ *
+ * For a workbook-backed tenant that is the binding: re-point or suspend the tenant and
+ * the fingerprint changes, so the old provider — and the workbook behind it — is dropped
+ * rather than reused.
+ *
+ * For a demonstration it also carries the dataset version, because the fixtures provider
+ * derives its views from the shared demo store: a scenario switch, a reset or a
+ * guest-journey request must produce a provider that re-reads. (`DemoGridProvider` tracks
+ * write versions itself; this outer key guards the dataset-served slices outside it.)
+ */
+function fingerprintOf(source: TenantDataSource): string {
+  if (source.fixtures) {
+    const status = demoStatus();
+    return `fixtures|${status.scenario}|${status.seededAt}|${status.mutations}`;
   }
+  return `${source.binding.kind}|${source.binding.workbookId ?? 'environment'}`;
+}
 
-  return demoFixtureProvider(tenantId);
+function buildProviderFor(source: TenantDataSource): DashboardDataProvider {
+  /*
+   * The fixtures-demo provider reads from the SHARED demo store — the same in-memory
+   * workbook the mutation pipeline writes to (Phase C). That is what makes "record an
+   * expense and the P&L moves" real behaviour in a demo with no Google workbook.
+   *
+   * It is shared across tenants because the demonstration deployment HAS one tenant; a
+   * deployment with two would have two registry bindings and therefore two workbooks.
+   */
+  if (source.fixtures) return new DemoGridProvider();
+
+  return new GoogleSheetsDashboardDataProvider({
+    tenantId: source.tenantId,
+    // This tenant's workbook, resolved from the registry — not the environment's.
+    client: source.client,
+    cache: getReadCache(),
+  });
 }
 
 /** Test seam: inject a provider (including one that throws, for error states). */
@@ -190,7 +213,7 @@ export function __setDataProviderForTests(provider: DashboardDataProvider | null
     // Every per-tenant instance goes, not just "the" one — there is no longer a single
     // provider to clear, and a leftover entry would serve a later case stale data.
     providerSlot.write(null);
-    demoProviders.clear();
+    __resetTenantDataSourcesForTests();
   }
 }
 

@@ -53,7 +53,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // The tenant comes from the session this layout already resolved. Nothing in the
   // request participates.
   const tenant = requireTenant(session, 'admin layout');
-  const provider = getDataProvider(tenant);
+  const provider = await getDataProvider(tenant);
   // Resolved on the server so a present asset renders immediately and an absent one
   // renders the lockup — never a flash of one replaced by the other.
   const brandAssets = resolveBrandAssets();

@@ -18,7 +18,7 @@ export const metadata = { title: 'Find a unit — MAKAM Home Stays' };
  * absent from the form, the payload and the browser rather than hidden.
  */
 async function SearchBody({ view }: { view: AvailabilitySearchView }) {
-  const provider = getDataProvider(await requireTenantContext());
+  const provider = await getDataProvider(await requireTenantContext());
   const [propertyIds, platforms] = await Promise.all([
     provider.getPropertyIds(), provider.getPlatforms(),
   ]);

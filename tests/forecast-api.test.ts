@@ -46,7 +46,7 @@ function setup(provider: DashboardDataProvider): Setup {
     authProvider: new InMemoryAuthProvider(Object.values(USERS)),
     audit: new AuditLogger(audit),
   });
-  registerForecastHandlers(router, () => provider);
+  registerForecastHandlers(router, async () => provider);
   return {
     router, audit, provider,
     async request(user, path) {
