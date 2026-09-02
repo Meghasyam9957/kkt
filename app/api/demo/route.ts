@@ -28,7 +28,7 @@ import {
 } from '@/lib/server/demo/store';
 import { runGuestJourney } from '@/lib/server/demo/guest-journey';
 import { isLiveDataEnabled, getReadCache } from '@/lib/data/providers';
-import { createLiveSheetsClient } from '@/lib/server/sheets/config';
+import { resolveTenantDataSource } from '@/lib/server/tenant/data-source';
 import {
   captureSeedSnapshot, restoreSeedSnapshot, resetDemoTechnicalState,
   loadSeedSnapshot, saveSeedSnapshot, SeedSnapshotError,
@@ -89,7 +89,18 @@ export async function POST(request: Request): Promise<Response> {
                 + 'right after seeding the workbook, then reset becomes available.',
             }, { status: 409 });
           }
-          const report = await restoreSeedSnapshot(createLiveSheetsClient(resolved), snapshot);
+          /*
+           * THE ACTING TENANT'S workbook, not the environment's.
+           *
+           * A demo reset destroys and rebuilds every row it touches, which makes it the
+           * most destructive operation in the product — so it is the last place that
+           * should resolve a workbook by any route other than the caller's identity. The
+           * demonstration deployment has one tenant, so this is the same workbook it
+           * always was; what changes is that a second tenant could not reset the first
+           * one's data by holding `demo.control` in their own.
+           */
+          const tenantSource = await resolveTenantDataSource(session.tenantId);
+          const report = await restoreSeedSnapshot(tenantSource.client, snapshot);
           const technical = await resetDemoTechnicalState(resolved);
           // In-memory operation/sequence state (used when Supabase is absent) must not
           // survive a reset that claims the environment is back to seed.
@@ -121,7 +132,9 @@ export async function POST(request: Request): Promise<Response> {
               + 'regenerates from code and needs no snapshot.',
           }, { status: 409 });
         }
-        const snapshot = await captureSeedSnapshot(createLiveSheetsClient(resolved));
+        // The acting tenant's workbook, for the same reason the reset above uses it.
+        const captureSource = await resolveTenantDataSource(session.tenantId);
+        const snapshot = await captureSeedSnapshot(captureSource.client);
         saveSeedSnapshot(snapshot);
         await audit(session, 'demo.seed.captured', {
           capturedAt: snapshot.capturedAt,
