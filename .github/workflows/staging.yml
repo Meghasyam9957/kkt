@@ -1,0 +1,100 @@
+name: Staging verification
+
+# The real-Supabase suite: GoTrue, PostgREST, RLS, and the MAKAM repositories driving them.
+#
+# DELIBERATELY NOT PART OF ORDINARY CI. `ci.yml` runs on every push and pull request against
+# a throwaway PostgreSQL container and needs no secrets at all — that must stay true, because
+# a pull request from a fork cannot be given credentials, and a CI pipeline that only works
+# for people who hold secrets is a pipeline most contributors cannot run.
+#
+# This workflow is manual (`workflow_dispatch`) and bound to the `staging` GitHub Environment,
+# so it runs only when somebody deliberately asks and only with the approvals that environment
+# requires. If the secrets are absent, the suite reports CONFIGURATION_REQUIRED and skips —
+# it never invents a pass.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "staging" to confirm this runs against the staging project'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  # One at a time: these tests create tenants and users in a shared project, and two
+  # concurrent runs would tear down each other's fixtures.
+  group: staging-verification
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Real Supabase staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # The gate. Secrets live on this environment, so a run that has not been approved for it
+    # gets no credentials, and the suite skips rather than reaching anything.
+    environment: staging
+
+    steps:
+      - name: Refuse an unconfirmed run
+        if: ${{ github.event.inputs.confirm != 'staging' }}
+        run: |
+          echo "This workflow writes to a real Supabase project."
+          echo "Re-run it and type 'staging' in the confirmation box."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Cheap, and it fails the run before any credential is loaded into the environment.
+      - name: No committed secrets
+        run: npm run scan:secrets
+
+      - name: Staging suite
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_CONFIRMED_NOT_PRODUCTION: ${{ secrets.STAGING_CONFIRMED_NOT_PRODUCTION }}
+          # The veto. Set this on the environment and the suite refuses any target that
+          # resolves to the same hostname, whatever the staging variables say.
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+        # GitHub masks registered secrets in logs, and the suite never prints key material
+        # of its own: `describeStaging` reports presence, never a value or even a length.
+        run: npm run test:staging
+
+      - name: Confirm the suite refuses a production target
+        # A negative test of the guard, run in the place it matters most. The staging URL is
+        # ALSO declared as production here, so the only correct outcome is a refusal. The
+        # step passes only when the run fails for that reason.
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+          STAGING_CONFIRMED_NOT_PRODUCTION: 'yes'
+          PRODUCTION_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+        run: |
+          if [ -z "${STAGING_SUPABASE_URL}" ]; then
+            echo "No staging URL configured, so there is no guard to prove here."
+            exit 0
+          fi
+          npm run test:staging > guard.log 2>&1 || true
+          if grep -q "REFUSED" guard.log; then
+            echo "Refused, as intended."
+          else
+            echo "The suite did not refuse a target marked as production. The guard failed."
+            # The log can only contain the suite's own output, which never prints key
+            # material — but GitHub masks registered secrets in it regardless.
+            tail -40 guard.log
+            exit 1
+          fi
