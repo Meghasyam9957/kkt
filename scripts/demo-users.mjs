@@ -107,6 +107,44 @@ async function main() {
       status: 'ACTIVE',
     });
     if (upsertError) throw new Error(`app_users upsert failed for ${account.email}: ${upsertError.message}`);
+
+    /*
+     * THE MEMBERSHIP, without which the account is unusable.
+     *
+     * `SupabaseAuthProvider` resolves the tenant from `memberships`, keyed on the verified
+     * user id, and refuses when there is no ACTIVE row. Until M-STAGING-1 this script
+     * stopped at `app_users`, so every account it created signed in successfully — the
+     * session cookie is set without consulting memberships — and then bounced silently back
+     * to /signin on the very next request. On a freshly migrated project there is nothing
+     * else to supply the row: 0004's backfill only covers `app_users` rows that already
+     * existed when it ran, and on a new project there are none.
+     *
+     * The tenant is the one 0004 seeds. Looked up by slug rather than assumed, so a project
+     * that has moved on from a single tenant fails loudly here instead of attaching four
+     * demonstration logins to whichever tenant happens to sort first.
+     */
+    const { data: tenant, error: tenantError } = await supabase
+      .from('tenants').select('id').eq('slug', 'srivillu').maybeSingle();
+    if (tenantError) {
+      throw new Error(`could not read tenants (${tenantError.message}). Are migrations applied?`);
+    }
+    if (!tenant) {
+      throw new Error(
+        "No tenant with slug 'srivillu'. Apply the migrations first (npm run db:migrate); "
+        + '0004 seeds it.');
+    }
+
+    const { error: membershipError } = await supabase.from('memberships').upsert({
+      user_id: userId,
+      tenant_id: tenant.id,
+      // The membership is the authority for the role; app_users.role remains only as the
+      // pre-membership fallback that 0004's transition note describes.
+      role: account.role,
+      status: 'ACTIVE',
+    }, { onConflict: 'user_id,tenant_id' });
+    if (membershipError) {
+      throw new Error(`membership upsert failed for ${account.email}: ${membershipError.message}`);
+    }
   }
 
   if (credentials.length > 0) {

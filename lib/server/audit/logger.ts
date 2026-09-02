@@ -10,6 +10,7 @@ import '@/lib/server/only';
  */
 import type { AuthContext } from '@/lib/server/auth/session';
 import { redactMetadata } from './redact';
+import { boundReason } from './reason';
 
 export type AuditResult = 'ALLOW' | 'DENY' | 'ERROR';
 
@@ -113,7 +114,10 @@ export function toAuditRecord(event: AuditEvent, now: () => Date = () => new Dat
     entityType: event.entityType ?? null,
     entityId: event.entityId ?? null,
     result: event.result,
-    reason: event.reason ?? null,
+    // Bounded and stripped of URLs/tokens even though every call site now passes it
+    // through safeReason first. A future call site that forgets still cannot store an
+    // unbounded blob or a connection string.
+    reason: boundReason(event.reason),
     requestId: event.requestId ?? null,
     ip: event.ip ?? null,
     userAgent: event.userAgent ?? null,

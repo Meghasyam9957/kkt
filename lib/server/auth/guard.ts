@@ -8,6 +8,7 @@ import '@/lib/server/only';
 import { AuthenticationError, AuthorizationError, type AuthContext, type AuthProvider } from './session';
 import { roleHasCapability, type Capability, type Role } from './roles';
 import type { AuditService } from '@/lib/server/audit/logger';
+import { safeReason } from '@/lib/server/audit/reason';
 
 export interface ApiRequest {
   method: string;
@@ -178,7 +179,11 @@ export function createGuard(deps: GuardDependencies) {
           actor: auth, action: options.action, entityType: options.entityType,
           entityId: entityIdOf(request),
           result: isAuthn || isAuthz ? 'DENY' : 'ERROR',
-          reason: (error as Error).message,
+          // The catch-all: ANY unhandled exception reached here, including every
+          // PostgREST failure the repositories rethrow. Authored refusals (an
+          // AuthorizationError naming the missing capability) keep their text because
+          // that text is the useful part of the record; anything else becomes a code.
+          reason: safeReason(error),
           requestId: request.requestId, ip: request.ip,
           metadata: { method: request.method, path: request.path },
         });

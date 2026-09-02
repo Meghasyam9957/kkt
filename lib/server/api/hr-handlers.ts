@@ -37,6 +37,7 @@ import {
   advanceView, advanceBalanceView, salaryStructureView, payrollRunView, payrollLineView,
   workforceView, departmentView, designationView,
 } from '@/lib/server/hr/projections';
+import { safeReason } from '@/lib/server/audit/reason';
 
 export interface HrHandlerDeps {
   service: HrService;
@@ -265,7 +266,8 @@ async function hrWrite<T>(
     });
     return view;
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    // See finance-handlers: this string is persisted and browser-reachable.
+    const reason = safeReason(error);
     await deps.store.fail(body.operationId, { type: entityType, id: '' }, reason);
     await deps.audit.record({
       actor: ctx.auth, action, entityType, result: 'ERROR', reason,

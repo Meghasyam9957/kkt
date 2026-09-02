@@ -33,6 +33,7 @@ import { paise } from '@/lib/server/finance/money';
 import {
   vendorView, billView, receivableView, paymentView, positionView, periodView,
 } from '@/lib/server/finance/projections';
+import { safeReason } from '@/lib/server/audit/reason';
 
 export interface FinanceHandlerDeps {
   /** Built per request from the caller's tenant. There is no ambient service. */
@@ -229,7 +230,9 @@ async function financeWrite<T>(
     });
     return view;
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    // Authored refusals keep their sentence; an upstream failure becomes a code. This
+    // string is persisted in the ledger AND returned by GET /api/operations-log/:id.
+    const reason = safeReason(error);
     await deps.store.fail(body.operationId, { type: entityType, id: '' }, reason);
     await deps.audit.record({
       actor: ctx.auth, action, entityType, result: 'ERROR', reason,

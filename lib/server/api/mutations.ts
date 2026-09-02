@@ -35,6 +35,7 @@ import type { AuditService } from '@/lib/server/audit/logger';
 import type { HandlerContext } from '@/lib/server/auth/guard';
 import type { ReadCache } from '@/lib/server/cache/read-cache';
 import { isoToSerial } from '@/lib/shared/dates';
+import { safeReason } from '@/lib/server/audit/reason';
 
 /* ------------------------------------------------------------------ *
  * Errors → controlled responses
@@ -312,7 +313,9 @@ export async function executeMutation(
 
     return result;
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    // Persisted in the operation ledger and handed back by GET /api/operations-log/:id,
+    // so it may carry an authored refusal but never an upstream diagnostic.
+    const reason = safeReason(error);
     await deps.store.fail(operationId, { type: SHEETS[def.sheet], id: entityId ?? '' }, reason);
     await deps.audit.record({
       actor: ctx.auth, action: def.action, entityType: SHEETS[def.sheet],

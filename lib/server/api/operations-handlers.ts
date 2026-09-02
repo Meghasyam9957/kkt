@@ -24,6 +24,7 @@ import { OperationsError, TASK_TYPES } from '@/lib/server/operations/types';
 import {
   staffingView, assignmentView, metricsView,
 } from '@/lib/server/operations/projections';
+import { safeReason } from '@/lib/server/audit/reason';
 
 export interface OperationsHandlerDeps {
   service: OperationsPeopleService;
@@ -237,7 +238,8 @@ export function registerOperationsHandlers(
       });
       return view;
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+      // Persisted and browser-reachable; see lib/server/audit/reason.ts.
+      const reason = safeReason(error);
       await deps.store.fail(
         input.value.operationId, { type: 'OPS_ASSIGNMENT', id: '' }, reason,
       );
