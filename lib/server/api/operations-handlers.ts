@@ -22,7 +22,7 @@ import type { HandlerContext } from '@/lib/server/auth/guard';
 import type { OperationsPeopleService } from '@/lib/server/operations/service';
 import { OperationsError, TASK_TYPES } from '@/lib/server/operations/types';
 import {
-  staffingView, assignmentView, metricsView,
+  staffingView, assignmentView, metricsView, reconciliationView, unassignedUrgentView,
 } from '@/lib/server/operations/projections';
 import { safeReason } from '@/lib/server/audit/reason';
 
@@ -148,6 +148,28 @@ export function registerOperationsHandlers(
   router.register('GET', '/api/operations/metrics', async (ctx) => {
     const { tenant, deps } = await svc(ctx, 'operations.metrics');
     return metricsView(await deps.service.operationsMetrics(tenant, propertyFrom(ctx)));
+  });
+
+  router.register('GET', '/api/operations/reconciliation', async (ctx) => {
+    const { tenant, deps } = await svc(ctx, 'operations.reconciliation');
+    const raw = ctx.request.query?.taskType;
+    const taskType = typeof raw === 'string'
+      && (TASK_TYPES as readonly string[]).includes(raw) ? raw as never : undefined;
+    try {
+      return reconciliationView(await deps.service.reconciliationReport(tenant, taskType));
+    } catch (error) {
+      return fromOperationsError(error);
+    }
+  });
+
+  router.register('GET', '/api/operations/urgent', async (ctx) => {
+    const { tenant, deps } = await svc(ctx, 'operations.urgent');
+    try {
+      const rows = await deps.service.unassignedUrgent(tenant, propertyFrom(ctx));
+      return rows.map(unassignedUrgentView);
+    } catch (error) {
+      return fromOperationsError(error);
+    }
   });
 
   router.register('POST', '/api/operations/assignments', async (ctx) => {

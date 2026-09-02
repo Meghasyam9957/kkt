@@ -4,6 +4,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { maintenanceFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 import { requireTenantContext } from '@/lib/server/auth/page-guard';
+import { assignmentContextForPage } from '@/lib/server/operations/page-assignment';
 
 export const metadata = { title: 'Maintenance — MAKAM Home Stays' };
 
@@ -24,6 +25,9 @@ async function NewIssueAction() {
 
 export default async function MaintenancePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
+  // Resolved once for the whole board rather than once per row, and undefined for a
+  // viewer without operations.staff.read — see page-assignment.ts.
+  const assignment = await assignmentContextForPage('MAINTENANCE', params.property);
   return (
     <ReadOnlyPage
       capability="maintenance.read"
@@ -34,7 +38,7 @@ export default async function MaintenancePage({ searchParams }: { searchParams: 
       fetcher={(provider, f) => provider.getOperations(f)}
       actions={<NewIssueAction />}
     >
-      {(board) => <MaintenanceTable rows={board.maintenance} />}
+      {(board) => <MaintenanceTable rows={board.maintenance} assignment={assignment} />}
     </ReadOnlyPage>
   );
 }

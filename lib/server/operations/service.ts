@@ -42,6 +42,8 @@ import {
   notFound, refuse, TASK_TYPES,
   type AssignmentDivergence, type DepartmentCoverage, type Eligibility, type EmployeeMatch,
   type StaffDay, type StaffDayStatus, type StaffingBoard, type TaskAssignment, type TaskType,
+  type NamedEmployee, type ReconciliationAction, type ReconciliationReport,
+  type ReconciliationStatus, type TaskReconciliation, type UnassignedUrgentTask,
 } from './types';
 
 /**
@@ -64,6 +66,24 @@ export interface OperationalTask {
   readonly assigneeName: string | null;
   readonly status: string;
   readonly open: boolean;
+  /**
+   * WHEN THE WORK BELONGS TO — a checkout date for a turnover, the reported date for a
+   * ticket.
+   *
+   * Carried because reconciliation cannot be correct without it. Resolving the name in a
+   * 2024 row against today's staff list would attach that work to whoever happens to hold
+   * the name now, which is how a record comes to state, permanently and with confidence,
+   * that somebody did a job before they were hired.
+   */
+  readonly occurredOn: string;
+  /**
+   * The workbook's own priority, for maintenance. Null for housekeeping, which has none.
+   * Kept as the sheet's vocabulary ('Critical' | 'High' | 'Medium' | 'Low') rather than
+   * translated into a second one.
+   */
+  readonly priority: string | null;
+  /** A short human description, for a screen that must say what the work IS. */
+  readonly title: string | null;
 }
 
 export interface OperationsServiceDeps {
@@ -202,6 +222,205 @@ export class OperationsPeopleService {
       }
     }
     return found;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Reconciliation, as a work queue — M-OPS-3
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Every task, and what the sheet and the overlay each say about who holds it.
+   *
+   * `reconcile()` above answers "where do they disagree". This answers "what is the state of
+   * each one, and what could a person do about it" — the difference between noticing a
+   * problem and being able to work through it.
+   *
+   * THE PART THAT MATTERS MOST: a name is resolved as of the TASK'S OWN DATE, never today's.
+   * A turnover from March 2024 naming "Ramesh" must not attach itself to the Ramesh hired in
+   * 2026 merely because he is the one holding that name now. That record would look correct
+   * and be a false statement about two people.
+   *
+   * Nothing here writes. Reconciliation reports; a supervisor decides.
+   */
+  async reconciliationReport(
+    tenant: TenantContext, taskType?: TaskType,
+  ): Promise<ReconciliationReport> {
+    requireTenant(tenant, 'operations.reconciliation');
+    const types = taskType ? [taskType] : [...TASK_TYPES];
+    const rows: TaskReconciliation[] = [];
+
+    for (const type of types) {
+      const [tasks, assignments] = await Promise.all([
+        this.deps.tasks(tenant, type),
+        this.deps.assignments.list(tenant, { taskType: type, currentOnly: true }),
+      ]);
+      const byRef = new Map(assignments.map((a) => [a.taskRef, a]));
+      const seen = new Set<string>();
+
+      for (const task of tasks) {
+        seen.add(task.taskRef);
+        rows.push(await this.reconcileOne(tenant, type, task, byRef.get(task.taskRef) ?? null));
+      }
+
+      // An assignment whose task has left the workbook — a deleted row, a re-cut sheet, a
+      // renamed reference. Nothing can be inferred, so it is reported for a person to look at.
+      for (const assignment of assignments) {
+        if (seen.has(assignment.taskRef)) continue;
+        rows.push(Object.freeze({
+          taskType: type,
+          taskRef: assignment.taskRef,
+          propertyId: assignment.propertyId,
+          occurredOn: assignment.assignedAt.slice(0, 10),
+          title: null,
+          status: 'TASK_NOT_FOUND' as const,
+          sheetName: null,
+          employee: await this.nameOf(tenant, assignment.employeeId),
+          candidates: [],
+          recommendation: 'REVIEW' as const,
+        }));
+      }
+    }
+
+    return Object.freeze({ summary: summarise(rows), rows });
+  }
+
+  private async reconcileOne(
+    tenant: TenantContext, taskType: TaskType,
+    task: OperationalTask, assignment: TaskAssignment | null,
+  ): Promise<TaskReconciliation> {
+    const sheetName = (task.assigneeName ?? '').trim();
+    const base = {
+      taskType, taskRef: task.taskRef, propertyId: task.propertyId,
+      occurredOn: task.occurredOn, title: task.title,
+    };
+
+    if (assignment) {
+      const employee = await this.nameOf(tenant, assignment.employeeId);
+      const echoed = assignment.displayNameWritten.trim();
+      const status: ReconciliationStatus = sheetName === ''
+        ? 'ECHO_MISSING'
+        : (sheetName === echoed ? 'MATCHED' : 'ECHO_MISMATCH');
+      return Object.freeze({
+        ...base, status, sheetName: sheetName || null, employee, candidates: [],
+        // A missing or edited echo is repairable by writing back the name we hold; a match
+        // needs nothing done to it.
+        recommendation: (status === 'MATCHED' ? 'NONE' : 'REPAIR_ECHO') as ReconciliationAction,
+      });
+    }
+
+    if (sheetName === '') {
+      /*
+       * No name and no assignment. That is an UNASSIGNED task, which is an ordinary state of
+       * the world and not a disagreement between two stores — so it is reported as MATCHED:
+       * the sheet and the overlay agree that nobody holds it. It appears in the report at all
+       * so the totals describe every task rather than only the troublesome ones.
+       */
+      return Object.freeze({
+        ...base, status: 'MATCHED' as const, sheetName: null,
+        employee: null, candidates: [], recommendation: 'NONE' as const,
+      });
+    }
+
+    // A name with nothing behind it. WHY there is nothing behind it is the useful part, and
+    // it is the whole reason this resolves as of the task's date.
+    const match = await this.resolveByName(tenant, sheetName, task.occurredOn);
+    switch (match.kind) {
+      case 'EXACT':
+        return Object.freeze({
+          ...base, status: 'UNLINKED' as const, sheetName,
+          employee: named(match.employee), candidates: [],
+          recommendation: 'BIND' as const,
+        });
+      case 'AMBIGUOUS':
+        return Object.freeze({
+          ...base, status: 'AMBIGUOUS' as const, sheetName,
+          // Named in FULL here, not by the name they go by. Both answer to the same
+          // preferred name — that is what makes this ambiguous — so offering it twice
+          // would present a choice with no information in it.
+          employee: null, candidates: match.candidates.map(namedInFull),
+          // Never BIND. More than one person answers to this name and the sheet does not say
+          // which — guessing here is exactly what this design exists to refuse.
+          recommendation: 'REVIEW' as const,
+        });
+      case 'HISTORICAL_MISMATCH':
+        return Object.freeze({
+          ...base, status: 'HISTORICAL' as const, sheetName,
+          employee: named(match.employee), candidates: [],
+          recommendation: 'IGNORE_HISTORICAL' as const,
+        });
+      case 'INACTIVE':
+        // Employed on the day, not active now. The work genuinely was theirs, so it is
+        // bindable — but by a person looking, not by a one-click action.
+        return Object.freeze({
+          ...base, status: 'UNLINKED' as const, sheetName,
+          employee: named(match.employee), candidates: [],
+          recommendation: 'REVIEW' as const,
+        });
+      default:
+        return Object.freeze({
+          ...base, status: 'MISSING_RELATION' as const, sheetName,
+          employee: null, candidates: [], recommendation: 'REVIEW' as const,
+        });
+    }
+  }
+
+  /** A person's name for a screen. Returns null rather than inventing one. */
+  private async nameOf(tenant: TenantContext, employeeId: string): Promise<NamedEmployee | null> {
+    const employee = await this.deps.hr.getEmployee(tenant, employeeId);
+    return employee ? named(employee) : null;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Urgent work nobody owns — M-OPS-3
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Open, urgent, and unassigned.
+   *
+   * Deliberately narrow. The Today board already raises every Critical and High ticket from
+   * the workbook alone; a second alert per ticket would be noise, and an alert for every
+   * unassigned task would be worse. What nobody can see today is the INTERSECTION — urgent
+   * work with no owner — because urgency is a workbook fact and ownership is an overlay one,
+   * and until now nothing held both.
+   *
+   * The key follows the board's existing `mnt-<ticketId>` identity, so one ticket is one
+   * thing wherever it surfaces and a page refresh cannot mint a second copy of it.
+   */
+  async unassignedUrgent(
+    tenant: TenantContext, propertyId?: string, today?: string,
+  ): Promise<UnassignedUrgentTask[]> {
+    requireTenant(tenant, 'operations.urgent');
+    if (propertyId) {
+      const owned = await this.deps.propertyIds(tenant);
+      // A property the caller does not own is refused exactly as one that does not exist.
+      if (!owned.includes(propertyId)) throw notFound('property');
+    }
+
+    const [tickets, assignments] = await Promise.all([
+      this.deps.tasks(tenant, 'MAINTENANCE'),
+      this.deps.assignments.list(tenant, { taskType: 'MAINTENANCE', currentOnly: true }),
+    ]);
+    const owned = new Set(assignments.map((a) => a.taskRef));
+    const asOf = today ?? this.today();
+
+    return tickets
+      .filter((t) => t.open && URGENT_PRIORITIES.has(t.priority ?? ''))
+      .filter((t) => !owned.has(t.taskRef))
+      .filter((t) => !propertyId || t.propertyId === propertyId)
+      .map((t) => Object.freeze({
+        key: `mnt-${t.taskRef}`,
+        taskType: 'MAINTENANCE' as const,
+        taskRef: t.taskRef,
+        propertyId: t.propertyId,
+        priority: t.priority ?? '',
+        title: t.title ?? t.taskRef,
+        reportedOn: t.occurredOn,
+        ageDays: wholeDaysBetween(t.occurredOn, asOf),
+      }))
+      // Most urgent first, then longest waiting. A queue is only useful in an order.
+      .sort((a, b) => (a.priority === b.priority
+        ? b.ageDays - a.ageDays
+        : (a.priority === 'Critical' ? -1 : 1)));
   }
 
   /* ---------------------------------------------------------------- *
@@ -619,4 +838,59 @@ function coverageOf(
     // rest day explains. It is NOT an absence — nobody has said they are away.
     gaps: people.filter((p) => p.status === 'NOT_RECORDED').length,
   })).sort((a, b) => a.departmentName.localeCompare(b.departmentName));
+}
+
+/**
+ * The sheet's own urgency words.
+ *
+ * Not a new vocabulary and not a threshold anybody can quietly widen: a ticket is urgent
+ * here exactly when the workbook already calls it Critical or High, which is the same test
+ * `buildUrgent` applies on the board. One definition of urgent, in two places that agree.
+ */
+const URGENT_PRIORITIES: ReadonlySet<string> = new Set(['Critical', 'High']);
+
+/** How a person is named on a screen: the name they go by, and their code. Never a raw id. */
+function named(employee: Employee): NamedEmployee {
+  return Object.freeze({
+    employeeId: employee.id,
+    employeeCode: employee.employeeCode,
+    displayName: employee.preferredName?.trim() || employee.fullName,
+  });
+}
+
+/**
+ * The same person, distinguished rather than familiar.
+ *
+ * Used only where two people share the name a sheet cell holds. Everywhere else the name
+ * somebody goes by is the right one to show; here it is precisely the thing that cannot
+ * separate them.
+ */
+function namedInFull(employee: Employee): NamedEmployee {
+  return Object.freeze({
+    employeeId: employee.id,
+    employeeCode: employee.employeeCode,
+    displayName: employee.fullName,
+  });
+}
+
+/** Whole days, floored, never negative — a ticket reported today has waited zero days. */
+function wholeDaysBetween(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00.000Z`);
+  const end = Date.parse(`${to}T00:00:00.000Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return 0;
+  return Math.max(0, Math.floor((end - start) / 86_400_000));
+}
+
+function summarise(rows: readonly TaskReconciliation[]) {
+  const count = (predicate: (r: TaskReconciliation) => boolean) => rows.filter(predicate).length;
+  return Object.freeze({
+    matched: count((r) => r.status === 'MATCHED'),
+    // Everything a person has to look at, however it came to be that way.
+    needsReview: count((r) => r.status === 'ECHO_MISMATCH' || r.status === 'ECHO_MISSING'
+      || r.status === 'MISSING_RELATION' || r.status === 'HISTORICAL'
+      || r.status === 'TASK_NOT_FOUND'),
+    unlinked: count((r) => r.status === 'UNLINKED'),
+    ambiguous: count((r) => r.status === 'AMBIGUOUS'),
+    total: rows.length,
+  });
 }

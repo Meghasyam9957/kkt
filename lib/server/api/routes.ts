@@ -379,6 +379,21 @@ export const API_ROUTES: readonly RouteDefinition[] = [
   { method: 'GET', path: '/api/operations/metrics', capability: 'operations.staff.read',
     action: 'operations.metrics.read',
     summary: 'Open and unassigned counts for housekeeping and maintenance' },
+  { method: 'GET', path: '/api/operations/reconciliation', capability: 'operations.staff.read',
+    action: 'operations.reconciliation.read',
+    summary: 'Where the workbook name and the assignment overlay agree, and where they do not' },
+  { method: 'GET', path: '/api/operations/urgent', capability: 'operations.staff.read',
+    action: 'operations.urgent.read',
+    summary: 'Urgent maintenance that is open and has no current assignment' },
+  /*
+   * THE ONLY WAY A TASK GAINS AN OWNER, and deliberately the only one.
+   *
+   * There is no POST /api/housekeeping/assign and no POST /api/maintenance/assign. Assignment
+   * is one concept — resolve the employee, resolve the task, check the property, check
+   * eligibility, write the sheet, then the overlay — and a second entry point would be a
+   * second place for one of those steps to be forgotten. The reconciliation screen's "bind"
+   * action posts here too; binding a historical name IS an assignment.
+   */
   { method: 'POST', path: '/api/operations/assignments', capability: 'operations.assign',
     writesOps: true, action: 'operations.task.assign', entityType: 'OPS_ASSIGNMENT',
     summary: 'Assign or reassign a task to an employee — supersedes, never overwrites' },

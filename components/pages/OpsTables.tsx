@@ -20,6 +20,8 @@
 import { StatusPill, Card, CardHeader, CardBody, type Tone } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { RowActionButton } from '@/components/mutations/actions';
+import { AssignTaskButton } from '@/components/operations/AssignTaskButton';
+import type { AssignmentContext } from '@/lib/server/operations/assign-context';
 import { formatDateShort } from '@/lib/shared/format';
 import { resolveMaintenanceFields, markCleanFields } from '@/lib/server/api/form-fields';
 import type {
@@ -70,7 +72,15 @@ function BookingRef({ row }: { row: CleaningRow }) {
   );
 }
 
-export function HousekeepingTable({ rows }: { rows: CleaningRow[] }) {
+export function HousekeepingTable({ rows, assignment }: {
+  rows: CleaningRow[];
+  /**
+   * Who holds each turnover, and who could. OPTIONAL: the table renders exactly as before
+   * without it, so a caller that has not resolved the people domain — or a viewer without
+   * `operations.staff.read` — simply sees the board it always saw.
+   */
+  assignment?: AssignmentContext;
+}) {
   const columns: Column<CleaningRow>[] = [
     {
       key: 'unit', header: 'Unit',
@@ -97,9 +107,7 @@ export function HousekeepingTable({ rows }: { rows: CleaningRow[] }) {
     },
     {
       key: 'cleaner', header: 'Cleaner',
-      render: (r) => (r.cleaner === ''
-        ? <span className="sv-hk__noref">Nobody yet</span>
-        : r.cleaner),
+      render: (r) => <AssignedCell name={r.cleaner} taskRef={r.taskId} assignment={assignment} />,
     },
     { key: 'booking', header: 'Booking', render: (r) => <BookingRef row={r} /> },
     {
@@ -107,14 +115,21 @@ export function HousekeepingTable({ rows }: { rows: CleaningRow[] }) {
       render: (r) => (r.status === 'Completed'
         ? <span className="sv-muted">Done</span>
         : (
-          <RowActionButton
-            label="Mark clean" endpoint={`/api/housekeeping/${r.taskId}`} method="PATCH"
-            surface="drawer"
-            confirmTitle={`${r.unitName || r.propertyId} — mark clean`}
-            context={<TurnoverFacts row={r} />}
-            fields={markCleanFields()}
-            successTemplate={`${r.unitName || r.propertyId} is ready — ${r.taskId} completed.`}
-          />
+          <span className="sv-rowactions">
+            {assignment ? (
+              <AssignTaskButton
+                taskType="HOUSEKEEPING" taskRef={r.taskId} context={assignment}
+              />
+            ) : null}
+            <RowActionButton
+              label="Mark clean" endpoint={`/api/housekeeping/${r.taskId}`} method="PATCH"
+              surface="drawer"
+              confirmTitle={`${r.unitName || r.propertyId} — mark clean`}
+              context={<TurnoverFacts row={r} />}
+              fields={markCleanFields()}
+              successTemplate={`${r.unitName || r.propertyId} is ready — ${r.taskId} completed.`}
+            />
+          </span>
         )),
     },
   ];
@@ -158,7 +173,11 @@ function TurnoverFacts({ row }: { row: CleaningRow }) {
  * Maintenance
  * ------------------------------------------------------------------ */
 
-export function MaintenanceTable({ rows }: { rows: MaintenanceRow[] }) {
+export function MaintenanceTable({ rows, assignment }: {
+  rows: MaintenanceRow[];
+  /** As on the housekeeping board: optional, and the table is unchanged without it. */
+  assignment?: AssignmentContext;
+}) {
   const columns: Column<MaintenanceRow>[] = [
     { key: 'id', header: 'Ticket', render: (r) => <code className="numeric">{r.ticketId}</code> },
     { key: 'property', header: 'Property', render: (r) => r.propertyId },
@@ -182,16 +201,29 @@ export function MaintenanceTable({ rows }: { rows: MaintenanceRow[] }) {
       render: (r) => <StatusPill tone={MNT_TONE[r.status] ?? 'neutral'}>{r.status}</StatusPill>,
     },
     {
+      key: 'assigned', header: 'Technician',
+      render: (r) => (
+        <AssignedCell name={r.assignedTo} taskRef={r.ticketId} assignment={assignment} />
+      ),
+    },
+    {
       key: 'actions', header: 'Actions',
       render: (r) => (r.status === 'Resolved' || r.status === 'Closed'
         ? <span className="sv-muted">—</span>
         : (
-          <RowActionButton
-            label="Resolve" endpoint={`/api/maintenance/${r.ticketId}`} method="PATCH"
-            confirmTitle={`Resolve ${r.ticketId}`}
-            fields={resolveMaintenanceFields()}
-            successTemplate={`${r.ticketId} resolved.`}
-          />
+          <span className="sv-rowactions">
+            {assignment ? (
+              <AssignTaskButton
+                taskType="MAINTENANCE" taskRef={r.ticketId} context={assignment}
+              />
+            ) : null}
+            <RowActionButton
+              label="Resolve" endpoint={`/api/maintenance/${r.ticketId}`} method="PATCH"
+              confirmTitle={`Resolve ${r.ticketId}`}
+              fields={resolveMaintenanceFields()}
+              successTemplate={`${r.ticketId} resolved.`}
+            />
+          </span>
         )),
     },
   ];
@@ -304,5 +336,52 @@ export function GuestRequestsTable({ rows, tracked }: { rows: GuestRequestRow[];
         />
       </CardBody>
     </Card>
+  );
+}
+
+
+/**
+ * WHO HOLDS THIS TASK, and whether the workbook and the overlay agree about it.
+ *
+ * Three states a supervisor can act on, and the distinction is the point of M-OPS-2:
+ *
+ *   nobody yet   no name in the sheet and no assignment. Ordinary, not a problem.
+ *   linked       an assignment exists. The name shown is the person the record names.
+ *   unlinked     the sheet holds a name that no assignment stands behind. Every row
+ *                predating this feature looks like this, and so does every row a
+ *                supervisor typed into the sheet by hand — so it is stated plainly and
+ *                never treated as an error.
+ *
+ * The name is always the HUMAN one. No identifier is rendered here: a screen that showed a
+ * uuid where a person's name belongs would be unreadable exactly when it mattered.
+ */
+function AssignedCell({ name, taskRef, assignment }: {
+  name: string;
+  taskRef: string;
+  assignment?: AssignmentContext;
+}) {
+  const current = assignment?.current[taskRef];
+
+  if (current) {
+    const diverged = name.trim() !== '' && name.trim() !== current.displayName.trim();
+    return (
+      <span className="sv-assigned">
+        <span className="sv-assigned__name">{current.displayName}</span>
+        {diverged ? (
+          // The sheet cell was edited to somebody else after we wrote it. Reported, never
+          // silently resolved — which of the two is right is not ours to decide.
+          <StatusPill tone="warn">sheet says {name}</StatusPill>
+        ) : null}
+      </span>
+    );
+  }
+
+  if (name.trim() === '') return <span className="sv-hk__noref">Nobody yet</span>;
+
+  return (
+    <span className="sv-assigned">
+      <span className="sv-assigned__name">{name}</span>
+      {assignment ? <StatusPill tone="neutral">unlinked</StatusPill> : null}
+    </span>
   );
 }

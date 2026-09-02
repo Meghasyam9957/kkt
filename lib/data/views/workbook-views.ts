@@ -683,6 +683,7 @@ export class WorkbookViews {
         ticketId: t.ticketId, propertyId: t.propertyId, category: t.category,
         description: t.description, priority: t.priority, status: t.status,
         reportedOn: t.reportedOn,
+        assignedTo: t.assignedTo,
         // Age is measured from the real day, never from a browsed one.
         ageDays: t.reportedOn ? Math.max(0, operational - isoToSerial(t.reportedOn)) : 0,
       }))

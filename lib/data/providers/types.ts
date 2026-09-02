@@ -226,6 +226,15 @@ export interface MaintenanceRow {
   status: string;
   reportedOn: string;
   ageDays: number;
+  /**
+   * 14_MAINTENANCE.AssignedTo — the name in the sheet.
+   *
+   * Carried onto the board so the maintenance queue can say the same thing the housekeeping
+   * queue already says: whether the name on the row and the assignment behind it agree.
+   * Without it a hand-edited cell is invisible on the one screen a technician's supervisor
+   * actually looks at.
+   */
+  assignedTo: string;
 }
 
 export interface StockRow {

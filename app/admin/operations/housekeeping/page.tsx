@@ -4,6 +4,7 @@ import { NewRecordButton } from '@/components/mutations/actions';
 import { housekeepingFields } from '@/lib/server/api/form-fields';
 import { getDataProvider } from '@/lib/data/providers';
 import { requireTenantContext } from '@/lib/server/auth/page-guard';
+import { assignmentContextForPage } from '@/lib/server/operations/page-assignment';
 
 export const metadata = { title: 'Housekeeping — MAKAM Home Stays' };
 
@@ -24,6 +25,9 @@ async function NewTurnoverAction() {
 
 export default async function HousekeepingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
+  // Resolved once for the whole board rather than once per row, and undefined for a
+  // viewer without operations.staff.read — see page-assignment.ts.
+  const assignment = await assignmentContextForPage('HOUSEKEEPING', params.property);
   return (
     <ReadOnlyPage
       capability="housekeeping.read"
@@ -34,7 +38,7 @@ export default async function HousekeepingPage({ searchParams }: { searchParams:
       fetcher={(provider, f) => provider.getOperations(f)}
       actions={<NewTurnoverAction />}
     >
-      {(board) => <HousekeepingTable rows={board.cleaning} />}
+      {(board) => <HousekeepingTable rows={board.cleaning} assignment={assignment} />}
     </ReadOnlyPage>
   );
 }

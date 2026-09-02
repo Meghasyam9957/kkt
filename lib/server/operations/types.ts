@@ -241,3 +241,117 @@ export function notFound(what: string): OperationsError {
 export function refuse(code: string, message: string, status = 422): OperationsError {
   return new OperationsError(status, code, message);
 }
+
+/* ------------------------------------------------------------------ *
+ * Reconciliation — M-OPS-3 §10
+ * ------------------------------------------------------------------ */
+
+/**
+ * WHAT THE SHEET AND THE OVERLAY SAY ABOUT ONE TASK, as a closed set of answers.
+ *
+ * M-OPS-2's `reconcile()` reported only the three ways they could DISAGREE, which was enough
+ * to notice a problem and not enough to act on one: it could not say that a name was
+ * bindable, that it was ambiguous, or that it belonged to somebody who had already left.
+ * Those distinctions are the difference between a list of complaints and a work queue.
+ *
+ * Every status is machine-safe and mutually exclusive. Nothing here guesses: where the
+ * evidence supports more than one person, the answer is AMBIGUOUS and a human decides.
+ */
+export const RECONCILIATION_STATUSES = [
+  /** A current assignment exists and the sheet cell holds exactly the name we wrote. */
+  'MATCHED',
+  /** A current assignment exists; the sheet cell holds a DIFFERENT name. Hand-edited. */
+  'ECHO_MISMATCH',
+  /** A current assignment exists; the sheet cell is empty. The echo never landed. */
+  'ECHO_MISSING',
+  /** A name, no assignment, and it resolves to exactly one person employed that day. */
+  'UNLINKED',
+  /** A name, no assignment, and more than one employee answers to it. */
+  'AMBIGUOUS',
+  /** A name, no assignment, and the only match was not employed on the task's own date. */
+  'HISTORICAL',
+  /** A name, no assignment, and nobody on the books answers to it at all. */
+  'MISSING_RELATION',
+  /** An assignment whose task is no longer in the workbook. */
+  'TASK_NOT_FOUND',
+] as const;
+
+export type ReconciliationStatus = (typeof RECONCILIATION_STATUSES)[number];
+
+/**
+ * What a supervisor could reasonably do next.
+ *
+ * Advisory only. Nothing acts on a recommendation by itself, and BIND is offered solely
+ * where exactly one employed-that-day person answers to the name — never for AMBIGUOUS,
+ * which is the case this whole design exists to refuse to guess at.
+ */
+export const RECONCILIATION_ACTIONS = [
+  'NONE', 'REVIEW', 'BIND', 'REPAIR_ECHO', 'IGNORE_HISTORICAL',
+] as const;
+
+export type ReconciliationAction = (typeof RECONCILIATION_ACTIONS)[number];
+
+/** One employee, named the way a screen should name one. Never a bare identifier. */
+export interface NamedEmployee {
+  readonly employeeId: string;
+  readonly employeeCode: string;
+  readonly displayName: string;
+}
+
+export interface TaskReconciliation {
+  readonly taskType: TaskType;
+  readonly taskRef: string;
+  readonly propertyId: string | null;
+  /** The task's own date, which is what the name was resolved as of. */
+  readonly occurredOn: string;
+  readonly title: string | null;
+  readonly status: ReconciliationStatus;
+  /** The name currently in the workbook cell. */
+  readonly sheetName: string | null;
+  /** The person the overlay says holds it, if any. Named, never a raw identifier. */
+  readonly employee: NamedEmployee | null;
+  /** For AMBIGUOUS: everyone the name could mean. A person picks, or nothing happens. */
+  readonly candidates: readonly NamedEmployee[];
+  readonly recommendation: ReconciliationAction;
+}
+
+export interface ReconciliationSummary {
+  readonly matched: number;
+  readonly needsReview: number;
+  readonly unlinked: number;
+  readonly ambiguous: number;
+  readonly total: number;
+}
+
+export interface ReconciliationReport {
+  readonly summary: ReconciliationSummary;
+  readonly rows: readonly TaskReconciliation[];
+}
+
+/* ------------------------------------------------------------------ *
+ * Unassigned urgent work — M-OPS-3 §14
+ * ------------------------------------------------------------------ */
+
+/**
+ * Urgent maintenance that nobody owns.
+ *
+ * NOT a new alert engine, and not a second copy of the workbook's own urgent list. The
+ * board already raises every Critical and High ticket from the sheet alone; what it cannot
+ * know is whether one has an owner, because ownership lives in the overlay. This is exactly
+ * that intersection and nothing more.
+ *
+ * `key` follows the board's existing convention (`mnt-<ticketId>`) so the same ticket has
+ * one identity wherever it surfaces, and a page refresh cannot mint a second copy of it.
+ */
+export interface UnassignedUrgentTask {
+  readonly key: string;
+  readonly taskType: TaskType;
+  readonly taskRef: string;
+  readonly propertyId: string | null;
+  /** The sheet's own vocabulary — 'Critical' | 'High' — never translated. */
+  readonly priority: string;
+  readonly title: string;
+  readonly reportedOn: string;
+  /** Whole days since it was reported, so a screen can show how long it has waited. */
+  readonly ageDays: number;
+}

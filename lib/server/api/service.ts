@@ -333,6 +333,11 @@ async function operationalTasks(
       // The application's own definition of "not finished", already established in
       // lib/shared/domain.ts. Not a second one.
       open: OPEN_HOUSEKEEPING_STATUSES.includes(task.status),
+      // The turnover belongs to the day the guest left.
+      occurredOn: task.checkoutDate,
+      priority: null,
+      // No unit column on a turnover row; the booking it follows is the useful handle.
+      title: task.bookingId ? `Turnover after ${task.bookingId}` : 'Turnover',
     }));
   }
   return (await repos.maintenance.readAll()).map((ticket) => ({
@@ -341,6 +346,10 @@ async function operationalTasks(
     assigneeName: ticket.assignedTo || null,
     status: ticket.status,
     open: OPEN_MAINTENANCE_STATUSES.includes(ticket.status),
+    occurredOn: ticket.reportedOn,
+    // The sheet's own vocabulary, unchanged: Critical | High | Medium | Low.
+    priority: ticket.priority,
+    title: ticket.description || ticket.category || null,
   }));
 }
 
@@ -416,6 +425,19 @@ function operationsRepository(supabaseClient: unknown): OperationsRepository {
   const created = new InMemoryOperationsRepository();
   opsRepoSlot.write(created);
   return created;
+}
+
+/**
+ * The HR repository the demonstration seed writes into.
+ *
+ * Exported narrowly and named for its one purpose. It resolves the environment itself and
+ * hands back the SAME process-slotted in-memory store every operations read uses, so the
+ * seed lands where those reads will find it — and a configured deployment resolves to the
+ * Supabase repository, which the seed then declines to touch.
+ */
+export function hrRepositoryForDemoSeed(): HrRepository {
+  const resolved = resolveEnvironment();
+  return hrRepository(resolved.supabase ? makeSupabaseClient(resolved) : null);
 }
 
 function hrRepository(supabaseClient: unknown): HrRepository {

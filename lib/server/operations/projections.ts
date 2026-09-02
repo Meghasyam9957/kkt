@@ -16,7 +16,10 @@ import '@/lib/server/only';
  * way of reaching people — which is exactly why `operations.staff.read` exists instead of
  * granting `hr.read`, whose `/api/hr/employees` carries both.
  */
-import type { StaffingBoard, StaffDay, DepartmentCoverage } from './types';
+import type {
+  StaffingBoard, StaffDay, DepartmentCoverage,
+  NamedEmployee, ReconciliationReport, TaskReconciliation, UnassignedUrgentTask,
+} from './types';
 import type { AssignmentView, OperationsMetrics } from './service';
 
 export interface StaffDayView {
@@ -158,6 +161,108 @@ export function metricsView(metrics: OperationsMetrics): OperationsMetricsView {
 }
 
 /* ------------------------------------------------------------------ *
+ * Reconciliation and urgent work — M-OPS-3
+ * ------------------------------------------------------------------ */
+
+/**
+ * A person, as a screen should name one.
+ *
+ * `employeeId` travels because the assign control has to submit something, and a name is not
+ * an identifier — two people share one. It is a VALUE, never a label: nothing renders it,
+ * and the reconciliation table shows `displayName` and `employeeCode`.
+ */
+export interface NamedEmployeeView {
+  readonly employeeId: string;
+  readonly employeeCode: string;
+  readonly displayName: string;
+}
+
+export interface ReconciliationRowView {
+  readonly taskType: string;
+  readonly taskRef: string;
+  readonly propertyId: string | null;
+  readonly occurredOn: string;
+  readonly title: string | null;
+  readonly status: string;
+  readonly sheetName: string | null;
+  readonly employee: NamedEmployeeView | null;
+  readonly candidates: readonly NamedEmployeeView[];
+  readonly recommendation: string;
+}
+
+export interface ReconciliationReportView {
+  readonly summary: {
+    readonly matched: number;
+    readonly needsReview: number;
+    readonly unlinked: number;
+    readonly ambiguous: number;
+    readonly total: number;
+  };
+  readonly rows: readonly ReconciliationRowView[];
+}
+
+export interface UnassignedUrgentView {
+  readonly key: string;
+  readonly taskType: string;
+  readonly taskRef: string;
+  readonly propertyId: string | null;
+  readonly priority: string;
+  readonly title: string;
+  readonly reportedOn: string;
+  readonly ageDays: number;
+}
+
+function namedView(employee: NamedEmployee): NamedEmployeeView {
+  return {
+    employeeId: employee.employeeId,
+    employeeCode: employee.employeeCode,
+    displayName: employee.displayName,
+  };
+}
+
+/** Fresh literals, never a spread — the same rule the rest of this file follows. */
+export function reconciliationRowView(row: TaskReconciliation): ReconciliationRowView {
+  return {
+    taskType: row.taskType,
+    taskRef: row.taskRef,
+    propertyId: row.propertyId,
+    occurredOn: row.occurredOn,
+    title: row.title,
+    status: row.status,
+    sheetName: row.sheetName,
+    employee: row.employee ? namedView(row.employee) : null,
+    candidates: row.candidates.map(namedView),
+    recommendation: row.recommendation,
+  };
+}
+
+export function reconciliationView(report: ReconciliationReport): ReconciliationReportView {
+  return {
+    summary: {
+      matched: report.summary.matched,
+      needsReview: report.summary.needsReview,
+      unlinked: report.summary.unlinked,
+      ambiguous: report.summary.ambiguous,
+      total: report.summary.total,
+    },
+    rows: report.rows.map(reconciliationRowView),
+  };
+}
+
+export function unassignedUrgentView(task: UnassignedUrgentTask): UnassignedUrgentView {
+  return {
+    key: task.key,
+    taskType: task.taskType,
+    taskRef: task.taskRef,
+    propertyId: task.propertyId,
+    priority: task.priority,
+    title: task.title,
+    reportedOn: task.reportedOn,
+    ageDays: task.ageDays,
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Compile-time guards
  * ------------------------------------------------------------------ */
 
@@ -178,3 +283,9 @@ export const STAFFING_VIEW_CARRIES_NOTHING_WITHHELD: Disjoint<StaffingBoardView,
 export const COVERAGE_VIEW_CARRIES_NOTHING_WITHHELD: Disjoint<CoverageView, Withheld> = true;
 export const ASSIGNMENT_VIEW_CARRIES_NOTHING_WITHHELD: Disjoint<TaskAssignmentView, Withheld> = true;
 export const METRICS_VIEW_CARRIES_NOTHING_WITHHELD: Disjoint<OperationsMetricsView, Withheld> = true;
+export const RECONCILIATION_ROW_CARRIES_NOTHING_WITHHELD:
+  Disjoint<ReconciliationRowView, Withheld> = true;
+export const NAMED_EMPLOYEE_CARRIES_NOTHING_WITHHELD:
+  Disjoint<NamedEmployeeView, Withheld> = true;
+export const URGENT_VIEW_CARRIES_NOTHING_WITHHELD:
+  Disjoint<UnassignedUrgentView, Withheld> = true;
