@@ -410,13 +410,13 @@ function buildDemoOperations(today: string, scenario: DemoScenario): OperationsD
 
   const maintenance: MaintenanceTicket[] = [
     { ticketId: 'MNT-D-0011', propertyId: 'HYD-601', category: 'AC / Appliance', priority: 'High',
-      status: 'In Progress', description: 'Bedroom AC not cooling', reportedOn: shift(-2) },
+      status: 'In Progress', assignedTo: 'Imran Qureshi', description: 'Bedroom AC not cooling', reportedOn: shift(-2) },
     { ticketId: 'MNT-D-0012', propertyId: 'HYD-502', category: 'Plumbing', priority: 'Medium',
-      status: 'Open', description: 'Slow drain in the bathroom', reportedOn: shift(-1) },
+      status: 'Open', assignedTo: '', description: 'Slow drain in the bathroom', reportedOn: shift(-1) },
     { ticketId: 'MNT-D-0013', propertyId: 'HYD-501', category: 'Furniture', priority: 'Low',
-      status: 'Assigned', description: 'Loose dining chair', reportedOn: shift(-4) },
+      status: 'Assigned', assignedTo: 'Imran Qureshi', description: 'Loose dining chair', reportedOn: shift(-4) },
     { ticketId: 'MNT-D-0009', propertyId: 'HYD-602', category: 'Electrical', priority: 'Medium',
-      status: 'Resolved', description: 'Balcony light replaced', reportedOn: shift(-9) },
+      status: 'Resolved', assignedTo: 'Imran Qureshi', description: 'Balcony light replaced', reportedOn: shift(-9) },
   ];
 
   /*
@@ -451,7 +451,9 @@ function buildDemoOperations(today: string, scenario: DemoScenario): OperationsD
   if (scenario === 'OPERATIONS_ISSUE') {
     maintenance.unshift({
       ticketId: 'MNT-D-0020', propertyId: 'HYD-501', category: 'Plumbing', priority: 'Critical',
-      status: 'Open', description: 'Water leak in the 5th floor bathroom — unit off-market',
+      // Critical, Open and unassigned — the state the Today board is meant to surface.
+      status: 'Open', assignedTo: '',
+      description: 'Water leak in the 5th floor bathroom — unit off-market',
       reportedOn: today,
     });
     housekeeping.unshift({

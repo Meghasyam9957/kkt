@@ -302,6 +302,13 @@ export interface InvestorAllocation {
  * ------------------------------------------------------------------ */
 
 export interface MaintenanceTicket {
+  /**
+   * 14_MAINTENANCE.AssignedTo — a NAME, and the column has always held one. Read from
+   * M-OPS-2 onward because the assignment overlay has to compare what the sheet says
+   * against what this application wrote; without it a hand-edit of the cell would be
+   * undetectable. Nothing writes it except the existing `maintenance.update` mutation.
+   */
+  assignedTo: string;
   ticketId: string;
   propertyId: string;
   category: string;

@@ -403,13 +403,13 @@ export function buildDemoOps(today = DEMO_TODAY_ISO): DemoOpsData {
     today,
     maintenance: [
       { ticketId: 'MNT-2027-0011', propertyId: 'HYD-601', category: 'AC / Appliance', priority: 'High',
-        status: 'In Progress', description: 'Bedroom AC not cooling', reportedOn: shift(-2) },
+        status: 'In Progress', assignedTo: '', description: 'Bedroom AC not cooling', reportedOn: shift(-2) },
       { ticketId: 'MNT-2027-0012', propertyId: 'HYD-502', category: 'Plumbing', priority: 'Medium',
-        status: 'Open', description: 'Slow drain in bathroom', reportedOn: shift(-1) },
+        status: 'Open', assignedTo: '', description: 'Slow drain in bathroom', reportedOn: shift(-1) },
       { ticketId: 'MNT-2027-0013', propertyId: 'HYD-501', category: 'Furniture', priority: 'Low',
-        status: 'Assigned', description: 'Loose dining chair', reportedOn: shift(-4) },
+        status: 'Assigned', assignedTo: '', description: 'Loose dining chair', reportedOn: shift(-4) },
       { ticketId: 'MNT-2027-0009', propertyId: 'HYD-602', category: 'Electrical', priority: 'Medium',
-        status: 'Resolved', description: 'Balcony light replaced', reportedOn: shift(-9) },
+        status: 'Resolved', assignedTo: '', description: 'Balcony light replaced', reportedOn: shift(-9) },
     ],
     /* `bookingId` is empty on every one of these, deliberately — see the note in
        lib/data/demo/dataset.ts and docs/UI8_TURNOVER_DECISIONS.md. */

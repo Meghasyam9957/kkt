@@ -696,6 +696,8 @@ export class MaintenanceRepository extends SheetRepository<MaintenanceTicket> {
       category: r.text('IssueCategory'),
       priority: r.text('Priority') as MaintenanceTicket['priority'],
       status: r.text('Status') as MaintenanceTicket['status'],
+      // The name on the ticket. Read so the assignment overlay can notice a hand-edit.
+      assignedTo: r.text('AssignedTo'),
       description: r.text('Description'),
       reportedOn: isoOrEmpty(r.date('DateReported')),
     };
