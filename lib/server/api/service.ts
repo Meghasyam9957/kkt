@@ -82,6 +82,29 @@ export function getServiceAudit(): AuditLogger {
 }
 
 /**
+ * THE finance service, for a server component.
+ *
+ * Pages read finance the same way they read the workbook: in process, without an HTTP
+ * round trip. What they must NOT do is reach a repository directly — every method needs a
+ * `TenantContext` and every rule lives in the service, so a page that skipped it would be
+ * a second, unruled path to the same tables.
+ *
+ * It shares the process-slotted repository with the API handlers, so a demonstration
+ * write made through a route is visible on the very next render, exactly as a workbook
+ * write is.
+ */
+export function financeServiceFor(): FinanceService {
+  const resolved = resolveEnvironment();
+  const supabaseClient = resolved.supabase ? makeSupabaseClient(resolved) : null;
+  return new FinanceService({
+    repo: financeRepository(supabaseClient),
+    // The caller's OWN workbook properties, resolved through the tenant registry.
+    propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
+    audit: getServiceAudit(),
+  });
+}
+
+/**
  * ONE SET OF REPOSITORIES PER TENANT, resolved on the write.
  *
  * The write path used to be `repos: createRepositories(sheetsClient)` — a single client

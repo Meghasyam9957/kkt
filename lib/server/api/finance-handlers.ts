@@ -383,6 +383,7 @@ export function registerFinanceHandlers(
   });
 
   for (const [suffix, next, action] of [
+    ['submit', 'PENDING_APPROVAL', 'finance.payment.submit'],
     ['approve', 'APPROVED', 'finance.payment.approve'],
     ['post', 'POSTED', 'finance.payment.post'],
     ['void', 'VOIDED', 'finance.payment.void'],

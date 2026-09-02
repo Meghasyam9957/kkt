@@ -221,6 +221,12 @@ export const API_ROUTES: readonly RouteDefinition[] = [
   { method: 'POST', path: '/api/finance/payments', capability: 'finance.write',
     writesFinance: true, action: 'finance.payment.create', entityType: 'FINANCE_PAYMENT',
     summary: 'Raise a payment, as a draft' },
+  /* A draft is submitted for approval before it can be approved. Without this route
+   * PENDING_APPROVAL would be unreachable and the state would be decorative — which is
+   * exactly what the lifecycle test caught when it was missing.                        */
+  { method: 'POST', path: '/api/finance/payments/:id/submit', capability: 'finance.write',
+    writesFinance: true, action: 'finance.payment.submit', entityType: 'FINANCE_PAYMENT',
+    summary: 'Submit a draft payment for approval' },
   /* Approval is a separate capability from raising, and the service additionally refuses
    * a payment approved by the person who raised it.                                    */
   { method: 'POST', path: '/api/finance/payments/:id/approve', capability: 'finance.approve',

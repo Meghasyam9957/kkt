@@ -107,6 +107,10 @@ export const NAV_ICONS: Readonly<Record<string, IconName>> = {
   Inventory: 'inventory',
   'Guest Requests': 'guest',
   Revenue: 'revenue',
+  // The payables/receivables ledger. It borrows the cash-flow glyph because both are
+  // about money moving rather than money earned — and a new glyph for a new screen is
+  // how an icon set stops meaning anything.
+  Ledger: 'cashflow',
   Expenses: 'expense',
   CAPEX: 'inventory',
   'Cash Flow': 'cashflow',

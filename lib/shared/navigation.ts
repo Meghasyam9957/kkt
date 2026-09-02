@@ -73,6 +73,16 @@ export const NAVIGATION: NavSection[] = [
     items: [
       { label: 'Revenue', href: '/admin/finance/revenue', capability: 'revenue.read' },
       /*
+       * The relational finance ledger (M-DATA-1): payables, receivables and the vendor
+       * master, which live in Postgres rather than the workbook because a spreadsheet has
+       * rows but no relationships, no lifecycle and no running balance.
+       *
+       * It carries `finance.read`, not `revenue.read`. The two answer different questions
+       * — what was earned, versus what is owed — and giving the ledger the revenue
+       * capability would have quietly widened who sees the supplier list.
+       */
+      { label: 'Ledger', href: '/admin/finance/ledger', capability: 'finance.read' },
+      /*
        * The financial VIEW of the bookings under Operations ▸ Bookings — gross value,
        * expected payout, payout status — so it sits with the money screens under a
        * ledger name, and its menu visibility follows a financial capability.
