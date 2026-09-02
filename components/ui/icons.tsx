@@ -108,6 +108,20 @@ export const NAV_ICONS: Readonly<Record<string, IconName>> = {
   'Guest Requests': 'guest',
   // A magnifying glass: this screen looks for disagreements rather than recording work.
   Reconciliation: 'audit',
+  /*
+   * STOCK AND ASSETS (M-INV-1). Every one of these borrows an existing glyph rather than
+   * minting five new ones — an icon set stops meaning anything once every screen has its
+   * own. Stock is the box; movements borrow the cash-flow arrows because both are about
+   * things moving; procurement borrows the expense glyph because a purchase is a
+   * commitment to spend; assets borrow the property glyph because an asset belongs to a
+   * unit; and the reconciliation screens share the magnifying glass, because both look for
+   * disagreements rather than recording work.
+   */
+  Stock: 'inventory',
+  Movements: 'cashflow',
+  Procurement: 'expense',
+  Assets: 'property',
+  'Stock reconciliation': 'audit',
   // The workforce register. Borrows the guest glyph — both are about people — rather
   // than minting a new one, because an icon set stops meaning anything once every screen
   // has its own.

@@ -48,12 +48,27 @@ export function useMutation(endpoint: string, method: 'POST' | 'PATCH' = 'POST')
       const body = await response.json().catch(() => ({}));
 
       if (response.ok) {
-        setRecord(body.record ?? null);
+        /*
+         * WHAT COUNTS AS THE RECORD.
+         *
+         * A workbook mutation answers `{ record: … }` — the sheet row as it stands after
+         * read-after-write verification. The relational domains (finance, people, operations,
+         * inventory) answer with the projected entity itself, because there is no sheet row
+         * to echo back. Both are "what was written".
+         *
+         * Treating only the first as a record meant a successful assignment produced no
+         * success toast and left its drawer open, which reads on screen as a write that
+         * failed. It had not; nothing said so.
+         */
+        const written = body && typeof body === 'object' && !Array.isArray(body)
+          ? ((body as { record?: Record<string, unknown> }).record ?? body) as Record<string, unknown>
+          : null;
+        setRecord(written);
         setPhase('verified');
         // The server verified the write; the pages re-read through the provider, whose
         // version key has moved. Nothing on this screen invents the new state.
         router.refresh();
-        return { ok: true, record: body.record };
+        return { ok: true, ...(written ? { record: written } : {}) };
       }
 
       const error = body?.error ?? {};

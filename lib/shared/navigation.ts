@@ -75,6 +75,34 @@ export const NAVIGATION: NavSection[] = [
     ],
   },
   {
+    /*
+     * STOCK AND ASSETS (M-INV-1). A section of its own rather than four more entries under
+     * Operations, because these answer a different question: not "what needs doing today"
+     * but "what do we have, what moved it, and what did we order".
+     *
+     * Operations keeps its own Inventory entry — the shift board's stock list, which a
+     * supervisor uses mid-turnover. Stock below is the domain screen, with the movement
+     * record, the procurement workflow and the asset register behind it.
+     */
+    title: 'Stock',
+    items: [
+      { label: 'Stock', href: '/admin/inventory', capability: 'inventory.read' },
+      { label: 'Movements', href: '/admin/inventory/movements', capability: 'inventory.read' },
+      /*
+       * Procurement carries `procurement.read`, not `inventory.read`. Asking for stock and
+       * seeing how much of it was agreed are different audiences from seeing how many towels
+       * there are, and the narrower capability is the one that exists for exactly that.
+       */
+      { label: 'Procurement', href: '/admin/inventory/procurement', capability: 'procurement.read' },
+      { label: 'Assets', href: '/admin/inventory/assets', capability: 'inventory.assets' },
+      {
+        label: 'Stock reconciliation',
+        href: '/admin/inventory/reconciliation',
+        capability: 'inventory.read',
+      },
+    ],
+  },
+  {
     title: 'People',
     items: [
       /*

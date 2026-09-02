@@ -785,7 +785,12 @@ export class WorkbookViews {
         severity: 'high',
         propertyId: stock.propertyId,
         title: `Out of stock — ${stock.item}`,
-        action: 'Reorder today; turnovers cannot be completed without it.',
+        /*
+         * M-INV-1 gave this alert somewhere to go. Before it, "reorder today" was advice
+         * with no action behind it in the product at all — the person read it here and
+         * then left to send a message somewhere else.
+         */
+        action: 'Turnovers cannot be completed without it. Ask for stock under Stock → Procurement.',
         reference: stock.itemId,
       });
     }

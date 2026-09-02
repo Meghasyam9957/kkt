@@ -63,6 +63,31 @@ export interface MutationFormProps {
   children?: ReactNode;
 }
 
+/**
+ * Place a value at a DOTTED PATH inside the payload.
+ *
+ * `lines.0.itemRef` means "the itemRef of the first line", and a numeric segment builds an
+ * array rather than an object — which is what a purchase request, a purchase order and a
+ * goods receipt all need, because each of them carries lines.
+ *
+ * A name with no dot is written exactly where it always was, so every existing form is
+ * untouched by this. Dotted names could not have worked before: they would have reached the
+ * server as a literal key and been refused by a strict schema, which is why nothing depends
+ * on the old behaviour.
+ */
+function place(target: Record<string, unknown>, path: string, value: unknown): void {
+  const segments = path.split('.');
+  let cursor: Record<string, unknown> | unknown[] = target;
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    const key = segments[i]!;
+    const nextIsIndex = /^\d+$/.test(segments[i + 1]!);
+    const container = cursor as Record<string, unknown>;
+    if (container[key] === undefined) container[key] = nextIsIndex ? [] : {};
+    cursor = container[key] as Record<string, unknown> | unknown[];
+  }
+  (cursor as Record<string, unknown>)[segments[segments.length - 1]!] = value;
+}
+
 function coerce(spec: FieldSpec, raw: string): unknown {
   if (raw === '') return undefined;                 // omitted optional — never an empty write
   switch (spec.type) {
@@ -97,7 +122,7 @@ export function MutationForm({
     const payload: Record<string, unknown> = { ...constants };
     for (const spec of fields) {
       const value = coerce(spec, values[spec.name] ?? '');
-      if (value !== undefined) payload[spec.name] = value;
+      if (value !== undefined) place(payload, spec.name, value);
     }
     const outcome = await submit(payload);
     if (outcome.ok && outcome.record) {
