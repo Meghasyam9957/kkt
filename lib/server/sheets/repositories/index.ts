@@ -139,11 +139,49 @@ export abstract class SheetRepository<T> {
    */
   async updateById(
     id: string, patch: Record<string, unknown>, where?: (row: Row) => boolean,
+    expect?: Record<string, unknown>,
   ): Promise<number> {
     const rows = await this.client.get(this.range);
     const idIdx = columnIndex(this.sheet, this.idKey);
     const offset = rows.findIndex((r) => str(r[idIdx]) === id && (!where || where(r)));
     if (offset < 0) throw new Error(`${this.sheet} row not found: ${id}`);
+
+    /*
+     * THE PRECONDITION, CHECKED AGAINST THE READ THAT JUST LOCATED THE ROW.
+     *
+     * `expect` says what the caller believed a cell held when it computed the value it is
+     * now writing. It is compared against `rows[offset]` — the very snapshot this method
+     * fetched a line ago — and NOT against a second read, because the whole point is to make
+     * the comparison and the write share one view of the sheet.
+     *
+     * WHAT THAT BUYS, precisely. Any interfering write that Google had already applied when
+     * it served this `get` is caught: the row we are about to edit is not the row the caller
+     * reasoned about, so nothing is written. That covers a human editing the workbook, an
+     * Apps Script, and another server — every writer whose change had landed by the time we
+     * looked.
+     *
+     * WHAT IT DOES NOT BUY. The gap between this `get` and the `batchUpdate` below is still
+     * open, and nothing in the Google Sheets values API can close it — `batchUpdate` takes no
+     * precondition, no ETag and no revision token. A writer landing inside that gap is not
+     * prevented here; it is surfaced later by reconciliation. Narrowing the window is the
+     * whole of what is on offer, and it is worth having: it used to be an entire HTTP round
+     * trip wide.
+     */
+    if (expect) {
+      const current = rows[offset] ?? [];
+      for (const [key, want] of Object.entries(expect)) {
+        if (want === undefined || want === null) continue;
+        // `columnIndex` is already zero-based (contract.generated: index - 1); the `- 1`
+        // that `verifyRow` applies belongs to `col.index`, which is not the same number.
+        const got = current[columnIndex(this.sheet, key)] ?? null;
+        if (!cellsRoundTrip(want, got as Cell)) {
+          throw new SheetPreconditionError(
+            `${this.sheet}.${key} was ${JSON.stringify(want)} when this change was worked out `
+            + `and is ${JSON.stringify(got)} now. Nothing has been written.`,
+          );
+        }
+      }
+    }
 
     const sheetName = SHEET_META[this.sheet].name;
     const rowNumber = DATA_ROW + offset;
@@ -214,9 +252,10 @@ export abstract class SheetRepository<T> {
    */
   async updateByIdVerified(
     id: string, patch: Record<string, unknown>, where?: (row: Row) => boolean,
+    expect?: Record<string, unknown>,
   ): Promise<VerifiedWrite> {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const rowNumber = await this.updateById(id, patch, where);
+      const rowNumber = await this.updateById(id, patch, where, expect);
       await this.client.flush();
       const verify = await this.verifyRow(rowNumber, id, patch);
       if (verify.ok) return { rowNumber, cells: verify.cells };
@@ -280,6 +319,21 @@ export abstract class SheetRepository<T> {
 }
 
 export type VerifyFailure = 'ROW_MOVED' | 'VERIFY_MISMATCH' | 'SHEET_FULL';
+
+/**
+ * A write refused because the cell it was computed from had already moved.
+ *
+ * Distinct from `SheetWriteVerifyError`, and the difference is the one that matters to a
+ * caller: NOTHING WAS WRITTEN. A verify failure leaves the effect of the write unknown and
+ * must never be retried blindly; a precondition failure is a clean no-op, so recomputing
+ * against the current value and trying again is safe.
+ */
+export class SheetPreconditionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SheetPreconditionError';
+  }
+}
 
 export class SheetWriteVerifyError extends Error {
   constructor(public readonly reason: VerifyFailure, detail: string) {

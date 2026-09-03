@@ -26,7 +26,7 @@ import '@/lib/server/only';
 import type { ZodType } from 'zod';
 import { SHEETS, ID_RULES, inputColumns, type SheetKey } from '@/lib/contract/contract.generated';
 import type { Repositories, SheetRepository, VerifiedWrite } from '@/lib/server/sheets/repositories';
-import { SheetWriteVerifyError } from '@/lib/server/sheets/repositories';
+import { SheetWriteVerifyError, SheetPreconditionError } from '@/lib/server/sheets/repositories';
 import { SheetWriteForbiddenError, type Row } from '@/lib/server/sheets/client';
 import { IdAllocator } from '@/lib/server/ids/allocator';
 import { requireTenant, type TenantId } from '@/lib/server/tenant/context';
@@ -90,6 +90,19 @@ export interface MutationDefinition {
   dateColumns?: readonly string[];
   /** Update only: narrow the row match beyond the ID column (composite-key sheets). */
   where?: (input: Record<string, unknown>) => ((row: Row) => boolean) | undefined;
+  /**
+   * Update only: the cell values this write assumes are still in place.
+   *
+   * Compared against the same read that locates the row, immediately before the write — see
+   * `SheetRepository.updateById`. A mismatch refuses the write with nothing written, which is
+   * how a cumulative total computed from a stale starting point is stopped rather than
+   * silently overwriting somebody else's increment.
+   *
+   * Keys are sheet COLUMN keys and are held to the same contract rule as `toColumns`: naming
+   * a calculated column here is refused, because a precondition on a formula would be a
+   * precondition on something no caller can meaningfully have read.
+   */
+  expect?: (input: Record<string, unknown>) => Record<string, unknown> | undefined;
 }
 
 export interface MutationDependencies {
@@ -171,7 +184,11 @@ export async function executeMutation(
   // independent of buildInputRow's own throw — two layers, same rule.
   const writable = new Set(inputColumns(def.sheet).map((c) => c.key));
   const probe = def.toColumns(input, entityId ?? 'PROBE-0000');
-  const violations = Object.keys(probe).filter((key) => !writable.has(key));
+  // Preconditions are held to the same rule: a precondition naming a calculated column is
+  // refused here, by the check that already exists, before anything is read or written.
+  const expectations = def.expect?.(input) ?? {};
+  const violations = [...Object.keys(probe), ...Object.keys(expectations)]
+    .filter((key) => !writable.has(key));
   if (violations.length > 0) {
     throw new MutationError(422, 'CONTRACT_VIOLATION',
       `Refusing to write ${violations.map((v) => `${def.sheet}.${v}`).join(', ')}: ` +
@@ -272,7 +289,8 @@ export async function executeMutation(
       verified = await repo.createRowVerified({ ...columns, [def.idKey]: id });
     } else {
       const { [def.idKey]: _neverPatchTheId, ...patch } = columns;
-      verified = await repo.updateByIdVerified(id, patch, def.where?.(input));
+      verified = await repo.updateByIdVerified(
+        id, patch, def.where?.(input), def.expect?.(input));
     }
 
     /* ---- 9 · cache ------------------------------------------------ */
@@ -324,6 +342,14 @@ export async function executeMutation(
     });
 
     if (error instanceof MutationError) throw error;
+    /*
+     * NOTHING WAS WRITTEN, and saying so precisely is what makes a retry safe. A verify
+     * failure below leaves the effect unknown and must never be retried blindly; this one is
+     * a clean no-op, so the caller may recompute against the current value and try again.
+     */
+    if (error instanceof SheetPreconditionError) {
+      throw new MutationError(409, 'STALE_PRECONDITION', error.message);
+    }
     if (error instanceof SheetWriteVerifyError) {
       throw new MutationError(502, error.reason,
         `The write could not be verified: ${error.message}. Nothing has been reported as saved.`);
