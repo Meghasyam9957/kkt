@@ -158,8 +158,10 @@ describe('audit fix · the semantic vocabulary is complete', () => {
 
   it('statement rules use the retuned brand ink so they survive dark theme', () => {
     const source = app();
-    expect(source).toMatch(/row--subtotal td\s*\{[^}]*var\(--text-brand\)/);
-    expect(source).toMatch(/row--total td\s*\{[^}]*var\(--text-brand\)/);
+    // `[^{]*` rather than `\s*`: the rule now carries a selector LIST (td and th), because a
+    // statement row labels itself with a row header. The ink it uses is what matters here.
+    expect(source).toMatch(/row--subtotal td[^{]*\{[^}]*var\(--text-brand\)/);
+    expect(source).toMatch(/row--total td[^{]*\{[^}]*var\(--text-brand\)/);
   });
 
   it('a verified write reads as success, not as disabled', () => {
@@ -224,6 +226,25 @@ describe('audit fix · charts reach every input', () => {
   it('legend swatches carry the same treatment as the marks they label', () => {
     const source = read('components/charts/Charts.tsx');
     expect(source).toContain('opacity?: number');
-    expect(source).toContain('opacity: 0.28');
+
+    /*
+     * Asserted as a RELATIONSHIP, not as a literal. This used to pin the value to
+     * `opacity: 0.28`, which meant the guard failed the moment that opacity was corrected —
+     * and 0.28 was wrong: the revenue band came out around 1.5:1 on white, below the 3:1
+     * that makes a graphical object perceivable at all.
+     *
+     * What the test is actually for is that the swatch and the mark carry the SAME
+     * treatment, so a solid swatch never stands beside a translucent band. Reading both
+     * numbers and comparing them says that, and keeps saying it whatever the value becomes.
+     */
+    const legend = source.match(/label: 'Net revenue'[^}]*opacity:\s*([\d.]+)/);
+    const css = read('styles/app.css')
+      .match(/\.sv-bar-row__bar--revenue\s*\{[^}]*opacity:\s*([\d.]+)/);
+    expect(legend, 'the revenue legend entry declares an opacity').not.toBeNull();
+    expect(css, 'the revenue bar declares an opacity').not.toBeNull();
+    expect(Number(legend![1]), 'legend swatch matches the mark it labels')
+      .toBeCloseTo(Number(css![1]), 5);
+    // …and the mark is perceivable: below ~0.4 the band is under 3:1 on a white card.
+    expect(Number(css![1])).toBeGreaterThanOrEqual(0.4);
   });
 });

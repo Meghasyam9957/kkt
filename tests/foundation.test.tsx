@@ -342,9 +342,19 @@ describe('table foundation', () => {
     );
     expect(container.querySelector('tr.sv-table__row--total')).not.toBeNull();
     expect(container.querySelector('tbody [style]')).toBeNull();
-    // The rules that carry the arithmetic exist: ink rule above subtotals, double above totals.
-    expect(app()).toMatch(/sv-table__row--subtotal td\s*{[^}]*border-top:\s*1px solid/);
-    expect(app()).toMatch(/sv-table__row--total td\s*{[^}]*3px double/);
+    /*
+     * The rules that carry the arithmetic exist: ink rule above subtotals, double above
+     * totals — and they reach the row HEADER as well as the value cells. A statement row
+     * names itself with `<th scope="row">`, so a rule matching only `td` left the label out
+     * of the emphasis it was applying. Both selectors are asserted, so dropping either one
+     * fails here rather than in somebody's eyes.
+     */
+    for (const cell of ['td', 'th']) {
+      expect(app(), `subtotal ${cell}`)
+        .toMatch(new RegExp(`sv-table__row--subtotal ${cell}[^{]*\\{[^}]*border-top:\\s*1px solid`));
+      expect(app(), `total ${cell}`)
+        .toMatch(new RegExp(`sv-table__row--total ${cell}[^{]*\\{[^}]*3px double`));
+    }
   });
 
   it('the stacked layout keeps labels and drops the universal nowrap', () => {
