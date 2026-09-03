@@ -30,7 +30,19 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export const viewport: Viewport = {
-  themeColor: '#4F5F2C',
+  /*
+   * The colour a phone paints around the application, and it must be the colour the
+   * application actually starts with.
+   *
+   * This was `#4F5F2C` — the dark olive of a navigation rail that no longer exists; the
+   * stylesheet's own note records that the slab "read as a heavy admin tool" and was
+   * removed. What survived was the metadata, so on Android Chrome and iOS Safari a cream
+   * product was framed by a dark olive header nothing on screen matched.
+   *
+   * `--surface-page` is what `.sv-topbar` renders, so the frame and the first row of the
+   * application are now the same colour and the seam disappears.
+   */
+  themeColor: '#FAF6EC',
   width: 'device-width',
   initialScale: 1,
 };

@@ -10,6 +10,17 @@
  */
 
 :root {
+  /**
+   * LIGHT IS THE PRODUCT (M-UI-10).
+   *
+   * Declared so the browser's OWN surfaces follow the palette rather than the operating
+   * system: form-control chrome, scrollbars, the canvas behind a short page, and the flash
+   * before first paint. Without it a visitor on a dark OS saw dark scrollbars and dark
+   * select menus framing a cream application — the detail that made MAKAM read as a dark
+   * product even where the tokens below were already warm and light.
+   */
+  color-scheme: light;
+
   /* ---- Brand palette (approved) ---- */
   --brand-green: #4F5F2C;
   --brand-green-dark: #3A4620;
@@ -25,10 +36,28 @@
   --surface-card: #FFFFFF;
   --surface-sunken: var(--brand-cream-deep);
   --surface-inverse: var(--brand-green-dark);
-  --border-subtle: #E2DCCB;
-  --border-strong: #C9C0A8;
+  /*
+   * BORDERS, RETUNED FOR LIGHT (M-UI-10).
+   *
+   * This system's stated preference is hairlines over shadows — "cards are the exception,
+   * not the rule". That only works if the hairline can actually be seen. `--border-subtle`
+   * was #E2DCCB, which is 1.37:1 on white: a table row rule nobody could resolve, and the
+   * reason data-dense screens read as one undifferentiated block. `--border-strong` was
+   * #C9C0A8 at 1.5:1, so no input, select or secondary button had a perceivable edge —
+   * WCAG asks 3:1 of a control boundary, and this was half of it.
+   *
+   * Both move one step down the same warm olive-grey line, keeping the hue. Subtle stays a
+   * hairline; strong now clears 3:1 on white, cream and sunken alike.
+   */
+  --border-subtle: #D8D0BB;
+  --border-strong: #8B836C;
   --text-primary: #2B2B26;
-  --text-muted: #6B6B60;
+  /*
+   * Muted was #6B6B60, which is 4.50:1 on --surface-sunken and 4.38:1 on --bad-bg: on the
+   * line and just under it, on the two grounds it sits on most. One step darker clears AA
+   * everywhere with margin, and is still unmistakably the quiet tier beside --text-primary.
+   */
+  --text-muted: #63635A;
   --text-inverse: var(--brand-cream);
   --text-brand: var(--brand-green);
 
@@ -39,7 +68,7 @@
   --status-occupied: var(--info-fg);
   --status-cleaning: var(--warn-fg);
   --status-maintenance: var(--bad-fg);
-  --status-blocked: #6B6B60;
+  --status-blocked: #63635A;
 
   /* ---- Semantic (mirrors the V1 workbook's conditional formats) ---- */
   /* Warmer values tuned to sit with olive/cream (Phase B approval). Each hue keeps
@@ -49,7 +78,7 @@
   --warn-fg: #8F5700;  --warn-bg: #FBF0D9;
   --bad-fg:  #A8322D;  --bad-bg:  #F8E3E0;
   --info-fg: #2C5A8A;  --info-bg: #E6EDF5;
-  --neutral-fg: #6B6B60; --neutral-bg: #EFEBE0;
+  --neutral-fg: #63635A; --neutral-bg: #EFEBE0;   /* moves with --text-muted; same literal */
 
   /* ---- Typography ---- */
   --font-display: "Cormorant Garamond", "EB Garamond", Georgia, serif;
@@ -81,13 +110,32 @@
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-editorial: cubic-bezier(0.16, 1, 0.3, 1);
 
+  /* ---- Interaction surfaces (M-UI-10).
+     Hover and selection used to borrow --surface-sunken and --surface-page, which are
+     1.11:1 apart on cream — a hover state nobody could see, on every table row, nav item,
+     chip and button in the product. These are the two steps below the sunken plate, so an
+     interaction reads as a real change of state rather than a rumour. ---- */
+  --surface-hover: #F0E9D7;
+  --surface-selected: #E7DFC9;
+
+  /* ---- Depth (M-UI-10).
+     The scrim was `rgba(23, 25, 15, 0.45)` inline — literally the DARK theme's page colour,
+     hard-coded, so every dialog in the light product sat behind a cold olive-black wash
+     while every shadow beside it was built from warm ink. Same family now. ---- */
+  --scrim: rgba(43, 43, 38, 0.42);
+  /* The drawer elevation, rotated for a sheet that rises from the bottom edge. */
+  --shadow-sheet: 0 -12px 40px rgba(43, 43, 38, 0.14);
+  /* The skeleton sweep. Pure black at 4.5% is the weakest possible read on warm cream. */
+  --skeleton-sheen: rgba(43, 43, 38, 0.07);
+
   /* ---- Hairlines (the default separator; cards are the exception, not the rule) ---- */
   --line: var(--border-subtle);
   --line-strong: var(--border-strong);
 
   /* ---- Deep accents: the only gold/terracotta permitted as TEXT.
      Brand gold #C9A227 is 2.6:1 on cream — never text, only rules/ornament. ---- */
-  --gold-deep: #8C6D12;
+  /* 4.48:1 on cream — AA by −0.02, and below it on the sunken plate beside it. One step. */
+  --gold-deep: #7E6110;
   --terracotta-deep: #8F4E14;
 
   /* ---- Label tier: the smallest readable text in the product (11px floor). ---- */
@@ -159,8 +207,27 @@
      phone <640 · tablet 640–1023 · desktop 1024–1439 · wide ≥1440. ---- */
 }
 
+/**
+ * DARK, BY REQUEST ONLY (M-UI-10).
+ *
+ * This block used to read `:root:not([data-theme="light"])`, and nothing in the application
+ * has ever set a `data-theme` attribute — there is no theme provider, no toggle and no
+ * `next-themes`. So the negation was always true, and every visitor whose OPERATING SYSTEM
+ * preferred dark got the dark palette on first paint with no way to opt out. MAKAM read as a
+ * dark product to roughly half its audience while `:root` above described a warm ivory one.
+ *
+ * The selector is now `[data-theme="auto"]`: following the operating system is a choice a
+ * deployment can make by putting that attribute on <html>, and the default — no attribute at
+ * all — is the light theme defined in `:root`. Light therefore renders on the very first
+ * paint, before any JavaScript, which is also why this is a pure-CSS change: there is no
+ * client read of a preference and so no hydration mismatch to introduce.
+ *
+ * The dark values themselves are untouched, and `[data-theme="dark"]` below still works
+ * exactly as it did. Dark is preserved infrastructure, not a removed feature.
+ */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root[data-theme="auto"] {
+    color-scheme: dark;
     --surface-page: #17190F;
     --surface-card: #1F2216;
     --surface-sunken: #131509;
@@ -172,16 +239,26 @@
     --good-bg: #14301C; --warn-bg: #3A2A08; --bad-bg: #3A1512; --info-bg: #14243F;
     --good-fg: #7BD69B; --warn-fg: #E9B75A; --bad-fg: #F09B94; --info-fg: #93BAF5;
     --neutral-fg: #A5A493; --neutral-bg: #2A2D1E;
+    --surface-hover: #262A1B;
+    --surface-selected: #313626;
+    --scrim: rgba(0, 0, 0, 0.6);
+    --skeleton-sheen: rgba(236, 231, 216, 0.06);
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
     --shadow-raised: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-sheet: 0 -12px 40px rgba(0, 0, 0, 0.5);
     --chart-1: #A8BC72; --chart-2: #7E9450; --chart-3: #D08A4A; --chart-ref: #A5A493;
     /* Olive ink is 2.5:1 on the dark page — a focus ring nobody can see. The retuned
        brand ink is 8.5:1 there, so the ring follows the theme like every other colour. */
     --focus-ring: #A8BC72;
+    /* The brand tagline. --gold-deep is tuned for cream and is 3.05:1 on the dark page;
+       dark takes the lighter brand gold, which is 7.3:1 there. */
+    --gold-deep: var(--brand-gold);
   }
 }
 
+/** Dark, chosen explicitly. Unchanged by M-UI-10 beyond declaring its colour scheme. */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --surface-page: #17190F;
   --surface-card: #1F2216;
   --surface-sunken: #131509;
@@ -195,6 +272,20 @@
   --neutral-fg: #A5A493; --neutral-bg: #2A2D1E;
   --chart-1: #A8BC72; --chart-2: #7E9450; --chart-3: #D08A4A; --chart-ref: #A5A493;
   --focus-ring: #A8BC72;
+  --gold-deep: var(--brand-gold);
+  /*
+   * The tokens M-UI-10 added. Repeated here rather than shared, because the two dark blocks
+   * in this file have always been written out in full — and a token defined only in `:root`
+   * would silently keep its LIGHT value in dark, which is the exact bug class this file's
+   * header warns about.
+   */
+  --surface-hover: #262A1B;
+  --surface-selected: #313626;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --skeleton-sheen: rgba(236, 231, 216, 0.06);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-raised: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-sheet: 0 -12px 40px rgba(0, 0, 0, 0.5);
 }
 
 /* Respect a user's reduced-motion preference from the very first component. */
