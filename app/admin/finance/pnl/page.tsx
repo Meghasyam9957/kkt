@@ -44,23 +44,28 @@ function PnlTable({ pnl }: { pnl: PnlView }) {
               {pnl.lines.map((line) => {
                 if (line.emphasis === 'section') {
                   return (
-                    <tr key={line.key}>
+                    <tr key={line.key} className="sv-table__row--section">
                       <th scope="colgroup" colSpan={pnl.monthLabels.length + 2}
-                        style={{ background: 'var(--surface-sunken)', textTransform: 'uppercase', fontSize: '0.6875rem', letterSpacing: '0.08em' }}>
+                        style={{ textTransform: 'uppercase', fontSize: '0.6875rem', letterSpacing: '0.08em' }}>
                         {line.label}
                       </th>
                     </tr>
                   );
                 }
                 const fmt = (v: number) => (line.isPercent ? formatPercent(v) : formatCurrency(v));
-                const weight = line.emphasis === 'total' ? 700 : line.emphasis === 'subtotal' ? 600 : 400;
+                /*
+                 * The stylesheet's own emphasis classes, not an inline tint. The tint was
+                 * `rgba(79,95,44,0.07)` — the brand olive at 7%, which over a white card
+                 * resolves to roughly #F5F6F1 and marks the single most important row of a
+                 * financial statement with a 2% difference nobody can see. The shared rules
+                 * carry a rule ABOVE the row instead, which is how a statement has always
+                 * shown a total.
+                 */
                 return (
-                  <tr key={line.key} style={{
-                    fontWeight: weight,
-                    background: line.emphasis === 'total' ? 'rgba(79,95,44,0.07)' : undefined,
-                    color: line.memo ? 'var(--text-muted)' : undefined,
-                  }}>
-                    <th scope="row" style={{ fontWeight: weight, textAlign: 'left' }}>{line.label}</th>
+                  <tr key={line.key}
+                    className={line.emphasis ? `sv-table__row--${line.emphasis}` : undefined}
+                    style={line.memo ? { color: 'var(--text-muted)' } : undefined}>
+                    <th scope="row" style={{ textAlign: 'left' }}>{line.label}</th>
                     {line.values.map((value, i) => (
                       <td key={i} className="sv-num">
                         <span className={value < 0 && !line.isPercent && line.emphasis === 'total' ? 'sv-negative' : ''}>

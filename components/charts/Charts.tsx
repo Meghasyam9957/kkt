@@ -277,7 +277,7 @@ export function OccupancyTrendChart({ points, title }: { points: Point[]; title:
           <g key={p.label}>
             <rect x={x(i) - barW / 2} y={y(p.value)} width={barW}
               height={Math.max(1, PAD_T + innerH - y(p.value))}
-              fill={SERIES.occupancy} opacity={hover === null || hover === i ? 0.9 : 0.45} rx="2"
+              fill={SERIES.occupancy} opacity={hover === null || hover === i ? 0.9 : 0.6} rx="2"
               className="m-chart-bar" />
             {/* The target is the whole column, not the painted bar — which is ~14px wide
                 on a phone, well under any usable tap size. */}
@@ -373,7 +373,7 @@ export function RevenueExpenseProfitChart({ points, title }: { points: TriplePoi
                 const height = Math.max(1, Math.abs(y(value) - zeroY));
                 return (
                   <rect key={s.key} x={barX + 1} y={top} width={Math.max(barW - 2, 2)} height={height}
-                    fill={s.color} opacity={hover === null || hover === i ? 0.92 : 0.4} rx="1.5"
+                    fill={s.color} opacity={hover === null || hover === i ? 0.92 : 0.6} rx="1.5"
                     className="m-chart-bar" />
                 );
               })}
@@ -443,7 +443,7 @@ export function PropertyPerformanceChart({ bars, title }: { bars: PropertyBar[];
       {/* Opacities mirror .sv-bar-row__bar--revenue / --profit: the revenue extent is a
           pale band the solid profit bar sits on top of. */}
       <Legend items={[
-        { label: 'Net revenue', color: SERIES.revenue, opacity: 0.28 },
+        { label: 'Net revenue', color: SERIES.revenue, opacity: 0.45 },
         { label: 'Operating profit', color: SERIES.profit, opacity: 0.95 },
       ]} />
       <ChartTable caption={title} columns={['Property', 'Net revenue', 'Operating profit', 'Occupancy']}

@@ -71,7 +71,12 @@ export function MakamMark({ size = 32, assets = NO_BRAND_ASSETS }: {
       width={size} height={size} viewBox="0 0 40 40" role="img"
       aria-label={BRAND.name} className="sv-mark"
     >
-      <circle cx="20" cy="20" r="19" fill="var(--brand-cream)" stroke="var(--brand-green)" strokeWidth="1.5" />
+      {/* `--surface-card`, not `--brand-cream`: cream is exactly `--surface-page`, which is
+          what both the top bar and the sidebar brand block render — so the disc was the
+          colour of the thing behind it and the badge read as a hollow ring. It was drawn as
+          a punch-out for the dark olive rail that has since been retired. The surface token
+          also follows the theme, which a raw brand hex does not. */}
+      <circle cx="20" cy="20" r="19" fill="var(--surface-card)" stroke="var(--brand-green)" strokeWidth="1.5" />
       {/* Roofline and doorway — a neutral placeholder in the brand palette. It is NOT a
           rendition of the MAKAM logo: the official artwork has not been supplied, and
           guessing at it is exactly what this component must never do. */}

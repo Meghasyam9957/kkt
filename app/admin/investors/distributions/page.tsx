@@ -88,7 +88,7 @@ function Distributions({ preview, period }: { preview: InvestorPreviewView; peri
                   <td className="sv-num">{formatCurrency(step.value)}</td>
                 </tr>
               ))}
-              <tr style={{ fontWeight: 600, background: 'var(--surface-sunken)' }}>
+              <tr className="sv-table__row--subtotal">
                 <th scope="row" style={{ textAlign: 'left' }}>Reserve · management fee · carry-forward</th>
                 <td className="sv-num">
                   {preview.configured
@@ -96,7 +96,8 @@ function Distributions({ preview, period }: { preview: InvestorPreviewView; peri
                     : <span className="sv-muted">Not configured</span>}
                 </td>
               </tr>
-              <tr style={{ fontWeight: 700, background: 'rgba(79,95,44,0.07)' }}>
+              {/* The shared total treatment: a double rule above, as a statement draws it. */}
+              <tr className="sv-table__row--total">
                 <th scope="row" style={{ textAlign: 'left' }}>Distributable profit</th>
                 <td className="sv-num">
                   {preview.configured

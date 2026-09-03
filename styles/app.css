@@ -110,14 +110,22 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-logo { display: inline-flex; align-items: center; gap: var(--space-3); }
 .sv-logo__text { display: flex; flex-direction: column; line-height: 1.1; }
+/*
+ * ONE LOCKUP TREATMENT, declared once. These two rules used to set cream-on-cream and were
+ * saved only by an override 1300 lines further down — so the wordmark's visibility depended
+ * on source order, and any reorder or tooling change would have made it disappear against
+ * the page. The cream-on-dark variant died with the dark sidebar.
+ *
+ * `--text-brand`, not the raw `--brand-green`: the token is retuned for dark, the hex is not.
+ */
 .sv-logo__word {
   font-family: var(--font-display);
   font-size: 1.5rem; font-weight: 600; letter-spacing: 0.01em;
-  color: var(--brand-cream);
+  color: var(--text-brand);
 }
 .sv-logo__tagline {
   font-size: var(--text-label); letter-spacing: 0.22em; text-transform: uppercase;
-  color: var(--brand-gold-light);
+  color: var(--gold-deep);
 }
 .sv-mark { flex: none; }
 
@@ -289,11 +297,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-freshness__state--stale .sv-freshness__dot { background: var(--warn-fg); }
 .sv-freshness__state--error .sv-freshness__dot { background: var(--bad-fg); }
 .sv-freshness__state--error { color: var(--bad-fg); }
-.sv-freshness__source { color: var(--text-muted); opacity: 0.75; }
+.sv-freshness__source { color: var(--text-muted); }
 /* Second line shown only in the failure state: what is on screen, and how old it is. */
 .sv-freshness__detail { color: var(--bad-fg); }
 /* A counter the source cannot supply. Muted and dashed, so it cannot read as a zero. */
-.sv-today__count--none { color: var(--text-muted); opacity: 0.6; }
+/* No `opacity` here or in the two rules above: `--text-muted` IS the quiet tier, and
+   dimming it a second time composites it against the light ground and drops 11px metadata
+   to around 2.5:1. The tier is already distinct from --text-primary beside it. */
+.sv-today__count--none { color: var(--text-muted); }
 .sv-today__note {
   font-size: var(--text-label); letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--text-muted);
@@ -301,7 +312,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-scrim {
   position: fixed; inset: 0; z-index: var(--z-scrim);
-  background: rgba(23, 25, 15, 0.45); border: none; cursor: pointer;
+  background: var(--scrim); border: none; cursor: pointer;
 }
 
 /* ---- Investor shell (§17.3): no rail, no operational chrome. A masthead with the
@@ -404,9 +415,12 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-card--ledger > .sv-card__body { padding-left: 0; padding-right: 0; }
 
+/* An edge, because the fill alone is 1.11:1 from the page it sits on. */
 .sv-card--plate {
   background: var(--surface-sunken);
-  border: none;
+  /* An edge, because the fill alone is 1.11:1 from the page it sits on — the plate was
+     the one documented surface pattern that did not read as a surface in light. */
+  border: 1px solid var(--line);
   border-radius: var(--r-2);
 }
 .sv-card--plate > .sv-card__header { border-bottom: none; padding-bottom: 0; }
@@ -445,7 +459,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-kpi__delta--up { color: var(--good-fg); }
 .sv-kpi__delta--down { color: var(--bad-fg); }
 .sv-kpi__delta--flat { color: var(--text-muted); }
-.sv-kpi__hint { font-size: 0.6875rem; color: var(--text-muted); margin-top: 4px; opacity: 0.8; }
+.sv-kpi__hint { font-size: 0.6875rem; color: var(--text-muted); margin-top: 4px; }
 
 .sv-kpi--unavailable { border-style: dashed; border-color: var(--border-strong); background: var(--surface-sunken); }
 .sv-kpi__unavailable-value {
@@ -461,6 +475,19 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-size: 0.75rem; font-weight: 500;
   padding: 3px 9px; border-radius: var(--radius-full);
   background: var(--surface-sunken); color: var(--text-primary);
+  /*
+   * An edge derived from the pill's OWN ink, so all six tones get one declaration.
+   * Without it a pill placed on a sunken plate — which is where tables and empty states
+   * put them — loses its fill entirely: --neutral-bg (#EFEBE0) against --surface-sunken
+   * (#F1EADA) is 1.02:1, so "blocked" and "no badge at all" looked identical.
+   *
+   * An INSET SHADOW rather than a border, and that is not a stylistic preference: a pill is
+   * inline-flex and sized by its content, so a real border adds 2px to every one of them.
+   * Across a dense register that was enough to push the page into a horizontal scroll at
+   * 768px and 1024px — the responsive contract this product tests for. A shadow paints the
+   * same hairline and costs nothing in layout.
+   */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 20%, transparent);
   white-space: nowrap;
 }
 .sv-pill__dot { width: 6px; height: 6px; border-radius: var(--radius-full); background: currentColor; }
@@ -475,6 +502,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-badge {
   font-size: var(--text-label); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+  /* The same zero-layout-cost edge as .sv-pill, for the same reason: a badge on a sunken
+     plate has no fill to distinguish it. Inset shadow, never a border — see .sv-pill. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
   padding: 2px 7px; border-radius: var(--radius-sm);
   background: var(--surface-sunken); color: var(--text-muted);
 }
@@ -495,7 +525,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
               border-color var(--motion-fast) var(--ease-standard);
 }
 .sv-chip:hover { background: var(--surface-card); border-color: var(--border-strong); }
-.sv-chip[aria-pressed='true'] { background: var(--surface-card); border-color: var(--brand-green); font-weight: 600; }
+.sv-chip[aria-pressed='true'] { background: var(--surface-selected); border-color: var(--brand-green); font-weight: 600; }
 .sv-chip:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (pointer: coarse) { .sv-chip { min-height: 44px; } }
 
@@ -514,7 +544,17 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-btn:hover { background: var(--surface-sunken); }
 /* A verified write is locked, not unavailable — dimming it to 50% collapsed the one
    shipped success state into the disabled treatment and hid the confirmation. */
-.sv-btn:disabled:not([data-phase='verified']) { cursor: not-allowed; opacity: 0.5; }
+/*
+ * Disabled by COLOUR, not by transparency. `opacity: 0.5` on a filled button composites its
+ * cream label against the olive fill and lands near 1.9:1 — so the primary action became
+ * unreadable exactly while a write was in flight, which is when a person most wants to read
+ * it. The filled variants get a real disabled treatment; everything else simply dims its ink.
+ */
+.sv-btn:disabled:not([data-phase='verified']) { cursor: not-allowed; color: var(--text-muted); }
+.sv-btn--primary:disabled:not([data-phase='verified']),
+.sv-btn--danger:disabled:not([data-phase='verified']) {
+  background: var(--surface-selected); border-color: var(--border-strong); color: var(--text-muted);
+}
 .sv-btn:disabled[data-phase='verified'] { cursor: default; }
 .sv-btn--sm { height: 32px; padding: 0 var(--space-3); font-size: 0.75rem; }
 .sv-btn--lg { height: 48px; padding: 0 var(--space-5); font-size: 0.9375rem; }
@@ -545,7 +585,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    label AND the width; the spinner is functional feedback, announced via aria-busy,
    and holds still under reduced motion. Success/error ride the mutation phases the
    write pipeline already reports (data-phase on SubmitButton). ---- */
-.sv-btn:active:not(:disabled) { background: var(--surface-sunken); }
+.sv-btn:active:not(:disabled) { background: var(--surface-selected); }
 .sv-btn--primary:active:not(:disabled) { background: var(--brand-green-dark); }
 .sv-btn--ghost:active:not(:disabled) { background: var(--surface-sunken); }
 .sv-btn--danger:active:not(:disabled) { background: var(--bad-bg); }
@@ -572,7 +612,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-state__title { font-weight: 600; font-size: 0.9375rem; }
 .sv-state__message { color: var(--text-muted); font-size: 0.8125rem; margin-top: var(--space-2); max-width: 46ch; margin-inline: auto; }
 .sv-state__action { margin-top: var(--space-4); }
-.sv-state--empty { background: var(--surface-sunken); border-radius: var(--radius-md); }
+.sv-state--empty { background: var(--surface-sunken); border: 1px solid var(--line); border-radius: var(--radius-md); }
 .sv-state--error { background: var(--bad-bg); border-radius: var(--radius-md); }
 .sv-state--error .sv-state__title { color: var(--bad-fg); }
 
@@ -626,7 +666,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-skeleton::after {
   content: ''; position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(0,0,0,0.045), transparent);
+  background: linear-gradient(90deg, transparent, var(--skeleton-sheen), transparent);
   /* §19.3 — nothing is perpetual: the shimmer runs once per 1.6s and stops after ~8s.
      A load still pending by then is communicated by the block itself, not by motion. */
   animation: sv-shimmer 1.6s 5;
@@ -688,13 +728,18 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   padding: 12px var(--space-4); text-align: left;
   border-bottom: 1px solid var(--border-subtle); white-space: nowrap;
 }
+/* The header row earns the strong rule; tfoot already has one. Without it a light table
+   opens with a line of text indistinguishable from its data. */
 .sv-table thead th {
   font-size: 0.6875rem; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--text-muted); font-weight: 600;
   background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border-strong);
   position: sticky; top: 0; z-index: 1;
 }
-.sv-table tbody tr:hover { background: var(--surface-sunken); }
+/* --surface-hover, not --surface-sunken: the sunken plate is 1.11:1 from the cream page,
+   so a row highlight built from it was a state nobody could see. */
+.sv-table tbody tr:hover { background: var(--surface-hover); }
 .sv-table tbody tr:last-child td { border-bottom: none; }
 .sv-table .sv-num { text-align: right; font-variant-numeric: tabular-nums lining-nums; }
 .sv-table tfoot td {
@@ -721,9 +766,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    an ink rule above a subtotal, a double rule above a total. Never inline styles. */
 /* --text-brand, not --brand-green: the raw brand hex is never retuned for dark, where an
    olive rule falls to ~2.3:1 on the dark card and the statement loses its arithmetic. */
-.sv-table tr.sv-table__row--section td { font-weight: 600; background: var(--surface-sunken); }
-.sv-table tr.sv-table__row--subtotal td { font-weight: 600; border-top: 1px solid var(--text-brand); }
-.sv-table tr.sv-table__row--total td { font-weight: 700; border-top: 3px double var(--text-brand); }
+/* `th` as well as `td`: a statement row names itself with a row header, so a rule that
+   reached only the value cells left the label out of the very emphasis it was applying. */
+.sv-table tr.sv-table__row--section td,
+.sv-table tr.sv-table__row--section th { font-weight: 600; background: var(--surface-sunken); }
+.sv-table tr.sv-table__row--subtotal td,
+.sv-table tr.sv-table__row--subtotal th { font-weight: 600; border-top: 1px solid var(--text-brand); }
+.sv-table tr.sv-table__row--total td,
+.sv-table tr.sv-table__row--total th { font-weight: 700; border-top: 3px double var(--text-brand); }
 
 /* Mobile record layout: below 640px an opted-in table stops being a grid and becomes a
    stack of small ledger blocks — every cell keeps its column label via data-label. The
@@ -827,7 +877,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-bar-row__bar { position: absolute; top: 0; height: 100%; border-radius: 3px; }
 /* Chart series tokens (§15): brand-derived, dark-theme aware — and never gold, which
    is rule/ornament only. */
-.sv-bar-row__bar--revenue { background: var(--chart-1); opacity: 0.28; }
+/* 0.45, not 0.28: at 28% the context band is about 1.5:1 on white — below the 3:1 that
+   makes a graphical object perceivable. It is still the quieter of the two marks, which
+   is the whole point of the layering; it is now a mark rather than a rumour. */
+.sv-bar-row__bar--revenue { background: var(--chart-1); opacity: 0.45; }
 .sv-bar-row__bar--profit { background: var(--chart-2); opacity: 0.95; height: 100%; }
 .sv-bar-row__values { display: flex; flex-direction: column; align-items: flex-end; font-size: 0.8125rem; }
 .sv-bar-row__values .sv-muted, .sv-bar-row__values .sv-negative { font-size: 0.6875rem; }
@@ -993,7 +1046,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-signin__card {
   width: min(38rem, 100%); background: var(--surface-card);
   border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
-  padding: var(--space-6); box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  padding: var(--space-6); box-shadow: var(--shadow-card);
 }
 .sv-signin__brand { margin-bottom: var(--space-4); }
 .sv-signin__banner {
@@ -1157,7 +1210,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-demo-notice__title {
   margin: 0 0 2px;
   font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--brand-terracotta);
+  color: var(--terracotta-deep);   /* brand terracotta is 3.6:1 here; the deep tone exists for text */
 }
 .sv-demo-notice__body { margin: 0; font-size: 0.8125rem; color: var(--text-muted); }
 .sv-demo-notice__rules {
@@ -1210,12 +1263,47 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   transition: border-color var(--motion-fast) var(--ease-standard);
 }
 .sv-input:hover { border-color: var(--text-muted); }
-.sv-input:focus { outline: 2px solid var(--brand-green); outline-offset: 1px; border-color: var(--brand-green); }
+.sv-input:focus-visible { outline-offset: 1px; border-color: var(--focus-ring); }
+/* Chromium's default placeholder is ~2.8:1 on this fill. The muted tier is the readable
+   floor, and `opacity: 1` is required because Firefox dims placeholders on its own. */
+.sv-input::placeholder, .sv-field__input::placeholder, .sv-bksearch__input::placeholder {
+  color: var(--text-muted); opacity: 1;
+}
+/*
+ * AUTOFILL, which is the only fill in this product a stylesheet cannot simply set.
+ *
+ * Chromium paints an autofilled field `rgb(232, 240, 254)` and Safari `#FAFFBD`, and both
+ * ignore `background` entirely — the value is applied through a UA-internal layer that only
+ * an inset box-shadow can cover. Declaring `color-scheme: light` makes the browser pick its
+ * LIGHT autofill colour, which is the pale blue, so this became more visible rather than
+ * less once light became canonical.
+ *
+ * It lands on the first screen anybody sees: the sign-in fields carry `autoComplete`, so a
+ * returning visitor met two pale-blue boxes on a warm cream card. The shared field recipes
+ * are all listed here, so every remembered field in the product follows the palette.
+ */
+.sv-input:-webkit-autofill,
+.sv-input:-webkit-autofill:hover,
+.sv-input:-webkit-autofill:focus,
+.sv-field__input:-webkit-autofill,
+.sv-field__input:-webkit-autofill:hover,
+.sv-field__input:-webkit-autofill:focus {
+  -webkit-box-shadow: inset 0 0 0 100px var(--surface-sunken);
+  -webkit-text-fill-color: var(--text-primary);
+  caret-color: var(--text-primary);
+  /* The transition is the documented trick for holding the override past the UA's own
+     repaint; it never animates because the delay outlasts any real interaction. */
+  transition: background-color 100000s ease-in-out 0s;
+}
+
 .sv-input--textarea { height: auto; padding: var(--space-2) var(--space-3); resize: vertical; }
 .sv-field--invalid .sv-input { border-color: var(--bad-fg); }
+/* A disabled field must not read as MORE prominent than an enabled one. It keeps the sunken
+   fill and states its disabledness with ink and edge. */
 .sv-input:disabled {
-  opacity: 0.55; cursor: not-allowed;
-  background: var(--surface-card); border-color: var(--line);
+  cursor: not-allowed;
+  background: var(--surface-sunken); border-color: var(--line);
+  color: var(--text-muted);
 }
 /* §14/§20 — critical touch targets: controls reach 44px on coarse pointers. */
 @media (pointer: coarse) {
@@ -1311,7 +1399,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
     width: 100%; max-height: 88dvh;
     border-left: none; border-top: 1px solid var(--line);
     border-radius: var(--r-2) var(--r-2) 0 0;
-    box-shadow: 0 -12px 40px rgba(43, 43, 38, 0.14);
+    box-shadow: var(--shadow-sheet);
   }
   .sv-drawer.m-drawer-enter { animation-name: m-sheet; }
 }
@@ -1394,11 +1482,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- DEFECT FIXES ---- */
 
-/* #3 — one lockup treatment everywhere now that the rail is light (M-UI-2): olive
-   wordmark, gold-deep tagline, on every surface. The cream-on-dark variant died with
-   the dark sidebar. */
-.sv-logo__word { color: var(--brand-green); }
-.sv-logo__tagline { color: var(--gold-deep); }
+/* #3 — the lockup treatment now lives with the lockup, at the top of this file, rather
+   than as an override that only worked because it came later. */
 
 /* #4 — at phone widths the top bar's right cluster overflowed the viewport (scrollWidth
    541 at 390). The cluster may never widen the page: facts collapse, text hides, and the
@@ -1603,8 +1688,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   background: var(--surface-card);
   min-width: 0;
 }
-.sv-summary__tile--attention { background: var(--warn-bg); }
-.sv-summary__tile--urgent { background: var(--bad-bg); }
+/* An edge as well as a tint: the two tints are 1.2:1 apart, so tone carried by fill alone
+   was not a distinction anybody could make — and colour alone should never carry meaning. */
+.sv-summary__tile--attention { background: var(--warn-bg); border-left: 3px solid var(--warn-fg); }
+.sv-summary__tile--urgent { background: var(--bad-bg); border-left: 3px solid var(--bad-fg); }
 .sv-summary__value {
   font-family: var(--font-display);
   font-size: var(--t-kpi); font-weight: 600; line-height: 1.05;
@@ -1713,7 +1800,21 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   background: var(--surface-card);
   border: 1px solid var(--line-strong); border-radius: var(--r-2);
 }
-.sv-bksearch__input:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+/*
+ * FOCUS OFFSET ONLY — never the whole outline (M-UI-10).
+ *
+ * These nine rules used to read `outline: var(--focus-ring)`. `--focus-ring` is a COLOUR,
+ * and passing it to the outline SHORTHAND resets the omitted longhands to their initial
+ * values — so `outline-style` became `none` and no ring was painted at all. Being more
+ * specific than the global `:focus-visible` rule, each of them REMOVED a ring that was
+ * otherwise correct: the bookings search, every booking link, the whole availability
+ * calendar and every availability cross-link had no visible keyboard focus.
+ *
+ * The global rule at the top of this file supplies width, style and colour. A rule here
+ * adjusts the OFFSET, and where it must change the colour it says `outline-color`, as
+ * `.sv-skip-link` does.
+ */
+.sv-bksearch__input:focus-visible { outline-offset: 2px; }
 @media (pointer: coarse) { .sv-bksearch__input { min-height: 44px; } }
 
 @media (min-width: 900px) {
@@ -1742,7 +1843,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* ---- Booking detail panel ---- */
 .sv-bklink { color: inherit; text-decoration: none; border-bottom: 1px solid var(--line-strong); }
 .sv-bklink:hover { border-bottom-color: var(--text-brand); }
-.sv-bklink:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.sv-bklink:focus-visible { outline-offset: 2px; border-radius: 2px; }
 @media (pointer: coarse) {
   /* A tap target, not a word: the whole cell is reachable with a thumb. */
   .sv-bklink { display: inline-flex; align-items: center; min-height: 44px; }
@@ -1837,7 +1938,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   background: none; border: none; font: inherit; color: var(--text-muted); cursor: pointer;
 }
 .sv-caltable__daybtn:hover { background: var(--surface-sunken); color: var(--text-primary); }
-.sv-caltable__daybtn:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.sv-caltable__daybtn:focus-visible { outline-offset: -2px; }
 .sv-caltable__dow { font-size: var(--text-label); }
 .sv-caltable__dom { font-size: var(--t-small); font-variant-numeric: tabular-nums; }
 .sv-caltable__day--today .sv-caltable__daybtn { color: var(--text-brand); font-weight: 700; }
@@ -1851,7 +1952,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* A free day: a full-height target, quiet until it is wanted. */
 .sv-calfree { display: block; height: 100%; border-radius: var(--r-1); }
 .sv-calfree:hover { background: var(--good-bg); box-shadow: inset 0 0 0 1px var(--good-fg); }
-.sv-calfree:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.sv-calfree:focus-visible { outline-offset: -2px; }
 
 /* A booking bar. Status is carried by a WORD wherever it fits and by the accessible
    name always; the left edge additionally differs in STYLE, not only in hue, so the
@@ -1865,7 +1966,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   transition: filter var(--m-fast) var(--e-standard);
 }
 .sv-calbar:hover { filter: brightness(0.96); }
-.sv-calbar:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.sv-calbar:focus-visible { outline-offset: -2px; }
 .sv-calbar__guest { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .sv-calbar__status { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
 
@@ -1894,7 +1995,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   background: none; border: 1px solid transparent; border-radius: var(--r-2);
   font: inherit; color: var(--text-muted); cursor: pointer;
 }
-.sv-calday__pip:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.sv-calday__pip:focus-visible { outline-offset: 2px; }
 .sv-calday__dow { font-size: var(--text-label); }
 .sv-calday__dom { font-size: var(--t-small); font-variant-numeric: tabular-nums; }
 .sv-calday__pip--today { color: var(--text-brand); font-weight: 700; }
@@ -1938,7 +2039,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-size: var(--t-small); color: var(--text-brand);
 }
 .sv-bktools__calendar:focus-visible,
-.sv-daylink a:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.sv-daylink a:focus-visible { outline-offset: 2px; border-radius: 2px; }
 /* Two links, and they ran together into one word on a phone — the paragraph had no
    layout of its own, so the inline-flex children sat flush against each other. */
 .sv-daylink {
@@ -2017,9 +2118,12 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-availcard--held { border-left-color: var(--line-strong); background: var(--surface-sunken); }
 /* The unit whose booking form is open. `aria-current` says it to a screen reader; this
    says it to everyone else. */
+/* The ring reinforces the border, so it is the same olive. It used to be --good-bg, a
+   STATUS surface: a selection state wearing a status colour, and at 1.06:1 on cream it was
+   not a ring anybody could see either. */
 .sv-availcard--selected {
   border-color: var(--brand-green);
-  box-shadow: 0 0 0 2px var(--good-bg);
+  box-shadow: 0 0 0 2px var(--brand-green);
 }
 
 .sv-availcard__head {
@@ -2051,7 +2155,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-availconflict__when { color: var(--text-muted); }
 .sv-availconflict__ref { color: var(--text-brand); font-weight: 600; }
-.sv-availconflict__ref:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.sv-availconflict__ref:focus-visible { outline-offset: 2px; border-radius: 2px; }
 .sv-availconflict__guest { color: var(--text-muted); }
 
 .sv-availcard__actions {
@@ -2069,7 +2173,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   display: inline-flex; align-items: center; gap: var(--s-2);
   font-size: var(--t-small); color: var(--text-brand);
 }
-.sv-availlink:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: 2px; }
+.sv-availlink:focus-visible { outline-offset: 2px; border-radius: 2px; }
 .sv-calhead { display: inline-flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
 @media (pointer: coarse) {
   .sv-availlink { min-height: 44px; }
@@ -2172,3 +2276,44 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* The two trend charts sit one under the other and need air between them. */
 .sv-card__body > .sv-chart + .sv-chart { margin-top: var(--s-5); }
+
+/* ------------------------------------------------------------------ *
+ * Print (M-UI-10)
+ *
+ * A P&L, a distribution waterfall and a reconciliation are documents people put in front of
+ * other people, and until now Ctrl+P produced the application rather than the statement:
+ * a full-height navigation column down page one, a sticky top bar, and — because browsers
+ * drop background fills by default — status pills reduced to coloured words with no
+ * container, and a primary button printing cream ink on white paper.
+ *
+ * This is deliberately small. It removes the chrome, restores the few fills that carry
+ * meaning, and lets the type alone do the rest.
+ * ------------------------------------------------------------------ */
+@media print {
+  /* Ink on paper, whatever the reader's theme. */
+  :root { color-scheme: light; }
+  body { background: #FFFFFF; color: #000000; }
+
+  /* Application chrome is not part of the document. */
+  .sv-sidebar, .sv-topbar, .sv-skip-link, .sv-toasts,
+  .sv-overlay, .sv-scrim, .sv-filter-bar, .sv-demo-notice { display: none !important; }
+
+  /* The content column becomes the page. */
+  .sv-shell, .sv-main { display: block; margin: 0; padding: 0; }
+  .sv-card { border: 1px solid #999; box-shadow: none; break-inside: avoid; }
+
+  /* The fills that carry meaning are printed rather than dropped. */
+  .sv-pill, .sv-badge, .sv-table thead th,
+  .sv-table tr.sv-table__row--section td, .sv-table tr.sv-table__row--section th {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* A table that breaks across pages repeats its header, as a statement should. */
+  .sv-table { break-inside: auto; }
+  .sv-table thead { display: table-header-group; }
+  .sv-table tr { break-inside: avoid; }
+  .sv-table-scroller { overflow: visible; }
+
+  /* A link's destination is useless on paper; its text is not. */
+  a { text-decoration: none; }
+}
