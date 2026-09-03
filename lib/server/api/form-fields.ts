@@ -159,14 +159,26 @@ export function housekeepingFields(propertyIds: readonly string[]): FieldSpec[] 
   ];
 }
 
-export function inventoryMovementFields(): FieldSpec[] {
+/**
+ * ITEM DETAILS — what `PATCH /api/inventory/:id` accepts since M-SEC-1.
+ *
+ * This function was `inventoryMovementFields` and its first two fields were `purchased` and
+ * `used`, labelled "Cumulative purchased count for this item, as V1 records it". It asked an
+ * operator to retype an absolute running total the product had never shown them: type it low
+ * and stock silently fell after a purchase, and either way the change landed with no
+ * employee, no task and no reason, so reconciliation reported UNEXPLAINED_MOVEMENT with
+ * nobody able to say what had happened.
+ *
+ * Both fields are gone, and the endpoint refuses them now, so this is one of two independent
+ * reasons this form cannot move stock. Moving stock is Stock → Record movement, which asks
+ * how much MOVED rather than what the total became, and records why.
+ */
+export function inventoryItemDetailFields(): FieldSpec[] {
   return [
-    { name: 'purchased', label: 'Purchased (units)', type: 'number', min: 0, help: 'Cumulative purchased count for this item, as V1 records it.' },
-    { name: 'used', label: 'Used (units)', type: 'number', min: 0 },
+    { name: 'minStock', label: 'Reorder level', type: 'number', min: 0, help: 'The workbook compares stock on hand against this to flag an item as low.' },
+    { name: 'vendor', label: 'Vendor', type: 'text', help: 'The name as the workbook records it. Identifying who that is happens under Stock.' },
     { name: 'lastPurchaseDate', label: 'Last purchase date', type: 'date' },
     { name: 'lastPurchaseCost', label: 'Last purchase cost', type: 'currency' },
-    { name: 'vendor', label: 'Vendor', type: 'text' },
-    { name: 'minStock', label: 'Minimum stock', type: 'number', min: 0 },
     { name: 'notes', label: 'Notes', type: 'textarea' },
   ];
 }

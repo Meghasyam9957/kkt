@@ -249,9 +249,9 @@ export function MaintenanceTable({ rows, assignment }: {
  * Inventory
  * ------------------------------------------------------------------ */
 
-export function InventoryTable({ rows, movementFields }: {
+export function InventoryTable({ rows, itemDetailFields }: {
   rows: StockRow[];
-  movementFields: import('@/components/mutations/MutationForm').FieldSpec[];
+  itemDetailFields: import('@/components/mutations/MutationForm').FieldSpec[];
 }) {
   const columns: Column<StockRow>[] = [
     { key: 'id', header: 'Item ID', render: (r) => <code className="numeric">{r.itemId}</code> },
@@ -273,11 +273,17 @@ export function InventoryTable({ rows, movementFields }: {
     {
       key: 'actions', header: 'Actions',
       render: (r) => (
+        /*
+         * EDIT DETAILS, NOT MOVE STOCK. This button used to be labelled "Movement" and post
+         * absolute Purchased/Used totals — the bypass M-SEC-1 closed. It now edits only what
+         * this endpoint still owns; a movement is recorded under Stock, where the form asks
+         * how much moved and why.
+         */
         <RowActionButton
-          label="Movement" endpoint={`/api/inventory/${r.itemId}`} method="PATCH"
-          confirmTitle={`Stock movement — ${r.item}`}
-          fields={movementFields}
-          successTemplate={`${r.itemId} updated — current stock is recalculated by the workbook.`}
+          label="Edit details" endpoint={`/api/inventory/${r.itemId}`} method="PATCH"
+          confirmTitle={`Item details — ${r.item}`}
+          fields={itemDetailFields}
+          successTemplate={`${r.itemId} updated.`}
         />
       ),
     },
@@ -286,7 +292,7 @@ export function InventoryTable({ rows, movementFields }: {
     <Card>
       <CardHeader
         title="Stock register"
-        subtitle="Current stock is a workbook calculation (opening + purchased − used). A movement records the inputs; the workbook does the arithmetic."
+        subtitle="Stock on hand is a workbook calculation (opening + purchased − used) and nothing here recalculates it. This screen edits an item's details; movements are recorded under Stock."
         action={<span className="sv-muted">{rows.length} item{rows.length === 1 ? '' : 's'}</span>}
       />
       <CardBody className="sv-card__body--flush">

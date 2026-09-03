@@ -170,16 +170,19 @@ function harness() {
     propertyIds: async (tenant) => PROPERTIES[tenant.tenantId] ?? [],
     vendor: (tenant, vendorId) => financeRepo.getVendor(tenant, vendorId),
     // THE REAL PIPELINE, per tenant, exactly as the composition root wires it.
-    writeTotals: async (write, itemRef, totals) => {
+    writeTotals: async (write, itemRef, totals, expected) => {
       if (sheet.fail) {
         throw new MutationError(502, 'SHEETS_UNAVAILABLE', 'The workbook did not answer.');
       }
+      // `expected` is forwarded exactly as the composition root forwards it. A harness that
+      // dropped it would typecheck perfectly and silently test a weaker pipeline than the
+      // one that ships.
       await executeMutation(MUTATION_DEFINITIONS['inventory.update']!, {
         auth: write.auth,
         request: {
           method: 'PATCH', path: `/api/inventory/${itemRef}`,
           headers: {}, query: {}, params: { id: itemRef },
-          body: { operationId: op(), ...totals },
+          body: { operationId: op(), ...totals, ...expected },
           requestId: write.requestId,
         },
       } as never, wb.deps);
@@ -232,6 +235,19 @@ async function anEmployee(token: string, fullName = 'Lakshmi Narayan') {
 async function itemRow(tenantId: string, itemRef: string) {
   const rows = await h.wb.reposFor(tenantId as never).inventory.readAll();
   return rows.find((i) => i.itemId === itemRef)!;
+}
+
+/**
+ * Move the workbook the way a PERSON does — in the spreadsheet, outside this product.
+ *
+ * Until M-SEC-1 these cases used `PATCH /api/inventory/:id`, which accepted absolute
+ * `used`/`purchased`. That endpoint no longer accepts either (it is item-master data only),
+ * so the un-contextualised sheet edit is expressed where it actually happens: at the sheet.
+ * That is also the more faithful model — UNEXPLAINED_MOVEMENT exists precisely BECAUSE the
+ * customer can edit their own workbook, and always will be able to.
+ */
+async function editSheetDirectly(tenantId: string, itemRef: string, cells: Record<string, unknown>) {
+  await h.wb.reposFor(tenantId as never).inventory.updateByIdVerified(itemRef, cells);
 }
 
 /** Consume stock as an operations supervisor would after a turnover. */
@@ -323,6 +339,35 @@ describe('inventory · one stock ledger', () => {
     });
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect((await itemRow(TENANT_A, ROLLS)).currentStock).toBe(46);
+  });
+
+  it('the item-details endpoint cannot move stock at all (M-SEC-1)', async () => {
+    /*
+     * The bypass this milestone closed. `PATCH /api/inventory/:id` used to accept absolute
+     * `purchased` and `used`, so any holder of `inventory.write` could set the running
+     * totals with no employee, no task and no reason behind them.
+     */
+    for (const body of [{ used: 99 }, { purchased: 99 }, { used: 1, purchased: 1 }]) {
+      const res = await h.request(ADMIN_A.token, 'PATCH', `/api/inventory/${ROLLS}`,
+        { operationId: op(), ...body });
+      expect(res.status, JSON.stringify(body)).toBe(422);
+      expect(res.body.error.code).toBe('VALIDATION');
+    }
+    const row = await itemRow(TENANT_A, ROLLS);
+    expect(row.used).toBe(0);
+    expect(row.purchased).toBe(0);
+  });
+
+  it('the item-details endpoint still edits what it legitimately owns', async () => {
+    // Reorder level, vendor and notes are item master data. Editing them is not a movement,
+    // and requiring one would have been theatre.
+    const res = await h.request(ADMIN_A.token, 'PATCH', `/api/inventory/${ROLLS}`, {
+      operationId: op(), minStock: 30, vendor: 'Demo Supplies', notes: 'Bulk pack',
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect((await itemRow(TENANT_A, ROLLS)).minStock).toBe(30);
+    // …and moved no stock while doing it.
+    expect((await itemRow(TENANT_A, ROLLS)).used).toBe(0);
   });
 
   it('holds no balance of its own — the overlay stores events, and totals are sums of them', async () => {
@@ -806,12 +851,9 @@ describe('inventory · reconciliation', () => {
   });
 
   it('reports UNEXPLAINED_MOVEMENT when the workbook moved without context', async () => {
-    // The pre-existing write path, still open and still legitimate: somebody edits the
-    // sheet, or uses PATCH directly. Everything predating this milestone looks like this.
-    const patched = await h.request(ADMIN_A.token, 'PATCH', `/api/inventory/${ROLLS}`, {
-      operationId: op(), used: 7,
-    });
-    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+    // Somebody edited the spreadsheet. Always possible, always legitimate — it is their
+    // file — and everything predating this milestone looks like this.
+    await editSheetDirectly(TENANT_A, ROLLS, { Used: 7 });
 
     const res = await h.request(ADMIN_A.token, 'GET', '/api/inventory/reconciliation');
     const row = rowFor(res.body, ROLLS);
@@ -822,11 +864,9 @@ describe('inventory · reconciliation', () => {
 
   it('reports CONTEXT_AHEAD when a recorded movement never reached the totals', async () => {
     await consume(OPS_A.token, ROLLS, 4);
-    // The lost update this design cannot prevent, made to happen: the sheet total goes
-    // backwards while the movement record stands.
-    await h.request(ADMIN_A.token, 'PATCH', `/api/inventory/${ROLLS}`, {
-      operationId: op(), used: 0,
-    });
+    // The lost update, made to happen: the sheet total goes backwards in the spreadsheet
+    // while the movement record stands.
+    await editSheetDirectly(TENANT_A, ROLLS, { Used: 0 });
 
     const res = await h.request(ADMIN_A.token, 'GET', '/api/inventory/reconciliation');
     const row = rowFor(res.body, ROLLS);
@@ -850,9 +890,7 @@ describe('inventory · reconciliation', () => {
   });
 
   it('repairs nothing and decides nobody is right — it only reports', async () => {
-    await h.request(ADMIN_A.token, 'PATCH', `/api/inventory/${ROLLS}`, {
-      operationId: op(), used: 7,
-    });
+    await editSheetDirectly(TENANT_A, ROLLS, { Used: 7 });
     const before = await itemRow(TENANT_A, ROLLS);
 
     await h.request(ADMIN_A.token, 'GET', '/api/inventory/reconciliation');

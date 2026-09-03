@@ -426,6 +426,15 @@ export const API_ROUTES: readonly RouteDefinition[] = [
     writesInventory: true, action: 'inventory.movement.record', entityType: 'INV_MOVEMENT',
     summary: 'Record a movement: sheet first, then why it happened' },
 
+  /*
+   * The one repair this design performs. `inventory.adjust`, not `inventory.movement`:
+   * re-applying a movement changes the stock figure without anybody recording a new fact,
+   * which is the same power as correcting a count — and OPERATIONS deliberately lacks it.
+   */
+  { method: 'POST', path: '/api/inventory/movements/:id/repair', capability: 'inventory.adjust',
+    writesInventory: true, action: 'inventory.movement.repair', entityType: 'INV_MOVEMENT',
+    summary: 'Re-apply a movement the workbook refused. Never fabricates one.' },
+
   { method: 'GET', path: '/api/inventory/requests', capability: 'procurement.read',
     action: 'inventory.requests.read', summary: 'Purchase requests' },
   { method: 'POST', path: '/api/inventory/requests', capability: 'procurement.request',
@@ -556,8 +565,22 @@ export const API_ROUTES: readonly RouteDefinition[] = [
     action: 'maintenance.create', entityType: 'MAINTENANCE', summary: 'Create a ticket in 14_MAINTENANCE' },
   { method: 'PATCH', path: '/api/maintenance/:id', capability: 'maintenance.write', mutates: true,
     action: 'maintenance.update', entityType: 'MAINTENANCE', summary: 'Progress / resolve / close a ticket' },
+  /*
+   * ITEM DETAILS, NOT STOCK (narrowed in M-SEC-1).
+   *
+   * This route used to run `inventory.update`, whose schema accepts absolute `purchased` and
+   * `used`. That made it a second way to move stock — one with no employee, no task, no
+   * reason and no movement row behind it, so every use of it left reconciliation reporting
+   * UNEXPLAINED_MOVEMENT with nobody able to say what had happened.
+   *
+   * It now runs `inventory.master.update`, which has no such fields. Reorder level, vendor
+   * name, last purchase details and notes are item MASTER DATA and editing them is not a
+   * movement. Moving stock goes through POST /api/inventory/movements, which collects the
+   * context and writes the sheet through the same verified pipeline.
+   */
   { method: 'PATCH', path: '/api/inventory/:id', capability: 'inventory.write', mutates: true,
-    action: 'inventory.update', entityType: 'INVENTORY', summary: 'Record stock movement fields in 15_INVENTORY' },
+    action: 'inventory.master.update', entityType: 'INVENTORY',
+    summary: 'Edit item details in 15_INVENTORY — reorder level, vendor, notes. Never stock.' },
 
   /* ---- Management registers (ADMIN only) ---- */
   { method: 'POST', path: '/api/investors', capability: 'investors.write', mutates: true,
@@ -608,6 +631,22 @@ export function assertWriteGovernance(
       + 'writesOps:true, writesInventory:true or nonMutating:true');
     check(route.method !== 'DELETE',
       `${where}: no DELETE route may exist — removal is a status transition`);
+    /*
+     * THE STOCK MUTATION IS NOT AN ENDPOINT (M-SEC-1).
+     *
+     * `inventory.update` accepts absolute `purchased` and `used`. Its only legitimate caller
+     * is `InventoryService.recordMovement`, which has already resolved the employee, the task
+     * and the reason and will record them. A route naming this action would be a way to move
+     * stock with none of that behind it — which is exactly what `PATCH /api/inventory/:id`
+     * was until this milestone, and what `inventory.master.update` replaced it with.
+     *
+     * Enforced here rather than left to review, because the next person to want a quick
+     * stock-fixing endpoint will reach for this action by name.
+     */
+    check(route.action !== 'inventory.update',
+      `${where}: 'inventory.update' is the internal stock write and must not be routable. `
+      + "Use 'inventory.master.update' for item details, or POST /api/inventory/movements "
+      + 'to move stock with its context.');
     check((route.investorScoped ?? false) === false,
       `${where}: a non-GET route must never be investor-scoped`);
 

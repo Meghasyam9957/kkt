@@ -271,9 +271,68 @@ export const MaintenanceUpdate = OperationEnvelope.extend({
  * Inventory — 15_INVENTORY (movements are input-field updates on an item row)
  * ------------------------------------------------------------------ */
 
+/**
+ * THE STOCK WRITE. Not reachable over HTTP — see `InventoryMasterUpdate` below for the
+ * endpoint, and `lib/server/api/routes.ts` for the governance rule that keeps them apart.
+ *
+ * `purchased` and `used` are CUMULATIVE ABSOLUTE totals, because that is what
+ * `15_INVENTORY` holds. Only `InventoryService.recordMovement` may set them, and it
+ * computes them by adding a movement to what the sheet said a moment ago.
+ *
+ * `expectedPurchased` / `expectedUsed` are the COMPARE half of a compare-before-write.
+ * They say what the caller believed the running total was when it did that arithmetic. The
+ * mutation refuses if the sheet has moved on, which is the only way this design can notice a
+ * concurrent movement from another process — Google Sheets offers no conditional write to
+ * do it properly. Neither field is a sheet column: `toColumns` never emits them, so the
+ * contract check never sees them.
+ */
 export const InventoryUpdate = OperationEnvelope.extend({
   purchased: z.number().int().min(0).optional(),
   used: z.number().int().min(0).optional(),
+  expectedPurchased: z.number().int().min(0).optional(),
+  expectedUsed: z.number().int().min(0).optional(),
+  minStock: z.number().int().min(0).optional(),
+  lastPurchaseDate: IsoDate.optional(),
+  lastPurchaseCost: Money.optional(),
+  vendor: z.string().max(120).optional(),
+  notes: z.string().max(300).optional(),
+}).strict().superRefine((v, ctx) => {
+  /*
+   * A CUMULATIVE TOTAL MAY NEVER BE SET WITHOUT SAYING WHERE IT CAME FROM.
+   *
+   * Without this the precondition is opt-in, and an opt-in safety check is one a future
+   * caller omits by accident and nobody notices until two increments have gone missing. The
+   * pairing is what makes "set Purchased to 40" mean "add to the 35 I read" rather than
+   * "make it 40 whatever it says now".
+   */
+  if (v.purchased !== undefined && v.expectedPurchased === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['expectedPurchased'],
+      message: 'setting Purchased requires expectedPurchased — the total it was computed from',
+    });
+  }
+  if (v.used !== undefined && v.expectedUsed === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['expectedUsed'],
+      message: 'setting Used requires expectedUsed — the total it was computed from',
+    });
+  }
+});
+
+/**
+ * THE ITEM-MASTER WRITE, and the only inventory update reachable over HTTP.
+ *
+ * Editing an item's reorder level, its vendor name or its notes is not a stock movement and
+ * must not require one. Moving stock IS a movement and must never happen without the
+ * employee, the task and the reason that `POST /api/inventory/movements` collects.
+ *
+ * `purchased` and `used` are therefore ABSENT here rather than optional, and the schema is
+ * `.strict()`, so sending either is a 422 rather than a silently ignored field. Until
+ * M-SEC-1 this endpoint accepted both: a caller could set the running totals to any absolute
+ * figure, with no employee, no task and no reason, leaving reconciliation to report
+ * UNEXPLAINED_MOVEMENT for the life of the item and nobody able to say what had happened.
+ */
+export const InventoryMasterUpdate = OperationEnvelope.extend({
   minStock: z.number().int().min(0).optional(),
   lastPurchaseDate: IsoDate.optional(),
   lastPurchaseCost: Money.optional(),

@@ -86,6 +86,32 @@ async function reservationTransition(
  * Definitions
  * ------------------------------------------------------------------ */
 
+/**
+ * THE PRECONDITION for a cumulative stock write.
+ *
+ * `Purchased` and `Used` are running totals and this pipeline sets them ABSOLUTELY, so a
+ * movement is read-modify-write. The service states what it read; the repository compares
+ * that against the very row-locating read it performs a line before the write, and refuses if
+ * they disagree — see `SheetRepository.updateById`.
+ *
+ * WHY IT LIVES HERE AND NOT IN `validate`. `validate` runs at step 4, before the idempotency
+ * claim and well before the write, so a comparison there would be judged against a snapshot
+ * that is already several awaits old by the time anything is written. As a precondition it is
+ * evaluated against the SAME read that finds the row, which is as close to the write as this
+ * provider allows anyone to get.
+ *
+ * IT IS STILL NOT A COMPARE-AND-SWAP, because Google Sheets has none to offer:
+ * `values.batchUpdate` takes no precondition, no ETag and no revision token. Everything
+ * already applied when Google served our read is caught; a writer landing in the remaining
+ * gap is not, and reconciliation is what surfaces that.
+ */
+function stockPrecondition(i: Record<string, unknown>): Record<string, unknown> | undefined {
+  const expect: Record<string, unknown> = {};
+  if (i.expectedPurchased !== undefined) expect.Purchased = i.expectedPurchased;
+  if (i.expectedUsed !== undefined) expect.Used = i.expectedUsed;
+  return Object.keys(expect).length > 0 ? expect : undefined;
+}
+
 const defs: Record<string, MutationDefinition> = {
 
   /* ---- Reservations ---- */
@@ -351,11 +377,37 @@ const defs: Record<string, MutationDefinition> = {
       ExpenseID: i.expenseId, Vendor: i.vendor, Notes: i.notes,
     }),
   },
+  /**
+   * THE STOCK WRITE — internal only. No route in `API_ROUTES` may name this action, and
+   * `assertWriteGovernance` fails the build if one ever does.
+   *
+   * Its one caller is `writeTotalsThroughPipeline` in lib/server/api/service.ts, on behalf of
+   * `InventoryService.recordMovement`, which has already resolved the employee, the task and
+   * the reason and recorded them. Reaching this definition from a route would be a way to
+   * move stock without any of that.
+   */
   'inventory.update': {
     action: 'inventory.update', sheet: 'INVENTORY', kind: 'update',
     schema: S.InventoryUpdate, idKey: 'ItemID', dateColumns: ['LastPurchaseDate'],
+    expect: stockPrecondition,
     toColumns: (i) => ({
       Purchased: i.purchased, Used: i.used, MinStock: i.minStock,
+      LastPurchaseDate: i.lastPurchaseDate, LastPurchaseCost: i.lastPurchaseCost,
+      Vendor: i.vendor, Notes: i.notes,
+    }),
+  },
+  /**
+   * THE ITEM-MASTER WRITE — what `PATCH /api/inventory/:id` now runs.
+   *
+   * Same sheet, same row, deliberately smaller reach: no `Purchased`, no `Used`. The schema
+   * refuses them and `toColumns` cannot emit them, so there are two independent reasons this
+   * endpoint cannot move stock.
+   */
+  'inventory.master.update': {
+    action: 'inventory.master.update', sheet: 'INVENTORY', kind: 'update',
+    schema: S.InventoryMasterUpdate, idKey: 'ItemID', dateColumns: ['LastPurchaseDate'],
+    toColumns: (i) => ({
+      MinStock: i.minStock,
       LastPurchaseDate: i.lastPurchaseDate, LastPurchaseCost: i.lastPurchaseCost,
       Vendor: i.vendor, Notes: i.notes,
     }),

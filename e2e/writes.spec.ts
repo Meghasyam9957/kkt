@@ -387,20 +387,33 @@ test('housekeeping · create + mark clean through the dialog', async ({ page }) 
   await expect.poll(async () => row.count()).toBe(0);
 });
 
-test('inventory · a movement updates inputs; stock stays workbook-owned', async ({ page }) => {
+test('inventory · the board edits item details, and cannot move stock', async ({ page }) => {
+  /*
+   * This used to fill "Purchased" with an absolute cumulative total. M-SEC-1 closed that:
+   * `PATCH /api/inventory/:id` is item-master data only, so the board edits the reorder
+   * level and moving stock goes through POST /api/inventory/movements with its context.
+   */
   await signInAs(page, 'Demo Operations Manager');
   await page.goto('/admin/operations/inventory');
   const firstRow = page.locator('tbody tr').first();
   const itemId = (await firstRow.locator('code').first().textContent())!;
 
-  await firstRow.getByRole('button', { name: 'Movement' }).click();
+  await firstRow.getByRole('button', { name: 'Edit details' }).click();
   const dialog = page.locator('.sv-modal');
-  await dialog.getByLabel(/Purchased/).fill('5');
+  await dialog.getByLabel(/Reorder level/).fill('7');
   await dialog.getByLabel(/Last purchase date/).fill(`${MONTH}-18`);
   await dialog.locator('button[type=submit]').click();
 
   await expect(page.locator('.sv-toast--success .sv-toast__title'))
     .toContainText(`${itemId} updated`);
+
+  // The bypass, attempted directly: the endpoint refuses a stock column outright.
+  for (const body of [{ used: 99 }, { purchased: 99 }]) {
+    const res = await page.request.patch(`/api/inventory/${itemId}`, {
+      data: { operationId: randomUUID(), ...body },
+    });
+    expect(res.status(), JSON.stringify(body)).toBe(422);
+  }
 });
 
 /* ================================================================== *

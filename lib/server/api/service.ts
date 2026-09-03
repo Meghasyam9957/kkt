@@ -300,8 +300,8 @@ export function getApiRouter(): ApiRouter {
       propertyIds: async (tenant) => (await getDataProvider(tenant)).getPropertyIds(),
       // Finance's vendor register, tenant-scoped. Not a second supplier master.
       vendor: (tenant, vendorId) => financeRepo.getVendor(tenant, vendorId),
-      writeTotals: (write, itemRef, totals) =>
-        writeTotalsThroughPipeline(deps, write, itemRef, totals),
+      writeTotals: (write, itemRef, totals, expected) =>
+        writeTotalsThroughPipeline(deps, write, itemRef, totals, expected),
       audit,
     }),
     store: operationStore,
@@ -375,6 +375,13 @@ async function writeTotalsThroughPipeline(
   write: InvWrite,
   itemRef: string,
   totals: { purchased?: number; used?: number },
+  /*
+   * The running total the service read before it did its arithmetic. Forwarded into the
+   * mutation, whose `validate` hook re-reads the row and refuses if the sheet has moved on.
+   * Dropping this argument would compile perfectly and silently disable the only defence
+   * this design has against a movement recorded by another process — see M-SEC-1.
+   */
+  expected: { expectedPurchased?: number; expectedUsed?: number },
 ): Promise<void> {
   const definition = MUTATION_DEFINITIONS['inventory.update'];
   if (!definition) throw new Error('No mutation definition for inventory.update');
@@ -390,7 +397,7 @@ async function writeTotalsThroughPipeline(
       headers: {},
       query: {},
       params: { id: itemRef },
-      body: { operationId: randomUUID(), ...totals },
+      body: { operationId: randomUUID(), ...totals, ...expected },
       requestId: write.requestId,
     },
   }, deps);

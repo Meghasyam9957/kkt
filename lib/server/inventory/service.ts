@@ -31,6 +31,7 @@ import '@/lib/server/only';
  * CONTEXT_AHEAD. Before this milestone the same lost update was completely undetectable.
  */
 import { requireTenant, type TenantContext } from '@/lib/server/tenant/context';
+import { withItemLock, itemLockKey } from './serialize';
 import type { AuditService } from '@/lib/server/audit/logger';
 import type { HandlerContext } from '@/lib/server/auth/guard';
 import type { HrService } from '@/lib/server/hr/service';
@@ -113,6 +114,14 @@ export interface InventoryServiceDeps {
   writeTotals: (
     write: SheetWriteContext, itemRef: string,
     totals: { purchased?: number; used?: number },
+    /*
+     * WHAT THE CALLER BELIEVED THE RUNNING TOTAL WAS when it did the arithmetic above.
+     * The mutation refuses the write if the sheet has moved on since — see
+     * `expectedTotalsUnchanged` in lib/server/api/mutation-services.ts. It is a compare a
+     * moment before a write, not a compare-and-swap: Google Sheets offers no conditional
+     * write, so this DETECTS a concurrent movement rather than preventing one.
+     */
+    expected: { expectedPurchased?: number; expectedUsed?: number },
   ) => Promise<void>;
   audit: AuditService;
   now?: () => Date;
@@ -178,7 +187,26 @@ export class InventoryService {
   async recordMovement(
     tenant: TenantContext, input: MovementInput, actor: string, write: SheetWriteContext,
   ): Promise<{ movement: Movement; applied: boolean }> {
-    requireTenant(tenant, 'inventory.movement');
+    const { tenantId } = requireTenant(tenant, 'inventory.movement');
+    /*
+     * ONE MOVEMENT AT A TIME, PER ITEM.
+     *
+     * Everything from reading the sheet's running total to writing the new one and recording
+     * why runs inside the lock, because the read and the write are two halves of one
+     * arithmetic step and anything interleaving between them loses an increment. Keyed by
+     * item, so a busy morning across forty items is still forty concurrent movements.
+     *
+     * Within a process this PREVENTS the loss. Across processes it cannot — two servers hold
+     * two mutexes — which is what the expected-totals comparison below is for. See
+     * ./serialize.ts.
+     */
+    return withItemLock(itemLockKey(tenantId, input.itemRef),
+      () => this.recordMovementLocked(tenant, input, actor, write));
+  }
+
+  private async recordMovementLocked(
+    tenant: TenantContext, input: MovementInput, actor: string, write: SheetWriteContext,
+  ): Promise<{ movement: Movement; applied: boolean }> {
 
     if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
       throw refuse('INVALID_QUANTITY',
@@ -234,18 +262,13 @@ export class InventoryService {
       ? input.adjusts! : MOVEMENT_EFFECT[input.movementType];
 
     /*
-     * READ, ADD, WRITE. The sheet holds cumulative totals and the mutation sets them
-     * absolutely, so the new total is computed from what the sheet says right now. The
-     * limitation this carries is described at the top of the file, and reconciliation is
-     * what makes it visible rather than silent.
+     * READ, ADD, WRITE — now with the starting point carried along and re-checked, and with
+     * a bounded retry when somebody outside this process moved the item first. The full
+     * concurrency model is at the top of this file and in ./serialize.ts.
      */
-    const current = (effect === 'PURCHASED' ? row.purchased : row.used) ?? 0;
-    const next = current + input.quantity;
-
     let applied = false;
     try {
-      await this.deps.writeTotals(write, input.itemRef,
-        effect === 'PURCHASED' ? { purchased: next } : { used: next });
+      await this.writeTotalsWithRetry(tenant, input, row, effect, write);
       applied = true;
     } catch (error) {
       /*
@@ -263,6 +286,48 @@ export class InventoryService {
     }, actor);
 
     return { movement, applied };
+  }
+
+  /**
+   * Write the new cumulative total, re-reading and recomputing if the sheet moved first.
+   *
+   * A refusal carrying STALE_TOTALS means another writer — necessarily in another process,
+   * because this one holds the item's lock — changed the running total between our read and
+   * our write. Nothing was written, so re-reading and adding the same quantity to the NEW
+   * total is correct rather than a double count: the movement is still the same movement.
+   *
+   * Bounded, because an unbounded retry against a genuinely hot item is an outage rather than
+   * a fix. Exhausting the attempts raises a named conflict the caller can act on; it does not
+   * fall back to writing a figure we know to be stale.
+   */
+  private async writeTotalsWithRetry(
+    tenant: TenantContext, input: MovementInput, first: WorkbookStockRow,
+    effect: 'PURCHASED' | 'USED', write: SheetWriteContext,
+  ): Promise<void> {
+    let row = first;
+    for (let attempt = 0; attempt <= STALE_RETRY_LIMIT; attempt += 1) {
+      const current = (effect === 'PURCHASED' ? row.purchased : row.used) ?? 0;
+      const next = current + input.quantity;
+      try {
+        await this.deps.writeTotals(
+          write, input.itemRef,
+          effect === 'PURCHASED' ? { purchased: next } : { used: next },
+          effect === 'PURCHASED' ? { expectedPurchased: current } : { expectedUsed: current },
+        );
+        return;
+      } catch (error) {
+        if (!isStalePrecondition(error)) throw error;
+        if (attempt === STALE_RETRY_LIMIT) {
+          throw refuse('CONCURRENT_MOVEMENT',
+            'This item is being moved by somebody else faster than this movement can be '
+            + 'applied. Nothing has been written. Try again in a moment.', 409);
+        }
+        const fresh = (await this.deps.stockRows(tenant))
+          .find((r) => r.itemRef === input.itemRef);
+        if (!fresh) throw notFound('item');
+        row = fresh;
+      }
+    }
   }
 
   async movements(tenant: TenantContext, filter: MovementFilter = {}): Promise<Movement[]> {
@@ -304,6 +369,88 @@ export class InventoryService {
         contextUsed: context.used,
         unappliedCount: context.unapplied,
       });
+    });
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Repair — the one thing an operator may re-apply, and nothing else
+   * ---------------------------------------------------------------- */
+
+  /**
+   * Re-apply a movement whose sheet write never landed.
+   *
+   * THE ONLY REPAIRABLE STATE IS `UNAPPLIED_CONTEXT`, and the reason is worth stating
+   * carefully, because the neighbouring state looks superficially similar.
+   *
+   *   UNAPPLIED_CONTEXT   a movement was recorded, the sheet refused it, and NOTHING claims
+   *                       the stock changed. The context — item, quantity, employee, task,
+   *                       reason — is already recorded and is not in doubt. Re-applying it
+   *                       replays a decision somebody already made and audited. This is
+   *                       repairable.
+   *
+   *   CONTEXT_AHEAD       the workbook's totals are behind what we hold context for: a write
+   *                       landed and was later overwritten, or was lost between two servers.
+   *                       DETECTED, AND NOT REPAIRABLE HERE — and the reason is arithmetic
+   *                       rather than caution. An ADJUSTMENT raises the workbook by N and
+   *                       records a context row of N, so a gap of 4 becomes a gap of 4 again:
+   *                       it never converges. Re-applying the original movement is refused
+   *                       too, because that row is already marked applied and re-applying it
+   *                       would move stock a second time on the strength of a guess about
+   *                       what happened.
+   *
+   *                       What closes it is a person looking: deciding whether the workbook
+   *                       or the record is right, correcting the sheet, and saying so. The
+   *                       product reports the divergence precisely and does not pretend to
+   *                       resolve it.
+   *
+   * WHAT THIS NEVER DOES: fabricate a movement, invent a quantity, alter the original
+   * context, or turn unexplained workbook history into a product-originated movement. It
+   * re-applies exactly the row that is already there, and marks that row applied only if the
+   * workbook actually took it.
+   */
+  async repairMovement(
+    tenant: TenantContext, movementId: string, actor: string, write: SheetWriteContext,
+  ): Promise<{ movement: Movement; applied: boolean }> {
+    const { tenantId } = requireTenant(tenant, 'inventory.movement.repair');
+
+    const movement = await this.deps.repo.getMovement(tenant, movementId);
+    if (!movement) throw notFound('movement');
+    if (movement.workbookApplied) {
+      throw refuse('ALREADY_APPLIED',
+        'The workbook already took this movement. There is nothing to repair, and re-applying '
+        + 'it would move the stock a second time.', 409);
+    }
+
+    return withItemLock(itemLockKey(tenantId, movement.itemRef), async () => {
+      const row = (await this.deps.stockRows(tenant))
+        .find((r) => r.itemRef === movement.itemRef);
+      if (!row) throw notFound('item');
+
+      const effect = effectOfMovement(movement);
+      /*
+       * Re-read and re-add, rather than replaying the number computed the first time. The
+       * original arithmetic was against a total that is now old, and writing that stale
+       * figure would silently discard every movement recorded since the failure.
+       */
+      await this.writeTotalsWithRetry(
+        tenant,
+        { itemRef: movement.itemRef, quantity: movement.quantity } as MovementInput,
+        row, effect, write,
+      );
+
+      const applied = await this.deps.repo.markMovementApplied(tenant, movementId);
+      if (!applied) throw notFound('movement');
+
+      await this.deps.audit.record({
+        actor: write.auth, action: 'inventory.movement.repair.applied',
+        entityType: 'INV_MOVEMENT', entityId: movementId, result: 'ALLOW',
+        requestId: write.requestId,
+        // The movement and the item. Never the quantity or the employee: a repair trail is
+        // not the place to accumulate a record of who used what.
+        metadata: { itemRef: movement.itemRef },
+      });
+
+      return { movement: applied, applied: true };
     });
   }
 
@@ -495,6 +642,19 @@ export class InventoryService {
     write: SheetWriteContext,
   ): Promise<{ receipt: GoodsReceipt; movements: readonly Movement[]; unapplied: number }> {
     requireTenant(tenant, 'inventory.goodsReceipt');
+    /*
+     * The property a receipt is attributed to, checked like every other property this domain
+     * accepts. It was the ONE path that took a caller-supplied property id and never asked
+     * whether the caller owned it — so a delivery could be attributed to a unit the business
+     * does not operate, or to a string that is not a property at all, and it would be stored
+     * and shown back on every screen that reads receipts.
+     *
+     * Not a cross-tenant read: receipts are tenant-scoped, and the other customer never saw
+     * anything. It is a hole in an otherwise uniform rule, which is exactly the kind that
+     * survives review — every sibling does this, and this one silently did not.
+     */
+    if (input.propertyId) await this.assertOwnProperty(tenant, input.propertyId);
+
     const po = await this.deps.repo.getPurchaseOrder(tenant, input.poId);
     if (!po) throw notFound('purchase order');
 
@@ -510,6 +670,44 @@ export class InventoryService {
       if (!byLine.has(line.poLineId)) throw notFound('order line');
       if (!Number.isFinite(line.receivedQuantity) || line.receivedQuantity <= 0) {
         throw refuse('INVALID_QUANTITY', 'A receipt receives a positive quantity.');
+      }
+    }
+
+    /*
+     * OVER-RECEIPT GUARD — what stops a retry from moving the stock twice.
+     *
+     * A goods receipt is not atomic with the workbook: it creates the receipt, then moves the
+     * sheet line by line. If that sequence dies halfway the operation is recorded as failed,
+     * and the honest way to finish the delivery is to submit it again with a fresh operation
+     * id — which, before this guard, created a SECOND receipt and moved the stock a SECOND
+     * time for the lines that had already succeeded.
+     *
+     * Comparing what has already been received against what was ordered catches exactly that,
+     * because the duplicate is the receipt that takes a line past its order. This is a fact
+     * about the ORDER, not about stock: it counts receipt lines, never a balance, and the
+     * workbook remains the only thing that knows how much exists.
+     *
+     * A genuine over-delivery is refused too, and that is the intended trade: a vendor who
+     * sent more than was ordered is a conversation somebody should have, not a number that
+     * should quietly appear in the stock figure.
+     */
+    const priorReceipts = await this.deps.repo.listGoodsReceipts(tenant, input.poId);
+    const alreadyReceived = new Map<string, number>();
+    for (const prior of priorReceipts) {
+      for (const line of prior.lines) {
+        alreadyReceived.set(line.poLineId,
+          (alreadyReceived.get(line.poLineId) ?? 0) + line.receivedQuantity);
+      }
+    }
+    for (const line of input.lines) {
+      const ordered = byLine.get(line.poLineId)!.quantity;
+      const total = (alreadyReceived.get(line.poLineId) ?? 0) + line.receivedQuantity;
+      if (total > ordered) {
+        throw refuse('OVER_RECEIPT',
+          `That line ordered ${ordered} and ${alreadyReceived.get(line.poLineId) ?? 0} `
+          + `already arrived; receiving ${line.receivedQuantity} more would exceed the order. `
+          + 'Nothing has been written. If the vendor genuinely sent more, raise an order for '
+          + 'the difference rather than recording it against this one.', 409);
       }
     }
 
@@ -547,11 +745,23 @@ export class InventoryService {
     }
 
     const fully = po.lines.every((l) => !l.itemRef
-      || input.lines.some((r) => r.poLineId === l.id && r.receivedQuantity >= l.quantity));
+      || ((alreadyReceived.get(l.id) ?? 0)
+        + (input.lines.find((r) => r.poLineId === l.id)?.receivedQuantity ?? 0)) >= l.quantity);
     await this.deps.repo.transitionPurchaseOrder(
       tenant, po.id, fully ? 'RECEIVED' : 'PARTIALLY_RECEIVED', actor);
 
-    return { receipt, movements, unapplied };
+    /*
+     * RE-READ BEFORE REPORTING, because `receipt` above is the object as it was CREATED —
+     * before any movement was attached to any of its lines. Reporting that object told every
+     * caller `stockApplied: false` on every line of a delivery that had in fact moved the
+     * workbook perfectly. A supervisor reading "the stock did not move" after a receipt that
+     * worked will record the delivery again, which is the one thing an over-receipt guard
+     * should never have to catch.
+     */
+    const settled = (await this.deps.repo.listGoodsReceipts(tenant, input.poId))
+      .find((r) => r.id === receipt.id) ?? receipt;
+
+    return { receipt: settled, movements, unapplied };
   }
 
   /* ---------------------------------------------------------------- *
@@ -598,7 +808,22 @@ export class InventoryService {
       }));
   }
 
-  /** Say that a maintenance ticket was about this asset. The sheet holds only prose. */
+  /**
+   * Say that a maintenance ticket was about this asset. The sheet holds only prose.
+   *
+   * THE ASSET IS RESOLVED; THE TICKET REFERENCE IS NOT, and that asymmetry is deliberate
+   * rather than an oversight. `assetRef` must name a row in the caller's own `16_ASSETS` or
+   * the link is refused. `ticketRef` is stored as given — it is the workbook's own free-text
+   * maintenance note in structured form, and a customer legitimately references tickets this
+   * product never created, including ones from before it existed.
+   *
+   * WHAT THAT COSTS, stated so nobody has to rediscover it: a link may name a ticket that
+   * does not exist, or that exists in another customer's workbook. Nothing crosses a tenant
+   * boundary — the link itself is tenant-scoped and the other customer sees none of it — but
+   * ANY future screen that joins `linkedTickets` back to a maintenance row must do the lookup
+   * in the caller's own data and treat a miss as ordinary. It must not treat this reference
+   * as proof the ticket is theirs, because it is not.
+   */
   async linkAssetTicket(
     tenant: TenantContext, assetRef: string, ticketRef: string, actor: string,
     note: string | null,
@@ -638,6 +863,22 @@ export class InventoryService {
 /* ------------------------------------------------------------------ *
  * Pure helpers
  * ------------------------------------------------------------------ */
+
+/** How many times a movement will recompute against a total somebody else moved first. */
+const STALE_RETRY_LIMIT = 3;
+
+/**
+ * Did the write refuse because the total it was computed from had already moved?
+ *
+ * `STALE_PRECONDITION` is raised only by the repository's precondition check, which runs
+ * strictly BEFORE `batchUpdate`. That ordering is the whole reason a retry is safe here:
+ * nothing was written, so recomputing against the current total and trying again cannot
+ * double-count. A verify failure — where the write went out and the read-back disagreed —
+ * carries a different code precisely so it is never retried this way.
+ */
+function isStalePrecondition(error: unknown): boolean {
+  return (error as { code?: string })?.code === 'STALE_PRECONDITION';
+}
 
 /**
  * How an item stands, from the sheet's own two numbers.
@@ -703,6 +944,20 @@ function toRow(input: MovementInput, row: WorkbookStockRow) {
     wastageReason: input.wastageReason ?? null,
     counterpartyPropertyId: input.counterpartyPropertyId ?? null,
   };
+}
+
+/**
+ * Which column a RECORDED movement corrects — read back from the row, never re-derived from
+ * a caller's input, because the caller of a repair supplies nothing but an id.
+ *
+ * The same rule the repository uses for totals: an adjustment carries its direction in the
+ * `[+]` / `[-]` prefix its reason was written with, and everything else is fixed by type.
+ */
+function effectOfMovement(m: Movement): 'PURCHASED' | 'USED' {
+  if (m.movementType === 'ADJUSTMENT') {
+    return (m.reason ?? '').startsWith('[+]') ? 'PURCHASED' : 'USED';
+  }
+  return MOVEMENT_EFFECT[m.movementType];
 }
 
 /** Actor comparison for separation of duty. Trimmed and case-folded, never exact-match only. */

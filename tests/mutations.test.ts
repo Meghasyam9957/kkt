@@ -75,10 +75,34 @@ beforeEach(() => { h = createWriteHarness(); });
  * 1 · Definitions honour the contract
  * ================================================================== */
 describe('mutations · contract alignment', () => {
+  /**
+   * Every mutation route has a definition, and every definition a route — EXCEPT the ones
+   * deliberately kept off the route table.
+   *
+   * `inventory.update` is the only such definition today. It sets `15_INVENTORY.Purchased`
+   * and `.Used` to absolute figures, and its one legitimate caller is
+   * `InventoryService.recordMovement`, which has already resolved the employee, the task and
+   * the reason. A route naming it would be a way to move stock with none of that behind it,
+   * which is precisely what `PATCH /api/inventory/:id` was until M-SEC-1.
+   *
+   * The exemption is a NAMED LIST rather than a loosened assertion, so adding a second
+   * unrouted definition is a deliberate act somebody has to write down here.
+   */
+  const INTENTIONALLY_UNROUTED = ['inventory.update'];
+
   it('every mutation route has a definition, and every definition a route', () => {
     const routeActions = API_ROUTES.filter((r) => r.mutates).map((r) => r.action).sort();
-    const defActions = Object.keys(MUTATION_DEFINITIONS).sort();
+    const defActions = Object.keys(MUTATION_DEFINITIONS)
+      .filter((a) => !INTENTIONALLY_UNROUTED.includes(a)).sort();
     expect(routeActions).toEqual(defActions);
+  });
+
+  it('the unrouted definitions really are unrouted, and really do exist', () => {
+    for (const action of INTENTIONALLY_UNROUTED) {
+      expect(MUTATION_DEFINITIONS[action], `${action} must still exist`).toBeDefined();
+      expect(API_ROUTES.filter((r) => r.action === action), `${action} must have no route`)
+        .toEqual([]);
+    }
   });
 
   it('every definition can only ever emit input columns of its sheet', () => {

@@ -108,6 +108,15 @@ const receiptSchema = z.object({
   }).strict()).min(1).max(50),
 }).strict();
 
+/**
+ * A repair supplies an id and nothing else. Deliberately: the quantity, the item, the
+ * employee and the reason are already on the recorded movement, and letting a caller restate
+ * any of them would be letting them rewrite history while claiming to repair it.
+ */
+const repairSchema = z.object({
+  operationId: z.string().uuid(),
+}).strict();
+
 const vendorLinkSchema = z.object({
   operationId: z.string().uuid(),
   vendorName: z.string().min(1).max(200),
@@ -195,7 +204,21 @@ export function registerInventoryHandlers(
         'Operational writes are not enabled in this environment. Reads are unaffected.');
     }
 
-    const requestHash = requestHashOf({ action, entityId: operationId, input: payload });
+    /*
+     * THE PATH IDENTIFIES THE INTENT, and it must be in the hash.
+     *
+     * This read `entityId: operationId`, which makes the hash CONSTANT for a given operation
+     * id — so two requests carrying the same id and the same body but a different `:id` in
+     * the path hashed identically. The second was answered `verified` and handed the FIRST
+     * one's stored result: approving request A and then request B with one retried operation
+     * id approved A twice, told the caller B had succeeded, and left B untouched.
+     *
+     * Finance and HR have always hashed `ctx.request.params?.id`; inventory did not, and the
+     * difference was invisible because every existing test varied the operation id too.
+     */
+    const requestHash = requestHashOf({
+      action, entityId: ctx.request.params?.id ?? null, input: payload,
+    });
     const begun = await deps.store.begin({
       operationId, tenantId: tenant.tenantId,
       actorId: ctx.auth.userId ?? null, actorRole: ctx.auth.role,
@@ -291,6 +314,30 @@ export function registerInventoryHandlers(
         const result = await deps.service.recordMovement(tenant, movement, ctx.auth.userId ?? 'unknown', {
           auth: ctx.auth, requestId: ctx.request.requestId ?? 'inv-movement',
         });
+        return { id: result.movement.id, view: movementView(result.movement) };
+      });
+  });
+
+  /**
+   * REPAIR — re-apply a movement the workbook refused.
+   *
+   * Carries `inventory.adjust` rather than `inventory.movement`, and deliberately so: this
+   * changes the stock figure without anybody recording a new fact about the world, which is
+   * the same power as correcting a count. OPERATIONS holds the first and not the second.
+   *
+   * Every safety property of the canonical path still applies — the service re-reads the
+   * current total, adds to it under the item's lock, and marks the row applied only if the
+   * workbook took it.
+   */
+  router.register('POST', '/api/inventory/movements/:id/repair', async (ctx) => {
+    const input = parsed(repairSchema, ctx.request.body);
+    if (!input.ok) return input.refusal;
+    const id = ctx.request.params?.id ?? '';
+    return write(ctx, 'inventory.movement.repair', 'INV_MOVEMENT', input.value.operationId,
+      input.value, async (tenant, deps) => {
+        const result = await deps.service.repairMovement(
+          tenant, id, ctx.auth.userId ?? 'unknown',
+          { auth: ctx.auth, requestId: ctx.request.requestId ?? 'inv-repair' });
         return { id: result.movement.id, view: movementView(result.movement) };
       });
   });
