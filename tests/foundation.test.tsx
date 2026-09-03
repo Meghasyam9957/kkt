@@ -10,7 +10,7 @@
  *   - vocabulary (no machinery language from shared components).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -386,14 +386,22 @@ describe('chart foundation', () => {
     };
     try {
       const { container } = render(<RevenueTrendChart points={POINTS} title="Revenue trend" />);
-      // Mounted: measured at 320, so the viewBox is the real container width, scale 1.
-      await new Promise((r) => setTimeout(r, 0));
-      expect(container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 320 260');
+      const viewBox = () => container.querySelector('svg')?.getAttribute('viewBox');
+
+      /*
+       * WAIT FOR THE OUTCOME, not for a fixed tick.
+       *
+       * Both assertions used to follow a single `setTimeout(…, 0)`, which assumes React
+       * finishes measuring and re-rendering within one macrotask. It usually does — and under
+       * a loaded machine running the whole suite it sometimes does not, so this test failed
+       * intermittently on a chart that was working perfectly. A poll asserts the same
+       * property without depending on how busy the box is.
+       */
+      await waitFor(() => expect(viewBox()).toBe('0 0 320 260'));
 
       currentWidth = 640;
       window.dispatchEvent(new Event('resize'));
-      await new Promise((r) => setTimeout(r, 0));
-      expect(container.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 640 260');
+      await waitFor(() => expect(viewBox()).toBe('0 0 640 260'));
     } finally {
       Element.prototype.getBoundingClientRect = original;
     }

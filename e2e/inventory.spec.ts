@@ -200,6 +200,60 @@ test('whoever asked cannot be whoever approves', async ({ page }) => {
   expect((await selfApproved.json()).error.code).toBe('SELF_APPROVAL');
 });
 
+test('the item-details endpoint cannot move stock, from a real browser session', async ({ page }) => {
+  await signInAs(page, 'Demo Administrator');
+  const before = await reconciliationFor(page, 'ITM-D-001');
+
+  for (const body of [{ used: 500 }, { purchased: 500 }, { used: 1, purchased: 1 }]) {
+    const res = await page.request.patch('/api/inventory/ITM-D-001', {
+      data: { operationId: randomUUID(), ...body },
+    });
+    expect(res.status(), JSON.stringify(body)).toBe(422);
+  }
+
+  const after = await reconciliationFor(page, 'ITM-D-001');
+  expect(after.workbookUsed).toBe(before.workbookUsed);
+  expect(after.workbookPurchased).toBe(before.workbookPurchased);
+
+  // What it may still do: item master data, with no stock movement anywhere in sight.
+  const ok = await page.request.patch('/api/inventory/ITM-D-001', {
+    data: { operationId: randomUUID(), minStock: 26, notes: 'M-SEC-1 browser check' },
+  });
+  expect(ok.status(), await ok.text()).toBe(200);
+});
+
+test('concurrent movements on one item all land — none is lost', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  const before = await reconciliationFor(page, 'ITM-D-002');
+
+  /*
+   * Five at once, through the real HTTP stack against the real dev server. Without the
+   * per-item serialisation these interleave and the last writer wins; the sum is the whole
+   * assertion.
+   */
+  const responses = await Promise.all([1, 2, 3, 4, 5].map((quantity) =>
+    page.request.post('/api/inventory/movements', {
+      data: {
+        operationId: randomUUID(), itemRef: 'ITM-D-002',
+        movementType: 'CONSUMPTION', quantity,
+      },
+    })));
+  for (const res of responses) expect(res.status(), await res.text()).toBe(200);
+
+  const after = await reconciliationFor(page, 'ITM-D-002');
+  expect(after.workbookUsed).toBe(before.workbookUsed + 15);
+  expect(after.contextUsed).toBe(before.contextUsed + 15);
+});
+
+test('repair is offered to nobody without the correcting capability', async ({ page }) => {
+  await signInAs(page, 'Demo Operations Manager');
+  // A movement id need not exist: the capability check happens before anything is looked up,
+  // so a 403 here proves the gate rather than the lookup.
+  const res = await page.request.post('/api/inventory/movements/00000000-0000-4000-8000-000000000000/repair',
+    { data: { operationId: randomUUID() } });
+  expect(res.status()).toBe(403);
+});
+
 test('an investor reaches no part of the inventory domain', async ({ page }) => {
   await signInAs(page, 'Investor Demo A');
 
