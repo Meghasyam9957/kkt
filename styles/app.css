@@ -785,14 +785,17 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   gap: var(--space-2);
   align-items: center;
 }
-/* Inside a table, the pair stays on ONE line. `flex-wrap: wrap` makes a flex container's
-   min-content width equal to its widest ITEM, so the table sized the actions column for one
-   button and stacked the other under it — a two-line row on every ticket. The register
-   already scrolls inside .sv-table-scroller if the sum does not fit. Below the tablet rung
-   the record stacks and wrapping is what a thumb wants. */
-@media (min-width: 640px) {
+
+/* Inside a register, the action pair stays on ONE line — but only from the wide rung.
+   `flex-wrap: wrap` makes a flex container's min-content width equal to its widest ITEM,
+   so the table sizes the actions column for a single button and stacks the other under it,
+   taking a 61px row to 97px. Below 1280 the tables genuinely do not have the room: forcing
+   nowrap there pushed the turnover register's Mark clean outside a 768px viewport, inside
+   the scroller, where a person cannot reach it without scrolling sideways first. */
+@media (min-width: 1280px) {
   .sv-table .sv-rowactions, .sv-table .sv-bkactions { flex-wrap: nowrap; }
 }
+
 
 /* The person on a task, with any disagreement about them beside the name rather than
    underneath it — a supervisor scans this column, and a second line per row would double
@@ -910,6 +913,17 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* Density: comfortable is the admin default above; compact is for ledgers. */
 .sv-table--compact th, .sv-table--compact td { padding: 6px var(--space-3); }
+
+/* TABLET DENSITY. A seven-column register at the comfortable 16px inset measured 767px
+   against a 734px scroller at 768px — so its last column, which is the ACTION, sat outside
+   the viewport and could only be reached by scrolling the table sideways first. Four pixels
+   an edge returns 56px across seven columns. Scoped above the phone rung, where the record
+   stacks and owns its own padding, and below the WIDE rung rather than the desktop one:
+   1024 is the tightest case in the product, because the 248px rail is back but the screen
+   has not grown, leaving a 726px column where 768px leaves 734px. */
+@media (min-width: 641px) and (max-width: 1279px) {
+  .sv-table th, .sv-table td { padding-inline: var(--s-3); }
+}
 
 /* Sticky first column for wide registers scrolled sideways: the row label stays. */
 .sv-table--sticky-first th:first-child,
