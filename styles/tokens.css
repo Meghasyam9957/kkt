@@ -80,9 +80,28 @@
   --info-fg: #2C5A8A;  --info-bg: #E6EDF5;
   --neutral-fg: #63635A; --neutral-bg: #EFEBE0;   /* moves with --text-muted; same literal */
 
-  /* ---- Typography ---- */
-  --font-display: "Cormorant Garamond", "EB Garamond", Georgia, serif;
-  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* ---- Typography ----
+   *
+   * THE LOADED FACE, NOT ITS NAME (M-UI-11).
+   *
+   * `app/layout.tsx` self-hosts both faces through `next/font/google`, which does NOT
+   * register them under their human names — it emits `@font-face { font-family:
+   * '__Cormorant_Garamond_<hash>' }` and hands the scoped name back as a custom property
+   * on <html>. Naming the family here therefore never matched anything next/font loaded:
+   * the stack fell through to the next entry the machine happened to have, so the product
+   * rendered in GEORGIA and SEGOE UI — measured, not inferred (a test string is 501.62px
+   * wide in `--font-display` and 501.62px in Georgia; real Cormorant is 388.94px).
+   *
+   * Every "the serif is thin at this size" note in app.css was written against Georgia,
+   * and Georgia's oldstyle figures are why a KPI zero sat at x-height while its 6 and 8
+   * reached cap height.
+   *
+   * `--font-display-loaded` expands to the scoped face PLUS next/font's metric-adjusted
+   * local fallback, so the stack below is longer than it reads. The var() fallback keeps
+   * this file meaningful on its own.
+   */
+  --font-display: var(--font-display-loaded, "Cormorant Garamond"), "EB Garamond", Georgia, serif;
+  --font-body: var(--font-body-loaded, "Inter"), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
   /* Financial tables must align digit-for-digit; this is not decorative. */
   --font-numeric-features: "tnum" 1, "lnum" 1;
@@ -296,5 +315,5 @@
   }
 }
 
-/* Utility the financial tables will rely on. */
-.numeric { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: var(--font-numeric-features); }
+/* The `.numeric` utility lives in app.css, beside the components that use it: this file
+   is FOUNDATION ONLY, and the rule was declared in both places with two different bodies. */

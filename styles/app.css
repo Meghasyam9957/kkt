@@ -53,7 +53,7 @@ a { color: inherit; text-decoration: none; }
   outline-offset: -3px;
 }
 
-.numeric { font-variant-numeric: tabular-nums lining-nums; }
+.numeric { font-variant-numeric: tabular-nums lining-nums; font-feature-settings: var(--font-numeric-features); }
 
 .sv-visually-hidden {
   position: absolute; width: 1px; height: 1px;
@@ -443,30 +443,39 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-size: 0.6875rem; letter-spacing: 0.09em; text-transform: uppercase;
   color: var(--text-muted); font-weight: 500;
 }
+/* LINING, TABULAR FIGURES ON THE RULE, not on the call site (M-UI-11). The display face
+   ships oldstyle figures: 0/1/2 sit at x-height, 6/8 reach cap height and 3/4/5/7/9 hang
+   below the baseline. Nine of the eleven places that render `.sv-kpi__value` do not pass
+   the `.numeric` utility, so a page of counts rendered with ragged digits — on a product
+   whose brief is financial trust. The rule is the only thing that can cover them all. */
 .sv-kpi__value {
   font-family: var(--font-display);
   font-size: var(--t-kpi); font-weight: 600; letter-spacing: -0.015em;
   color: var(--text-primary); margin-top: var(--space-2);
   line-height: 1.15;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
 }
 .sv-kpi__foot {
   margin-top: auto; padding-top: var(--space-2);
   display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
-  font-size: 0.6875rem;
+  /* The period and the change beside a figure are read, not scanned: the 11px floor is for
+     LABELS. */
+  font-size: var(--t-small);
 }
 .sv-kpi__period { color: var(--text-muted); }
 .sv-kpi__delta { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
 .sv-kpi__delta--up { color: var(--good-fg); }
 .sv-kpi__delta--down { color: var(--bad-fg); }
 .sv-kpi__delta--flat { color: var(--text-muted); }
-.sv-kpi__hint { font-size: 0.6875rem; color: var(--text-muted); margin-top: 4px; }
+.sv-kpi__hint { font-size: var(--t-small); color: var(--text-muted); margin-top: var(--s-1); }
 
 .sv-kpi--unavailable { border-style: dashed; border-color: var(--border-strong); background: var(--surface-sunken); }
 .sv-kpi__unavailable-value {
   font-family: var(--font-display); font-size: 1.125rem; font-weight: 600;
   color: var(--warn-fg); margin-top: var(--space-2);
 }
-.sv-kpi__unavailable-note { font-size: 0.6875rem; color: var(--text-muted); margin-top: 4px; }
+.sv-kpi__unavailable-note { font-size: var(--t-small); color: var(--text-muted); margin-top: var(--s-1); }
 
 /* ---- Pills, badges, buttons ---- */
 
@@ -822,9 +831,16 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-board__card--maintenance { border-top-color: var(--status-maintenance); }
 .sv-board__card--blocked { border-top-color: var(--status-blocked); }
 .sv-board__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
-.sv-board__id { font-family: var(--font-display); font-size: 1.125rem; font-weight: 600; }
+.sv-board__id {
+  font-family: var(--font-display); font-size: var(--t-num-secondary); font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
+}
 .sv-board__unit { font-size: 0.75rem; color: var(--text-muted); }
-.sv-board__detail { font-size: 0.75rem; color: var(--text-muted); margin-top: var(--space-2); min-height: 2.2em; }
+/* No min-height: 2.2em against a 1.5 leading reserves 1.47 lines — it cannot hold the two
+   it was sized for and over-reserves for one. The auto-fill row already stretches its cards
+   together, so the reserve only ever bought blank space. */
+.sv-board__detail { font-size: var(--t-small); color: var(--text-muted); margin-top: var(--space-2); }
 .sv-board__metrics {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-2) var(--space-4);
   margin-top: var(--space-3); padding-top: var(--space-3);
@@ -833,7 +849,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-board__metric { display: flex; flex-direction: column; }
 .sv-board__metric-label { font-size: var(--text-label); letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
 .sv-board__metric-value { font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums; }
-.sv-board__flag { font-size: var(--text-label); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+/* A sentence, not a label: "Best performer this month" was set in 11px tracked capitals,
+   which is the treatment reserved for one- and two-word field names. */
+.sv-board__flag { font-size: var(--t-small); font-weight: 600; letter-spacing: 0; }
 .sv-board__flag--best { color: var(--good-fg); }
 .sv-board__flag--weak { color: var(--warn-fg); }
 
@@ -848,7 +866,15 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-today__tile--attention { border-left-color: var(--warn-fg); background: var(--warn-bg); }
 .sv-today__tile--urgent { border-left-color: var(--bad-fg); background: var(--bad-bg); }
-.sv-today__count { font-family: var(--font-display); font-size: 1.875rem; font-weight: 600; line-height: 1; }
+/* --t-kpi, not a raw 1.875rem: that literal is the value of --t-h1, the PAGE TITLE role,
+   and this is a count. It now renders identically to .sv-summary__value, the surface the
+   product later built for the same job on the Today board. */
+.sv-today__count {
+  font-family: var(--font-display);
+  font-size: var(--t-kpi); font-weight: 600; line-height: 1.05;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
+}
 .sv-today__label { font-size: 0.75rem; color: var(--text-muted); }
 
 /* ---- Charts ---- */
@@ -883,7 +909,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-bar-row__bar--revenue { background: var(--chart-1); opacity: 0.45; }
 .sv-bar-row__bar--profit { background: var(--chart-2); opacity: 0.95; height: 100%; }
 .sv-bar-row__values { display: flex; flex-direction: column; align-items: flex-end; font-size: 0.8125rem; }
-.sv-bar-row__values .sv-muted, .sv-bar-row__values .sv-negative { font-size: 0.6875rem; }
+.sv-bar-row__values .sv-muted, .sv-bar-row__values .sv-negative { font-size: var(--t-small); }
 
 /* ---- Chart grid ---- */
 
@@ -1053,7 +1079,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   display: flex; align-items: center; gap: var(--space-3);
   font-size: 0.75rem; color: var(--text-muted); margin-bottom: var(--space-4);
 }
-.sv-signin__title { font-family: var(--font-display); font-size: 1.75rem; margin: 0 0 var(--space-1); }
+/* --t-h1, the page-title role: this was a raw 1.75rem, the value of --t-kpi, so the front
+   door — and app/error.tsx and app/not-found.tsx, which share this rule — set their
+   masthead one step below every other page title in the product. */
+.sv-signin__title {
+  font-family: var(--font-display);
+  font-size: var(--t-h1); font-weight: 600; letter-spacing: -0.01em;
+  margin: 0 0 var(--space-1);
+}
 .sv-signin__meta { font-size: 0.75rem; color: var(--text-muted); margin: 0 0 var(--space-4); }
 .sv-signin__lead { font-size: 0.875rem; margin: 0 0 var(--space-3); }
 .sv-signin__error {
@@ -1130,6 +1163,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-journey__order {
   /* Was 1.1rem — an orphan tier, and serif under the 18px floor. */
   font-family: var(--font-display); font-size: var(--t-num-secondary); color: var(--text-brand);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
 }
 .sv-journey__actor {
   font-size: var(--text-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
@@ -1470,7 +1505,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-activity__actor { color: var(--text-muted); }
 .sv-activity__when { color: var(--text-muted); }
 .sv-activity__detail { font-size: 0.8125rem; color: var(--text-muted); margin-top: 2px; }
-.sv-activity__meta { font-size: var(--text-label); color: var(--text-muted); margin-top: 2px; }
+.sv-activity__meta { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; }
 .sv-activity__empty { font-size: 0.8125rem; color: var(--text-muted); }
 
 /* ---- Navigation icons (B1: emoji retired) ---- */
@@ -1650,6 +1685,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-daynav__date {
   font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
 }
 .sv-daynav__icon--back { transform: rotate(180deg); }
 .sv-daynav__reset { flex: none; }
@@ -1696,6 +1733,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-family: var(--font-display);
   font-size: var(--t-kpi); font-weight: 600; line-height: 1.05;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
 }
 .sv-summary__label {
   font-size: var(--text-label); letter-spacing: var(--tracking-label);
@@ -1722,7 +1761,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-oprow__name { font-size: var(--t-body); font-weight: 600; color: var(--text-primary); }
 .sv-oprow__where { font-weight: 600; }
 .sv-oprow__meta { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; }
-.sv-oprow__stay { font-size: var(--text-label); color: var(--text-muted); margin-top: 2px; }
+.sv-oprow__stay { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; }
 .sv-oprow__done { font-size: var(--t-small); color: var(--text-muted); }
 
 @media (min-width: 640px) {
@@ -1825,7 +1864,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Cells that carry a fact and its qualifier ---- */
 .sv-bkcell { display: inline-flex; flex-direction: column; gap: 1px; }
-.sv-bkcell__sub { font-size: var(--text-label); color: var(--text-muted); }
+.sv-bkcell__sub { font-size: var(--t-small); color: var(--text-muted); }
 
 /* ---- Row actions: one primary, one quiet escape hatch ---- */
 .sv-bkactions { display: inline-flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
@@ -1899,7 +1938,11 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-size: var(--text-label); letter-spacing: var(--tracking-label);
   text-transform: uppercase; color: var(--text-muted); font-weight: 600;
 }
-.sv-calnav__month { font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600; }
+.sv-calnav__month {
+  font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
+}
 .sv-calnav__reset { flex: none; }
 @media (max-width: 560px) {
   .sv-calnav__step-text { display: none; }
@@ -1961,7 +2004,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   display: flex; align-items: center; gap: var(--s-2);
   height: 100%; padding: 0 var(--s-2);
   border-radius: var(--r-1);
-  font-size: var(--text-label); color: var(--text-primary); text-decoration: none;
+  /* The guest name and booking status inside every bar of the calendar. This is the
+     densest operational read in the product; it was set at the 11px LABEL floor. */
+  font-size: var(--t-small); color: var(--text-primary); text-decoration: none;
   overflow: hidden; white-space: nowrap;
   transition: filter var(--m-fast) var(--e-standard);
 }
@@ -2006,6 +2051,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-calday__heading {
   padding: var(--s-3) var(--s-5) 0;
   font-family: var(--font-display); font-size: var(--t-h2); font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: var(--font-numeric-features);
 }
 
 .sv-callist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -2270,7 +2317,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    A financial number a reader can misread is worse than one they cannot see. */
 .sv-kpi__note {
   margin-top: var(--s-2);
-  font-size: var(--t-label); line-height: 1.4;
+  font-size: var(--t-small); line-height: var(--leading-normal);
   color: var(--text-muted);
 }
 
