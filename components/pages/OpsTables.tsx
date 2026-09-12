@@ -36,8 +36,11 @@ const HK_TONE: Record<string, Tone> = {
 const INSPECTION_TONE: Record<string, Tone> = {
   Passed: 'good', Pending: 'warn', Failed: 'bad',
 };
+/* The maintenance lifecycle in the SAME vocabulary the turnover statuses use above: an
+   owned ticket is `info` (somebody has it), an unowned or blocked one is `warn`/`bad`.
+   'Assigned' was rendering `warn` here and `info` fourteen lines up, in one file. */
 const MNT_TONE: Record<string, Tone> = {
-  Open: 'bad', Assigned: 'warn', 'In Progress': 'info', Waiting: 'warn',
+  Open: 'bad', Assigned: 'info', 'In Progress': 'info', Waiting: 'warn',
   Resolved: 'good', Closed: 'neutral',
 };
 const PRIORITY_TONE: Record<string, Tone> = {
@@ -182,7 +185,7 @@ export function MaintenanceTable({ rows, assignment }: {
     { key: 'id', header: 'Ticket', render: (r) => <code className="numeric">{r.ticketId}</code> },
     { key: 'property', header: 'Property', render: (r) => r.propertyId },
     {
-      key: 'issue', header: 'Issue',
+      key: 'issue', header: 'Issue', wrap: true,
       render: (r) => (
         <span>
           {r.category}
@@ -314,7 +317,7 @@ export function GuestRequestsTable({ rows, tracked }: { rows: GuestRequestRow[];
   const columns: Column<GuestRequestRow>[] = [
     { key: 'id', header: 'Request', render: (r) => <code className="numeric">{r.requestId}</code> },
     { key: 'property', header: 'Property', render: (r) => r.propertyId },
-    { key: 'summary', header: 'What the guest needs', render: (r) => r.summary },
+    { key: 'summary', header: 'What the guest needs', wrap: true, render: (r) => <span>{r.summary}</span> },
     { key: 'raised', header: 'Raised', render: (r) => r.raisedOn },
     {
       key: 'status', header: 'Status',

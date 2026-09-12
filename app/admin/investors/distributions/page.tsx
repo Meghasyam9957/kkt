@@ -1,5 +1,5 @@
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
-import { Card, CardHeader, CardBody, ConfigurationRequired, StatusPill } from '@/components/ui/primitives';
+import { Card, CardHeader, CardBody, ConfigurationRequired, StatusPill, TableScroller } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { formatCurrency, formatPercent, formatMonthLong } from '@/lib/shared/format';
 import type { InvestorPreviewView } from '@/lib/data/providers/types';
@@ -76,6 +76,10 @@ function Distributions({ preview, period }: { preview: InvestorPreviewView; peri
         <CardHeader title={`Waterfall — ${formatMonthLong(period)}`}
           subtitle="Every percentage comes from the workbook's business rules. Nothing is assumed here." />
         <CardBody className="sv-card__body--flush">
+          {/* The one table in the product outside the scroller. Every cell is `nowrap`, and
+              its widest row header — "Reserve · management fee · carry-forward" — set the
+              document's minimum width at 375px. */}
+          <TableScroller label="Distribution waterfall">
           <table className="sv-table">
             <caption className="sv-visually-hidden">Distribution waterfall</caption>
             <tbody>
@@ -115,6 +119,7 @@ function Distributions({ preview, period }: { preview: InvestorPreviewView; peri
               </tr>
             </tbody>
           </table>
+          </TableScroller>
         </CardBody>
       </Card>
 

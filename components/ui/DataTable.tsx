@@ -37,6 +37,12 @@ export interface Column<T> {
   footer?: ReactNode;
   /** Opt-in: this column's header becomes a sort control (needs `onSort` too). */
   sortable?: boolean;
+  /**
+   * This column carries a SENTENCE, not a value, so it wraps. Every cell is `nowrap` by
+   * default because a register is compared down its columns — but a nowrap cell sets its
+   * column's minimum width, and prose in one sets the whole table's.
+   */
+  wrap?: boolean;
 }
 
 /** Which column a list is ordered by, and which way. */
@@ -93,7 +99,7 @@ export function DataTable<T>({
                 <th
                   key={column.key}
                   scope="col"
-                  className={column.numeric ? 'sv-num' : ''}
+                  className={[column.numeric ? 'sv-num' : '', column.wrap ? 'sv-wrap' : ''].filter(Boolean).join(' ')}
                   /* Announced by the header itself, so a screen-reader user hears the
                      order without having to infer it from an arrow they cannot see. */
                   aria-sort={sortable
@@ -128,7 +134,7 @@ export function DataTable<T>({
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={column.numeric ? 'sv-num' : ''}
+                    className={[column.numeric ? 'sv-num' : '', column.wrap ? 'sv-wrap' : ''].filter(Boolean).join(' ')}
                     data-label={column.header}
                   >
                     {column.render(row)}

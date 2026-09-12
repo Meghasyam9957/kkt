@@ -289,7 +289,9 @@ function TodayStrip({ today }: { today: DashboardData['today'] }) {
     { key: 'checkIns', label: 'Check-ins', value: today.checkIns, tone: 'normal' as const },
     { key: 'checkOuts', label: 'Check-outs', value: today.checkOuts, tone: 'normal' as const },
     { key: 'pendingCleaning', label: 'Pending cleaning', value: today.pendingCleaning, tone: today.pendingCleaning > 0 ? 'attention' as const : 'normal' as const },
-    { key: 'openMaintenance', label: 'Open maintenance', value: today.openMaintenance, tone: today.openMaintenance > 0 ? 'urgent' as const : 'normal' as const },
+    // `attention`, matching the operations board: one concept cannot hold two ranks, and
+    // on Today `urgent` is reserved for the derived unowned-urgent list.
+    { key: 'openMaintenance', label: 'Open maintenance', value: today.openMaintenance, tone: today.openMaintenance > 0 ? 'attention' as const : 'normal' as const },
     { key: 'lowStock', label: 'Low stock items', value: today.lowStock, tone: today.lowStock > 0 ? 'attention' as const : 'normal' as const },
     { key: 'guestRequests', label: 'Guest requests', value: today.guestRequests, tone: today.guestRequests > 0 ? 'attention' as const : 'normal' as const },
   ];

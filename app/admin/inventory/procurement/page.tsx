@@ -250,7 +250,7 @@ export default async function ProcurementPage() {
             title="Requests"
             subtitle="Whoever asked cannot be whoever approves — refused by the server, and by a database constraint underneath it."
           />
-          <CardBody>
+          <CardBody className="sv-card__body--flush">
             <DataTable
               columns={requestColumns}
               rows={requests}
@@ -269,7 +269,7 @@ export default async function ProcurementPage() {
             title="Purchase orders"
             subtitle="A delivery is recorded by what actually arrived. Short deliveries are the ordinary case."
           />
-          <CardBody>
+          <CardBody className="sv-card__body--flush">
             <DataTable
               columns={orderColumns}
               rows={orders}
@@ -288,8 +288,8 @@ export default async function ProcurementPage() {
 function Count({ label, value }: { label: string; value: number }) {
   return (
     <div className="sv-kpi">
-      <dt className="sv-kpi__label">{label}</dt>
-      <dd className="sv-kpi__value">{value}</dd>
+      <span className="sv-kpi__label">{label}</span>
+      <span className="sv-kpi__value numeric">{value}</span>
     </div>
   );
 }

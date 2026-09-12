@@ -78,7 +78,7 @@ export function OperationalPropertyTable({ rows, period }: { rows: OperationalPr
       key: 'status', header: 'Status',
       render: (r) => <StatusPill tone={UNIT_STATUS_TONE[r.status] ?? 'neutral'}>{r.status}</StatusPill>,
     },
-    { key: 'note', header: 'Note', render: (r) => r.statusDetail ?? '—' },
+    { key: 'note', header: 'Note', wrap: true, render: (r) => <span>{r.statusDetail ?? '—'}</span> },
   ];
 
   return (

@@ -482,7 +482,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-kpi-grid {
   display: grid; gap: var(--space-3);
-  grid-template-columns: repeat(auto-fill, minmax(206px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(206px, 100%), 1fr));
 }
 .sv-kpi {
   background: var(--surface-card);
@@ -524,6 +524,36 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-kpi__hint { font-size: var(--t-small); color: var(--text-muted); margin-top: var(--s-1); }
 
 .sv-kpi--unavailable { border-style: dashed; border-color: var(--border-strong); background: var(--surface-sunken); }
+
+/* A FIGURE INSIDE A CARD IS A LINE IN A SECTION, NOT A SECOND OBJECT.
+   .sv-kpi paints the same white fill, the same hairline and the same 6px radius as the
+   .sv-card it sits in, so the inner border separated white from white: a rounded rectangle
+   inside a rounded rectangle, 116px tall, two to seven times per page. The figures become
+   one hairline-ruled band — the device the Pulse row already uses. */
+.sv-card__body > .sv-kpi-grid {
+  /* The separators are the ITEMS' own left edges, not a fill showing through a 1px gap:
+     this is an auto-fill grid, so a two-figure band on a wide card leaves empty tracks,
+     and a band-coloured background painted them as a beige void. */
+  gap: 0;
+  background: none;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.sv-card__body > .sv-kpi-grid > .sv-kpi {
+  border: none; border-left: 1px solid var(--line); border-radius: 0; min-height: 0;
+  padding: var(--s-4) var(--s-4) var(--s-3);
+  background: var(--surface-card);
+}
+.sv-card__body > .sv-kpi-grid > .sv-kpi:first-child { border-left: none; }
+/* "Not configured" keeps its dashed edge and sunken fill — it is not a figure. */
+.sv-card__body > .sv-kpi-grid > .sv-kpi--unavailable {
+  border: 1px dashed var(--border-strong); background: var(--surface-sunken);
+}
+/* The Pulse band bounds itself on the page; inside a card the card has already done it. */
+.sv-card__body > .sv-kpi-row {
+  background: transparent; border: none; border-radius: 0;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
 .sv-kpi__unavailable-value {
   font-family: var(--font-display); font-size: 1.125rem; font-weight: 600;
   color: var(--warn-fg); margin-top: var(--space-2);
@@ -553,7 +583,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   white-space: nowrap;
 }
 .sv-pill__dot { width: 6px; height: 6px; border-radius: var(--radius-full); background: currentColor; }
-.sv-pill--good { background: var(--good-bg); color: var(--good-fg); }
+/* RESTING: nothing needs doing, so nothing is filled. The dot rule is required, not
+   optional — .sv-pill__dot is `background: currentColor`, so without it the dot would
+   follow the label to --text-primary and the tone would vanish. warn/bad/info keep their
+   fill: they ask for something. neutral keeps its own pair, or "blocked" and "unstyled"
+   collapse together. */
+.sv-pill--good { background: transparent; color: var(--text-primary); }
+.sv-pill--good .sv-pill__dot { background: var(--good-fg); }
 .sv-pill--warn { background: var(--warn-bg); color: var(--warn-fg); }
 .sv-pill--bad { background: var(--bad-bg); color: var(--bad-fg); }
 .sv-pill--info { background: var(--info-bg); color: var(--info-fg); }
@@ -563,7 +599,11 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-pill--neutral { background: var(--neutral-bg); color: var(--neutral-fg); }
 
 .sv-badge {
-  font-size: var(--text-label); letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+  /* inline-block, not inline: vertical padding and the inset hairline below do not
+     contribute to an inline box, so a wrapped row clipped the badge into the line above
+     and it never baseline-aligned with the .sv-pill it usually sits beside. */
+  display: inline-block; vertical-align: middle;
+  font-size: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase; font-weight: 600;
   /* The same zero-layout-cost edge as .sv-pill, for the same reason: a badge on a sunken
      plate has no fill to distinguish it. Inset shadow, never a border — see .sv-pill. */
   box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
@@ -732,6 +772,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   gap: var(--space-2);
   align-items: center;
 }
+/* Inside a table, the pair stays on ONE line. `flex-wrap: wrap` makes a flex container's
+   min-content width equal to its widest ITEM, so the table sized the actions column for one
+   button and stacked the other under it — a two-line row on every ticket. The register
+   already scrolls inside .sv-table-scroller if the sum does not fit. Below the tablet rung
+   the record stacks and wrapping is what a thumb wants. */
+@media (min-width: 640px) {
+  .sv-table .sv-rowactions, .sv-table .sv-bkactions { flex-wrap: nowrap; }
+}
 
 /* The person on a task, with any disagreement about them beside the name rather than
    underneath it — a supervisor scans this column, and a second line per row would double
@@ -826,13 +874,20 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   color: var(--text-muted); font-weight: 600;
   background: var(--surface-sunken);
   border-bottom: 1px solid var(--border-strong);
-  position: sticky; top: 0; z-index: 1;
+  /* No `position: sticky` here: it offsets against the nearest scrolling ancestor, which
+     is .sv-table-scroller, and that box has no bounded height — so it never scrolled
+     vertically and `top: 0` never fired. A bounded register is a separate change. */
 }
 /* --surface-hover, not --surface-sunken: the sunken plate is 1.11:1 from the cream page,
    so a row highlight built from it was a state nobody could see. */
 .sv-table tbody tr:hover { background: var(--surface-hover); }
 .sv-table tbody tr:last-child td { border-bottom: none; }
 .sv-table .sv-num { text-align: right; font-variant-numeric: tabular-nums lining-nums; }
+/* A column that carries a SENTENCE, not a value. A nowrap cell sets its column's minimum
+   width; prose in one sets the whole table's, which is what pushed the actions column of
+   the maintenance register onto two lines. */
+.sv-table th.sv-wrap, .sv-table td.sv-wrap { white-space: normal; line-height: 1.45; }
+.sv-table td.sv-wrap > * { display: inline-block; max-width: 38ch; }
 .sv-table tfoot td {
   font-weight: 600; background: var(--surface-sunken);
   border-top: 2px solid var(--border-strong);
@@ -901,11 +956,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Property board ---- */
 
-.sv-board { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); }
+.sv-board { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fill, minmax(min(268px, 100%), 1fr)); }
 .sv-board__card {
   background: var(--surface-card); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md); padding: var(--space-4);
-  border-top: 3px solid var(--border-strong);
+  /* The status is already stated in words by the pill in the head; this is a restrained
+     marker, not a tab, and 3px is the weight this system reserves for structure. */
+  border-top: 2px solid var(--border-subtle);
 }
 .sv-board__card--occupied { border-top-color: var(--status-occupied); }
 .sv-board__card--available { border-top-color: var(--status-available); }
@@ -939,25 +996,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Operations today ---- */
 
-.sv-today { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.sv-today__tile {
-  background: var(--surface-card); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md); padding: var(--space-4);
-  display: flex; flex-direction: column; gap: 2px;
-  border-left: 3px solid var(--border-strong);
-}
-.sv-today__tile--attention { border-left-color: var(--warn-fg); background: var(--warn-bg); }
-.sv-today__tile--urgent { border-left-color: var(--bad-fg); background: var(--bad-bg); }
-/* --t-kpi, not a raw 1.875rem: that literal is the value of --t-h1, the PAGE TITLE role,
-   and this is a count. It now renders identically to .sv-summary__value, the surface the
-   product later built for the same job on the Today board. */
-.sv-today__count {
-  font-family: var(--font-display);
-  font-size: var(--t-kpi); font-weight: 600; line-height: 1.05;
-  font-variant-numeric: tabular-nums lining-nums;
-  font-feature-settings: var(--font-numeric-features);
-}
-.sv-today__label { font-size: 0.75rem; color: var(--text-muted); }
+/* (The dashboard's day strip is the same object as the operations board's and shares its
+   rules — see .sv-summary below. It was six bordered, rounded, white tiles laid inside a
+   bordered, rounded, white card, and its count was set at the PAGE TITLE size.) */
 
 /* ---- Charts ---- */
 
@@ -995,7 +1036,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 /* ---- Chart grid ---- */
 
-.sv-chart-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+/* minmax(min(…, 100%), 1fr) — the guard .sv-grid and .sv-split already carry: a 420px
+   track cannot fit a 343px column, and an auto-fit grid does not shrink its floor. */
+.sv-chart-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
 
 /* ---- Copilot shell ---- */
 
@@ -1005,7 +1048,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   align-items: center; text-align: center; gap: var(--space-3);
   padding: var(--space-8) var(--space-5);
 }
-.sv-copilot__prompts { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); width: 100%; margin-top: var(--space-4); }
+.sv-copilot__prompts { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); width: 100%; margin-top: var(--space-4); }
 .sv-copilot__prompt {
   text-align: left; padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
@@ -1066,7 +1109,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* Provenance: system facts, never mixed into the answer container above. */
 .sv-copilot__facts {
   display: grid; gap: var(--space-2) var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
   font-size: 0.8125rem;
 }
 .sv-copilot__facts dt { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.6875rem; }
@@ -1200,7 +1243,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-demo__meta { font-size: 0.75rem; color: var(--text-muted); margin: 0; }
 .sv-demo__scenarios {
   display: grid; gap: var(--space-2);
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
 }
 .sv-demo__scenario {
   width: 100%; height: 100%; text-align: left; font: inherit; cursor: pointer;
@@ -1290,7 +1333,6 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
  * PHASE 5B — operations board, demo notices
  * ==================================================================== */
 
-.sv-stack-gap { height: var(--space-4); }
 /* min(…, 100%) so a 352px track cannot exceed a 343px column — the Today board scrolled
    sideways at 375px without it. Same guard the shared .sv-grid primitive carries. */
 /* Each column is as tall as its own content. Grid's default is `stretch`, and neither the
@@ -1490,7 +1532,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   width: min(480px, calc(100vw - 2 * var(--space-4)));
   background: var(--surface-card); border-radius: var(--radius-md);
   border: 1px solid var(--line); box-shadow: var(--shadow-float);
-  display: flex; flex-direction: column; max-height: calc(100vh - 2 * var(--space-6));
+  display: flex; flex-direction: column; max-height: calc(100dvh - 2 * var(--space-6));
 }
 .sv-modal__header {
   display: flex; align-items: center; justify-content: space-between;
@@ -1672,11 +1714,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-kpi-row .sv-kpi__value { white-space: nowrap; font-size: clamp(1.25rem, 0.35rem + 1.1vw, 1.625rem); }
 .sv-kpi-row .sv-kpi--hero .sv-kpi__value { font-size: clamp(1.5rem, 0.5rem + 1.9vw, 2.75rem); }
 .sv-kpi-row .sv-kpi:first-child { border-left: none; }
-.sv-kpi--hero .sv-kpi__value { font-size: clamp(2rem, 1.5rem + 1.5vw, 2.75rem); }
+/* One hero tier, and it lives in the Pulse band: the (0,3,0) rule above always wins over
+   a bare .sv-kpi--hero, and the only caller that emits `hero` renders it inside
+   .sv-kpi-row. Promote that rule rather than adding a second clamp if that changes. */
 .sv-kpi--secondary .sv-kpi__value { font-size: var(--t-num-secondary); }
 .sv-kpi--secondary { padding: var(--space-3) var(--space-4); }
 .sv-kpi__source { font-size: var(--text-label); color: var(--text-muted); margin-top: var(--space-1); }
-.sv-kpi-grid--secondary { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.sv-kpi-grid--secondary { grid-template-columns: repeat(auto-fill, minmax(min(200px, 100%), 1fr)); }
 
 @media (max-width: 1279px) {
   .sv-kpi-row { grid-template-columns: repeat(3, 1fr); }
@@ -1771,7 +1815,6 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 
 /* ---- Row actions ---- */
-.sv-row-actions { display: inline-flex; gap: var(--space-2); flex-wrap: wrap; }
 
 /* ==================================================================== *
  * M-UI-3 — TODAY: the front-office command desk.
@@ -1828,7 +1871,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 
 /* ---- Summary: the shape of the day, figures leading ---- */
-.sv-summary {
+.sv-summary, .sv-today {
   display: grid; gap: 1px;
   grid-template-columns: repeat(auto-fit, minmax(min(7rem, 100%), 1fr));
   background: var(--line);
@@ -1837,7 +1880,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   overflow: hidden;
   margin-bottom: var(--s-5);
 }
-.sv-summary__tile {
+.sv-summary__tile, .sv-today__tile {
   display: flex; flex-direction: column; gap: 2px;
   padding: var(--s-4) var(--s-3);
   background: var(--surface-card);
@@ -1852,25 +1895,33 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    1.23:1 against the white tiles beside them and 1.08:1 against EACH OTHER, so with three
    of seven tiles tinted on an ordinary morning the rank was unreadable and the colour was
    noise. Each tile also states its tone as a word for a screen reader (TodayBoard.tsx). */
-.sv-summary__tile--attention { border-left-color: var(--warn-fg); }
-.sv-summary__tile--attention .sv-summary__label { color: var(--warn-fg); }
-.sv-summary__tile--urgent {
+.sv-summary__tile--attention, .sv-today__tile--attention { border-left-color: var(--warn-fg); }
+.sv-summary__tile--attention .sv-summary__label,
+.sv-today__tile--attention .sv-today__label { color: var(--warn-fg); }
+/* --urgent is held for a genuinely critical tile. Open maintenance was re-ranked to
+   `attention` (it is `attention` on the operations board, and one concept cannot hold two
+   ranks), so nothing on the dashboard strip currently reaches it. */
+.sv-summary__tile--urgent, .sv-today__tile--urgent {
   border-left-width: 6px; border-left-color: var(--bad-fg);
   background: var(--bad-bg);
 }
 .sv-summary__tile--urgent .sv-summary__value,
-.sv-summary__tile--urgent .sv-summary__label { color: var(--bad-fg); }
-.sv-summary__value {
+.sv-summary__tile--urgent .sv-summary__label,
+.sv-today__tile--urgent .sv-today__count,
+.sv-today__tile--urgent .sv-today__label { color: var(--bad-fg); }
+.sv-summary__value, .sv-today__count {
   font-family: var(--font-display);
   font-size: var(--t-kpi); font-weight: 600; line-height: 1.05;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: var(--font-numeric-features);
 }
-.sv-summary__label {
+.sv-summary__label, .sv-today__label {
   font-size: var(--text-label); letter-spacing: var(--tracking-label);
   text-transform: uppercase; color: var(--text-muted); font-weight: 600;
 }
+/* A strip inside a card is the card's own band, not a block with air under it. */
+.sv-card__body > .sv-summary, .sv-card__body > .sv-today { margin-bottom: 0; }
 
 /* ---- Operational rows: WHAT · WHERE · ACTION ---- */
 .sv-oplist { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
@@ -2261,7 +2312,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    applies here without a second copy of it. */
 .sv-availform__fields {
   display: grid; gap: var(--s-3) var(--s-4);
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
 }
 .sv-availform__go {
   display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap;
@@ -2491,7 +2542,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
   /* Application chrome is not part of the document. */
   .sv-sidebar, .sv-topbar, .sv-skip-link, .sv-toasts,
-  .sv-overlay, .sv-scrim, .sv-filter-bar, .sv-demo-notice { display: none !important; }
+  .sv-overlay, .sv-scrim, .sv-filters, .sv-bktools, .sv-demo-notice { display: none !important; }
 
   /* The content column becomes the page. */
   .sv-shell, .sv-main { display: block; margin: 0; padding: 0; }

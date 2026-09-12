@@ -166,7 +166,7 @@ export default async function StockPage() {
             title="Every item"
             subtitle="A movement records what happened and why. The workbook recalculates the balance."
           />
-          <CardBody>
+          <CardBody className="sv-card__body--flush">
             <DataTable
               columns={columns}
               rows={rows}
@@ -182,13 +182,21 @@ export default async function StockPage() {
   );
 }
 
+/*
+ * A figure keeps the figure slot. Wrapping a bare NUMBER in a tinted pill inverted the type
+ * hierarchy — the count shrank from 28px display serif to 12px sans precisely when it
+ * became exceptional — and made the tone colour-alone, because the pill's only content was
+ * a digit. The exception is now said in words, under the figure, in the foot the KPI block
+ * already reserves.
+ */
 function Count({ label, value, tone }: { label: string; value: number; tone?: Tone }) {
   return (
     <div className="sv-kpi">
-      <dt className="sv-kpi__label">{label}</dt>
-      <dd className="sv-kpi__value">
-        {tone && value > 0 ? <StatusPill tone={tone}>{value}</StatusPill> : value}
-      </dd>
+      <span className="sv-kpi__label">{label}</span>
+      <span className="sv-kpi__value numeric">{value}</span>
+      {tone && value > 0 ? (
+        <span className="sv-kpi__foot"><StatusPill tone={tone}>needs a look</StatusPill></span>
+      ) : null}
     </div>
   );
 }

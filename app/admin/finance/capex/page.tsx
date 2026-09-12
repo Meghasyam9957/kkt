@@ -1,5 +1,5 @@
 import { ReadOnlyPage, type SearchParams } from '@/lib/shared/page-helpers';
-import { Card, CardHeader, CardBody, StatusPill } from '@/components/ui/primitives';
+import { Card, CardHeader, CardBody, StatusPill, type Tone } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { formatCurrency, formatDateShort } from '@/lib/shared/format';
 import type { CapexRow } from '@/lib/data/providers/types';
@@ -44,8 +44,10 @@ export default async function CapexPage({ searchParams }: { searchParams: Promis
   );
 }
 
-const STATUS_TONE: Record<string, 'good' | 'warn' | 'bad' | 'neutral'> = {
-  Paid: 'good', Pending: 'warn', Partial: 'warn', Failed: 'bad',
+/* The payment vocabulary, in the tone the ledger, the payout register and the investor
+   distributions all use. `Partial` is `info`: money has moved, it is not a warning. */
+const STATUS_TONE: Record<string, Tone> = {
+  Paid: 'good', Pending: 'warn', Partial: 'info', Failed: 'bad',
 };
 
 function CapexTable({ rows }: { rows: CapexRow[] }) {

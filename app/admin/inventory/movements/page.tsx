@@ -69,7 +69,7 @@ export default async function MovementsPage() {
       render: (r) => <code className="numeric">{r.itemRef}</code>,
     },
     {
-      key: 'what', header: 'What happened',
+      key: 'what', header: 'What happened', wrap: true,
       render: (r) => {
         const meta = MOVEMENT[r.movementType]
           ?? { label: r.movementType, tone: 'neutral' as Tone, direction: '' };
@@ -142,7 +142,7 @@ export default async function MovementsPage() {
             title="Most recent first"
             subtitle="Quantities are per event. They are deliberately not totalled: the balance is the workbook's."
           />
-          <CardBody>
+          <CardBody className="sv-card__body--flush">
             <DataTable
               columns={columns}
               rows={rows}

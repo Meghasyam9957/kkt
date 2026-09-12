@@ -146,7 +146,7 @@ export default async function ReconciliationPage() {
       },
     },
     {
-      key: 'action', header: 'What to do',
+      key: 'action', header: 'What to do', wrap: true,
       render: (r) => {
         const context = r.taskType === 'MAINTENANCE' ? maintenanceAssignment : assignment;
         /*
