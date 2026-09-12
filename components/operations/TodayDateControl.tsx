@@ -72,7 +72,7 @@ export function TodayDateControl({ date, operationalDate }: {
 
       {/* The way back. Absent when it would do nothing. */}
       {isToday ? null : (
-        <Button variant="primary" className="sv-daynav__reset" onClick={() => goto(operationalDate)}>
+        <Button variant="ghost" className="sv-daynav__reset" onClick={() => goto(operationalDate)}>
           Back to today
         </Button>
       )}

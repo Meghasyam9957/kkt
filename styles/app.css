@@ -603,7 +603,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   transition: background var(--motion-fast) var(--ease-standard),
               border-color var(--motion-fast) var(--ease-standard);
 }
-.sv-btn:hover { background: var(--surface-sunken); }
+.sv-btn:hover:not(:disabled) { background: var(--surface-sunken); }
 /* A verified write is locked, not unavailable — dimming it to 50% collapsed the one
    shipped success state into the disabled treatment and hid the confirmation. */
 /*
@@ -617,20 +617,34 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-btn--danger:disabled:not([data-phase='verified']) {
   background: var(--surface-selected); border-color: var(--border-strong); color: var(--text-muted);
 }
+.sv-btn--ghost:disabled:not([data-phase='verified']),
+.sv-btn--link:disabled:not([data-phase='verified']) {
+  color: var(--border-strong); text-decoration-color: var(--border-strong);
+  box-shadow: inset 0 -1px 0 var(--border-subtle);
+}
 .sv-btn:disabled[data-phase='verified'] { cursor: default; }
 .sv-btn--sm { height: 32px; padding: 0 var(--space-3); font-size: 0.75rem; }
 .sv-btn--lg { height: 48px; padding: 0 var(--space-5); font-size: 0.9375rem; }
+/* SECONDARY — the outline tier, and the Button primitive's default variant. Declared
+   rather than inherited so it can be retuned in one place; `border-color` rather than the
+   `border` shorthand, so the 1px width above is not restated in two places. */
+.sv-btn--secondary { background: var(--surface-card); border-color: var(--border-strong); color: var(--text-primary); }
 .sv-btn--primary { background: var(--brand-green); border-color: var(--brand-green); color: var(--brand-cream); }
-.sv-btn--primary:hover { background: var(--brand-green-dark); }
-.sv-btn--ghost { border-color: transparent; background: transparent; color: var(--text-muted); }
-.sv-btn--ghost:hover { border-color: var(--line); color: var(--text-primary); }
+.sv-btn--primary:hover:not(:disabled) { background: var(--brand-green-dark); }
+/* TERTIARY: no fill, no full border — a hairline under the label. --line-strong rather
+   than --line, which disappears under muted ink. */
+.sv-btn--ghost {
+  border-color: transparent; background: transparent; color: var(--text-muted);
+  box-shadow: inset 0 -1px 0 var(--line-strong);
+}
+.sv-btn--ghost:hover:not(:disabled) { color: var(--text-primary); box-shadow: inset 0 -1px 0 var(--text-primary); }
 .sv-btn--link {
   border: none; background: none; height: auto; padding: 0;
   color: var(--brand-green); text-decoration: underline; text-underline-offset: 3px;
 }
-.sv-btn--link:hover { background: none; color: var(--brand-green-dark); }
+.sv-btn--link:hover:not(:disabled) { background: none; color: var(--brand-green-dark); }
 .sv-btn--danger { border-color: var(--bad-fg); color: var(--bad-fg); background: var(--surface-card); }
-.sv-btn--danger:hover { background: var(--bad-bg); }
+.sv-btn--danger:hover:not(:disabled) { background: var(--bad-bg); }
 @media (pointer: coarse) {
   .sv-btn, .sv-btn--sm { min-height: 44px; }
   /* The icon-only controls a finger reaches for most: the hamburger, the alert bell, the
@@ -666,7 +680,19 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 
 .sv-btn[data-phase='verified'] { border-color: var(--good-fg); color: var(--good-fg); background: var(--good-bg); }
-.sv-btn[data-phase='failed'] { border-color: var(--bad-fg); color: var(--bad-fg); }
+/* A refused write drops its fill. Red ink on the olive primary measured 1.05:1 — the
+   label vanished at the moment a person most needs to read it. The repeated :hover keeps
+   this at (0,3,0), so it survives .sv-btn--primary:hover:not(:disabled) above. */
+.sv-btn[data-phase='failed'],
+.sv-btn[data-phase='failed']:hover {
+  border-color: var(--bad-fg); color: var(--bad-fg); background: var(--surface-card);
+}
+.sv-btn[data-phase='failed']:hover:not(:disabled) { background: var(--bad-bg); }
+/* The gold-light inverse ring is 1.6:1 on white; a primary that has lost its olive fill
+   takes the standard olive ring instead. */
+.sv-btn--primary[data-phase='failed']:focus-visible {
+  outline-color: var(--focus-ring); outline-offset: 2px;
+}
 
 /* ---- States ---- */
 
@@ -675,6 +701,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-state__message { color: var(--text-muted); font-size: 0.8125rem; margin-top: var(--space-2); max-width: 46ch; margin-inline: auto; }
 .sv-state__action { margin-top: var(--space-4); }
 .sv-state--empty { background: var(--surface-sunken); border: 1px solid var(--line); border-radius: var(--radius-md); }
+/* Inside a card the card has already drawn the edge, and 114-134px of centred beige for
+   the sentence "Every unit is ready." is a giant empty panel, not an empty state. */
+.sv-card__body .sv-state--empty {
+  background: none; border: none; border-radius: 0;
+  padding: var(--s-5); text-align: left;
+}
+.sv-card__body .sv-state--empty .sv-state__message { margin-inline: 0; }
 .sv-state--error { background: var(--bad-bg); border-radius: var(--radius-md); }
 .sv-state--error .sv-state__title { color: var(--bad-fg); }
 
@@ -685,12 +718,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* Urgent work with no owner. Prominent by POSITION and by one pill, never by colouring a
    whole row — a board where the pressing item shouts is one where everything else reads as
    unimportant, and by the third morning nothing is read at all. */
-.sv-urgentlist { display: flex; flex-direction: column; gap: var(--space-4); }
-.sv-urgentlist__item { padding-bottom: var(--space-4); border-bottom: 1px solid var(--line); }
-.sv-urgentlist__item:last-child { padding-bottom: 0; border-bottom: none; }
-.sv-urgentlist__head { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.sv-urgentlist__title { font-weight: 500; }
-.sv-urgentlist__action { margin-top: var(--space-3); }
+/* (The one .sv-urgentlist block now lives beside the attention list further down. This
+   block declared a second, incompatible contract for the same class names.) */
 
 /* ---- Operations rows: who holds a task, and the actions on it (M-OPS-3) ---- */
 
@@ -1264,26 +1293,34 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-stack-gap { height: var(--space-4); }
 /* min(…, 100%) so a 352px track cannot exceed a 343px column — the Today board scrolled
    sideways at 375px without it. Same guard the shared .sv-grid primitive carries. */
-.sv-split { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); }
+/* Each column is as tall as its own content. Grid's default is `stretch`, and neither the
+   card nor its body is a flex container, so a one-arrival card forced to a three-departure
+   card's height rendered the surplus as blank white. */
+.sv-split { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr)); align-items: start; }
 
 /* What needs a person, most pressing first. Severity is carried by a label as well as a
    colour — an operations board is read in a hurry and often on a phone. */
-.sv-urgent { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+/* A QUEUE, not a stack of cards. Each item used to be its own bordered, rounded, filled
+   box inside a bordered, rounded, sunken plate — three nested rounded rectangles, in a
+   third rounding idiom (flat-left / rounded-right) that appears nowhere else. And the tint
+   inverted the ranking: Critical at #F8E3E0 measured 1.02:1 against the plate and High
+   1.06:1, while an untinted Watch row kept the full 1.20:1 of white. Severity is the rule,
+   the pill and the position; no row is repainted. */
+.sv-urgent { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .sv-urgent__item {
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-left-width: 3px;
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  background: var(--surface-card);
+  padding: var(--s-3) var(--s-4);
+  border-top: 1px solid var(--line);
+  border-left: 3px solid var(--border-strong);
+  background: none;
 }
-.sv-urgent__item--critical { border-left-color: var(--bad-fg); background: var(--bad-bg); }
-.sv-urgent__item--high { border-left-color: var(--warn-fg); background: var(--warn-bg); }
+.sv-urgent__item:first-child { border-top: none; }
+.sv-urgent__item--critical { border-left-color: var(--bad-fg); border-left-width: 4px; }
+.sv-urgent__item--high { border-left-color: var(--warn-fg); }
 .sv-urgent__item--watch { border-left-color: var(--info-fg); }
 .sv-urgent__head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.sv-urgent__property { font-weight: 600; font-size: 0.8125rem; }
-.sv-urgent__ref { font-size: 0.6875rem; color: var(--text-muted); }
-.sv-urgent__title { margin: var(--space-2) 0 2px; font-size: 0.9375rem; }
-.sv-urgent__action { margin: 0; font-size: 0.8125rem; color: var(--text-muted); }
+.sv-urgent__property { font-weight: 600; font-size: var(--t-small); }
+.sv-urgent__title { margin: var(--s-2) 0 2px; font-size: var(--t-body); font-weight: 500; }
+.sv-urgent__action { margin: 0; font-size: var(--t-small); color: var(--text-muted); }
 
 /* Demo assumption notice. Informational, not alarming: it belongs above the figures it
    qualifies and must not compete with them for attention. */
@@ -1657,19 +1694,35 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 
 /* ---- Attention list under the Today strip ---- */
-.sv-urgentlist { display: flex; flex-direction: column; margin-top: var(--space-4); }
+/* ONE ruled row, two consumers: the dashboard's attention strip and Today's unowned-work
+   block. Severity is carried by the accent rule's hue and by the pill's word — never by
+   repainting the row, which made a Critical item the LEAST separated surface in the block
+   (its tint measured 1.02:1 against the plate behind it, where an untinted Watch row kept
+   a full 1.20:1 of white). */
+.sv-urgentlist { display: flex; flex-direction: column; }
 .sv-urgentlist__item {
-  display: flex; align-items: center; gap: var(--space-4);
-  padding: var(--space-3) var(--space-3);
+  display: flex; align-items: center; gap: var(--s-4);
+  padding: var(--s-3) var(--s-3) var(--s-3) calc(var(--s-3) - 3px);
   border-top: 1px solid var(--line);
+  border-left: 3px solid transparent;
 }
-.sv-urgentlist__item--critical { border-left: 3px solid var(--bad-fg); background: var(--bad-bg); }
-.sv-urgentlist__item--high { border-left: 3px solid var(--warn-fg); background: var(--warn-bg); }
-.sv-urgentlist__item--watch { border-left: 3px solid var(--info-fg); }
-.sv-urgentlist__property { font-weight: 600; font-size: 0.8125rem; flex: none; }
-.sv-urgentlist__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.sv-urgentlist__title { font-size: 0.875rem; font-weight: 500; }
-.sv-urgentlist__action { font-size: 0.8125rem; color: var(--text-muted); }
+.sv-urgentlist__item:first-child { border-top: none; }
+.sv-urgentlist__item--critical { border-left-color: var(--bad-fg); border-left-width: 4px; padding-left: calc(var(--s-3) - 4px); }
+.sv-urgentlist__item--high { border-left-color: var(--warn-fg); }
+.sv-urgentlist__item--watch { border-left-color: var(--info-fg); }
+.sv-urgentlist__property { font-weight: 600; font-size: var(--t-small); flex: none; }
+.sv-urgentlist__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--s-1); }
+.sv-urgentlist__title { font-size: var(--text-sm); font-weight: 600; }
+.sv-urgentlist__action { font-size: var(--t-small); color: var(--text-muted); }
+/* The row's own control sits at its end, at its own width — not under the text. */
+.sv-urgentlist__do { flex: none; }
+@media (max-width: 640px) {
+  /* One thumb: the row becomes a stacked record and its control spans it. */
+  .sv-urgentlist__item { flex-wrap: wrap; }
+  .sv-urgentlist__text { flex-basis: 100%; }
+  .sv-urgentlist__do { flex-basis: 100%; }
+  .sv-urgentlist__do .sv-btn { width: 100%; justify-content: center; }
+}
 
 /* ---- Insights ---- */
 .sv-insights { display: flex; flex-direction: column; }
@@ -1752,7 +1805,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-feature-settings: var(--font-numeric-features);
 }
 .sv-daynav__icon--back { transform: rotate(180deg); }
-.sv-daynav__reset { flex: none; }
+/* (0,2,0), so it outranks the 560px rule that stretches the steppers to equal width. */
+.sv-daynav .sv-daynav__reset,
+.sv-calnav .sv-calnav__reset { flex: none; color: var(--text-brand); font-weight: 600; }
 @media (max-width: 560px) {
   /* Thumb order on a phone: the day reads first, the steps sit under it. */
   .sv-daynav { gap: var(--s-2); }
@@ -1787,11 +1842,24 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   padding: var(--s-4) var(--s-3);
   background: var(--surface-card);
   min-width: 0;
+  /* Every tile reserves the edge, so flagging one does not shift its own content 3px
+     right of its neighbours. */
+  border-left: 3px solid transparent;
 }
-/* An edge as well as a tint: the two tints are 1.2:1 apart, so tone carried by fill alone
-   was not a distinction anybody could make — and colour alone should never carry meaning. */
-.sv-summary__tile--attention { background: var(--warn-bg); border-left: 3px solid var(--warn-fg); }
-.sv-summary__tile--urgent { background: var(--bad-bg); border-left: 3px solid var(--bad-fg); }
+/* ATTENTION is an edge and inked label, no fill: a queue with work in it is normal, not
+   an alarm. URGENT outranks it by WEIGHT rather than by a second hue — a heavier edge, the
+   only fill on the strip, and the only inked figure. The two fills measured 1.13:1 and
+   1.23:1 against the white tiles beside them and 1.08:1 against EACH OTHER, so with three
+   of seven tiles tinted on an ordinary morning the rank was unreadable and the colour was
+   noise. Each tile also states its tone as a word for a screen reader (TodayBoard.tsx). */
+.sv-summary__tile--attention { border-left-color: var(--warn-fg); }
+.sv-summary__tile--attention .sv-summary__label { color: var(--warn-fg); }
+.sv-summary__tile--urgent {
+  border-left-width: 6px; border-left-color: var(--bad-fg);
+  background: var(--bad-bg);
+}
+.sv-summary__tile--urgent .sv-summary__value,
+.sv-summary__tile--urgent .sv-summary__label { color: var(--bad-fg); }
 .sv-summary__value {
   font-family: var(--font-display);
   font-size: var(--t-kpi); font-weight: 600; line-height: 1.05;
@@ -1820,6 +1888,20 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-oprow__action { grid-area: action; }
 /* One thumb, full width, on a phone. */
 .sv-oprow__action .sv-btn { width: 100%; }
+/* `:not([data-phase])` keeps the verified and failed treatments authoritative on a row
+   action that reports a phase. */
+.sv-oprow__action .sv-btn:not([data-phase]),
+.sv-calrow__action .sv-btn:not([data-phase]) {
+  border-color: var(--brand-green); color: var(--text-brand); font-weight: 600;
+}
+.sv-oprow__action .sv-btn--danger:not([data-phase]),
+.sv-calrow__action .sv-btn--danger:not([data-phase]) {
+  border-color: var(--bad-fg); color: var(--bad-fg);
+}
+.sv-oprow__action .sv-btn:not([data-phase]):hover:not(:disabled),
+.sv-calrow__action .sv-btn:not([data-phase]):hover:not(:disabled) {
+  background: var(--surface-selected);
+}
 
 .sv-oprow__name { font-size: var(--t-body); font-weight: 600; color: var(--text-primary); }
 .sv-oprow__where { font-weight: 600; }
@@ -1968,7 +2050,11 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* An absence is stated, and looks like an absence — never like a value. */
 .sv-bkdetail__unset { color: var(--text-muted); font-style: italic; }
 .sv-bkdetail__actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-.sv-bkdetail__actions .sv-btn { flex: 1 1 auto; justify-content: center; }
+/* The step the booking is actually waiting for takes the row; everything else is the
+   width of its own words. A cancellation as wide as a check-in is one clicked by accident.
+   The phone rule below is untouched — a bottom sheet's controls are thumb targets. */
+.sv-bkdetail__actions .sv-btn { flex: 0 0 auto; justify-content: center; }
+.sv-bkdetail__actions .sv-btn--primary { flex: 1 1 12rem; }
 
 @media (max-width: 640px) {
   /* Bottom sheet on a phone: the drawer already becomes one (§18); its actions go
@@ -2006,7 +2092,6 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-variant-numeric: tabular-nums lining-nums;
   font-feature-settings: var(--font-numeric-features);
 }
-.sv-calnav__reset { flex: none; }
 @media (max-width: 560px) {
   .sv-calnav__step-text { display: none; }
   .sv-calnav__current { order: -1; flex-basis: 100%; }

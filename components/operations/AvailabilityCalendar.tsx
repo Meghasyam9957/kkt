@@ -141,7 +141,7 @@ export function AvailabilityCalendar({ view, detail }: AvailabilityCalendarProps
 
         {view.operationalMonth ? null : (
           <Button
-            variant="primary"
+            variant="ghost"
             className="sv-calnav__reset"
             onClick={() => goToMonth(view.operationalDate.slice(0, 7))}
           >
@@ -458,7 +458,7 @@ function DayView({ view, selectedIndex, bookingHref, placeHref, onSelectDay }: {
                   </Link>
                 ) : (
                   <Link
-                    className="sv-btn sv-btn--primary"
+                    className="sv-btn sv-btn--secondary"
                     href={placeHref(unit.propertyId)}
                     aria-label={`${unit.unitName || unit.propertyId} is available on ${formatDate(day)} — open bookings for this unit`}
                   >

@@ -60,27 +60,39 @@ export async function TodayUrgent({ property }: { property?: string }) {
         subtitle="Open, urgent, and nobody is on it. Assigning one removes it from here."
       />
       <CardBody>
+        {/*
+          * The same ruled row the dashboard's attention strip uses. It used to render a
+          * three-line stack against a stylesheet that had been rewritten for a row, so
+          * the block spent 203px of card on a 57px task and the button wrapper inherited
+          * muted 13px body text meant for a caption.
+          */}
         <ul className="sv-urgentlist">
           {urgent.map((task) => (
-            <li key={task.key} className="sv-urgentlist__item">
-              <div className="sv-urgentlist__head">
-                <StatusPill tone={task.priority === 'Critical' ? 'bad' : 'warn'}>
-                  {task.priority}
-                </StatusPill>
+            <li
+              key={task.key}
+              className={`sv-urgentlist__item sv-urgentlist__item--${task.priority === 'Critical' ? 'critical' : 'high'}`}
+            >
+              <StatusPill tone={task.priority === 'Critical' ? 'bad' : 'warn'}>
+                {task.priority}
+              </StatusPill>
+              <span className="sv-urgentlist__property numeric">
+                {task.propertyId ?? 'No property'}
+              </span>
+              <span className="sv-urgentlist__text">
                 <span className="sv-urgentlist__title">{task.title}</span>
-              </div>
-              <p className="sv-kpi__note">
-                {task.propertyId ?? 'No property recorded'} · {task.taskRef} ·{' '}
-                {task.ageDays === 0
-                  ? 'reported today'
-                  : `waiting ${task.ageDays} ${task.ageDays === 1 ? 'day' : 'days'}`}
-              </p>
+                <span className="sv-urgentlist__action">
+                  {task.taskRef} ·{' '}
+                  {task.ageDays === 0
+                    ? 'reported today'
+                    : `waiting ${task.ageDays} ${task.ageDays === 1 ? 'day' : 'days'}`}
+                </span>
+              </span>
               {assignment ? (
-                <div className="sv-urgentlist__action">
+                <span className="sv-urgentlist__do">
                   <AssignTaskButton
                     taskType="MAINTENANCE" taskRef={task.taskRef} context={assignment}
                   />
-                </div>
+                </span>
               ) : null}
             </li>
           ))}

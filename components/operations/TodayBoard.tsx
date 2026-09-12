@@ -103,7 +103,6 @@ export function TodayBoard({ board }: { board: OperationsBoardView }) {
         <Card variant="object">
           <CardHeader
             title="Arrivals"
-            subtitle="Check a guest in when they reach the house."
             action={<span className="sv-muted">{board.arrivals.length}</span>}
           />
           <CardBody className="sv-card__body--flush">
@@ -125,7 +124,6 @@ export function TodayBoard({ board }: { board: OperationsBoardView }) {
         <Card variant="object">
           <CardHeader
             title="Departures"
-            subtitle="Check a guest out to release the unit for its turnover."
             action={<span className="sv-muted">{board.departures.length}</span>}
           />
           <CardBody className="sv-card__body--flush">
@@ -149,7 +147,7 @@ export function TodayBoard({ board }: { board: OperationsBoardView }) {
       <Card variant="object">
         <CardHeader
           title="Housekeeping"
-          subtitle="Turnovers still to finish. Marking one clean records who cleaned it and the inspection result."
+          subtitle="Turnovers still to finish."
           action={<span className="sv-muted">{board.cleaning.length} open</span>}
         />
         <CardBody className="sv-card__body--flush">
@@ -239,7 +237,6 @@ function StayRow({ row, mode }: { row: ArrivalRow; mode: 'arrival' | 'departure'
         {canCheckIn ? (
           <RowActionButton
             label="Check in"
-            variant="primary"
             size="md"
             surface="drawer"
             endpoint={`/api/reservations/${row.bookingId}/check-in`}
@@ -251,7 +248,6 @@ function StayRow({ row, mode }: { row: ArrivalRow; mode: 'arrival' | 'departure'
         ) : canCheckOut ? (
           <RowActionButton
             label="Check out"
-            variant="primary"
             size="md"
             surface="drawer"
             endpoint={`/api/reservations/${row.bookingId}/check-out`}
@@ -302,7 +298,6 @@ function CleaningTaskRow({ task }: { task: CleaningRow }) {
       <div className="sv-oprow__action">
         <RowActionButton
           label="Mark clean"
-          variant="primary"
           size="md"
           surface="drawer"
           method="PATCH"
