@@ -1964,15 +1964,19 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* `:not([data-phase])` keeps the verified and failed treatments authoritative on a row
    action that reports a phase. */
 .sv-oprow__action .sv-btn:not([data-phase]),
-.sv-calrow__action .sv-btn:not([data-phase]) {
+.sv-calrow__action .sv-btn:not([data-phase]),
+.sv-table td .sv-btn--primary:not([data-phase]) {
+  background: var(--surface-card);
   border-color: var(--brand-green); color: var(--text-brand); font-weight: 600;
 }
 .sv-oprow__action .sv-btn--danger:not([data-phase]),
-.sv-calrow__action .sv-btn--danger:not([data-phase]) {
+.sv-calrow__action .sv-btn--danger:not([data-phase]),
+.sv-table td .sv-btn--danger:not([data-phase]) {
   border-color: var(--bad-fg); color: var(--bad-fg);
 }
 .sv-oprow__action .sv-btn:not([data-phase]):hover:not(:disabled),
-.sv-calrow__action .sv-btn:not([data-phase]):hover:not(:disabled) {
+.sv-calrow__action .sv-btn:not([data-phase]):hover:not(:disabled),
+.sv-table td .sv-btn--primary:not([data-phase]):hover:not(:disabled) {
   background: var(--surface-selected);
 }
 
