@@ -184,12 +184,12 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
    other 33 items produced a row separated from the current page by a 2px rule alone.
    --surface-hover and --surface-selected were both measured on this sunken rail (1.01:1
    and 1.11:1) and are too weak here; the mix is 1.21:1 for active, 1.08:1 for hover. */
-.sv-nav__link:hover { background-color: color-mix(in srgb, var(--text-brand) 6%, transparent); color: var(--brand-green-dark); }
+.sv-nav__link:hover { background-color: color-mix(in srgb, var(--text-brand) 6%, transparent); color: var(--text-brand-strong); }
 /* 36px is the pointer height (§17.1); fingers get the 44px floor. */
 @media (pointer: coarse) { .sv-nav__link { min-height: 44px; } }
 .sv-nav__link--active {
   background-color: color-mix(in srgb, var(--text-brand) 14%, transparent);
-  color: var(--brand-green-dark);
+  color: var(--text-brand-strong);
   border-left-color: var(--text-brand);
   font-weight: 600;
 }
@@ -684,7 +684,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   border: none; background: none; height: auto; padding: 0;
   color: var(--brand-green); text-decoration: underline; text-underline-offset: 3px;
 }
-.sv-btn--link:hover:not(:disabled) { background: none; color: var(--brand-green-dark); }
+.sv-btn--link:hover:not(:disabled) { background: none; color: var(--text-brand-strong); }
 .sv-btn--danger { border-color: var(--bad-fg); color: var(--bad-fg); background: var(--surface-card); }
 .sv-btn--danger:hover:not(:disabled) { background: var(--bad-bg); }
 @media (pointer: coarse) {

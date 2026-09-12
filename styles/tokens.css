@@ -200,6 +200,12 @@
   --z-toast: 60;
   --z-skip: 100;
 
+  /* ---- Emphatic brand ink (M-UI-11): the strongest brand-coloured TEXT, one step past
+     --text-brand. Used where a brand-inked element is also the selected one. Like
+     --text-brand and unlike --brand-green-dark, it is retuned for dark — measured 6.92:1
+     on the light active nav fill and 9.32:1 on the dark one. ---- */
+  --text-brand-strong: var(--brand-green-dark);
+
   /* ---- Focus rings (§21): olive on light surfaces, gold-light on olive surfaces —
      the ring must be visible on WHATEVER it sits on. ---- */
   --focus-ring: var(--brand-green);
@@ -269,6 +275,11 @@
     /* Olive ink is 2.5:1 on the dark page — a focus ring nobody can see. The retuned
        brand ink is 8.5:1 there, so the ring follows the theme like every other colour. */
     --focus-ring: #A8BC72;
+    /* The emphatic ink inverts direction in dark: one step LIGHTER than --text-brand,
+       not darker. --brand-green-dark is 1.42:1 on the dark rail's active fill; this is
+       9.32:1, and stays a step stronger than the idle item beside it exactly as the
+       light theme's pairing does. */
+    --text-brand-strong: #C4D89A;
     /* The brand tagline. --gold-deep is tuned for cream and is 3.05:1 on the dark page;
        dark takes the lighter brand gold, which is 7.3:1 there. */
     --gold-deep: var(--brand-gold);
@@ -291,6 +302,7 @@
   --neutral-fg: #A5A493; --neutral-bg: #2A2D1E;
   --chart-1: #A8BC72; --chart-2: #7E9450; --chart-3: #D08A4A; --chart-ref: #A5A493;
   --focus-ring: #A8BC72;
+  --text-brand-strong: #C4D89A;
   --gold-deep: var(--brand-gold);
   /*
    * The tokens M-UI-10 added. Repeated here rather than shared, because the two dark blocks
