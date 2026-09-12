@@ -252,9 +252,12 @@ export function BookingsWorkspace({
 
   return (
     <Card>
+      {/* Only the signpost survives in the subtitle. The sentence before it — "Find a
+          booking, see where it stands, and take the next step" — restated the page
+          description 24px above it, word for word in substance. */}
       <CardHeader
         title="Bookings"
-        subtitle="Find a booking, see where it stands, and take the next step. Payouts and revenue live on the finance screens."
+        subtitle="Payouts and revenue live on the finance screens."
         action={(
           <span className="sv-muted">
             {narrowed ? `${visible.length} of ${rows.length}` : `${rows.length} booking${rows.length === 1 ? '' : 's'}`}

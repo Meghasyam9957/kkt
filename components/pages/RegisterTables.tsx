@@ -117,7 +117,7 @@ export function FinancialReservationsTable({ rows, period }: { rows: Reservation
   const totalExpected = rows.reduce((t, r) => t + r.expectedPayout, 0);
 
   const columns: Column<ReservationRow>[] = [
-    { key: 'id', header: 'Booking ID', render: (r) => <code className="numeric">{r.bookingId}</code>, footer: 'Total' },
+    { key: 'id', header: 'Booking ID', render: (r) => <code className="numeric">{r.bookingId}</code> },
     { key: 'platform', header: 'Platform', render: (r) => r.platform },
     { key: 'property', header: 'Property', render: (r) => r.propertyId },
     {
@@ -125,9 +125,9 @@ export function FinancialReservationsTable({ rows, period }: { rows: Reservation
       render: (r) => <StatusPill tone={bookingStatusTone(r.bookingStatus)}>{r.bookingStatus}</StatusPill>,
     },
     { key: 'guest', header: 'Guest', render: (r) => r.guestDisplayName },
-    { key: 'checkin', header: 'Check-in', render: (r) => formatDateShort(r.checkIn) },
-    { key: 'checkout', header: 'Check-out', render: (r) => formatDateShort(r.checkOut) },
-    { key: 'nights', header: 'Nights', numeric: true, render: (r) => r.nights },
+    { key: 'checkin', header: 'Check-in', render: (r) => <span className="numeric">{formatDateShort(r.checkIn)}</span> },
+    { key: 'checkout', header: 'Check-out', render: (r) => <span className="numeric">{formatDateShort(r.checkOut)}</span> },
+    { key: 'nights', header: 'Nights', numeric: true, render: (r) => r.nights, footer: 'Total' },
     { key: 'gross', header: 'Gross value', numeric: true, render: (r) => formatCurrency(r.grossValue), footer: formatCurrency(totalGross) },
     { key: 'expected', header: 'Expected payout', numeric: true, render: (r) => formatCurrency(r.expectedPayout), footer: formatCurrency(totalExpected) },
     {

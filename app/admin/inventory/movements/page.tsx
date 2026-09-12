@@ -62,7 +62,7 @@ export default async function MovementsPage() {
   const columns: Column<MovementView>[] = [
     {
       key: 'when', header: 'When',
-      render: (r) => formatDateShort(r.createdAt.slice(0, 10)),
+      render: (r) => <span className="numeric">{formatDateShort(r.createdAt.slice(0, 10))}</span>,
     },
     {
       key: 'item', header: 'Item',

@@ -25,12 +25,15 @@ export function LedgerTable({
   const totalNet = rows.reduce((t, r) => t + r.net, 0);
 
   const columns: Column<LedgerRow>[] = [
-    { key: 'date', header: 'Date', render: (r) => formatDateShort(r.date), footer: 'Total' },
+    { key: 'date', header: 'Date', render: (r) => <span className="numeric">{formatDateShort(r.date)}</span> },
     { key: 'id', header: kind === 'revenue' ? 'Revenue ID' : 'Expense ID', render: (r) => <code className="numeric">{r.id}</code> },
     { key: 'property', header: 'Property', render: (r) => r.propertyId || '—' },
     {
       key: 'category',
       header: kind === 'revenue' ? 'Type' : 'Category',
+      // The expense variant has no Platform column, so the label rides the last column
+      // before the figures in each variant rather than stranding itself on the date.
+      footer: kind === 'expense' ? 'Total' : undefined,
       render: (r) => (
         <span>
           {r.category}
@@ -39,7 +42,10 @@ export function LedgerTable({
       ),
     },
     ...(kind === 'revenue'
-      ? [{ key: 'platform', header: 'Platform', render: (r: LedgerRow) => r.platform ?? '—' }]
+      ? [{
+          key: 'platform', header: 'Platform', footer: 'Total',
+          render: (r: LedgerRow) => r.platform ?? '—',
+        }]
       : []),
     {
       key: 'gross', header: kind === 'revenue' ? 'Gross' : 'Amount', numeric: true,

@@ -100,7 +100,6 @@ export function AvailabilityCalendar({ view, detail }: AvailabilityCalendarProps
     <Card>
       <CardHeader
         title="Availability"
-        subtitle="Which unit is free, and when. Open a booking to act on it, or pick a free day to place one."
         action={(
           <span className="sv-calhead">
             <Link className="sv-availlink" href={findHref}>

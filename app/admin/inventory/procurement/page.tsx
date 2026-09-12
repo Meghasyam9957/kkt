@@ -152,7 +152,9 @@ export default async function ProcurementPage() {
     },
     {
       key: 'expected', header: 'Expected',
-      render: (o) => (o.expectedDate ? formatDateShort(o.expectedDate) : <span className="sv-muted">no date</span>),
+      render: (o) => (o.expectedDate
+        ? <span className="numeric">{formatDateShort(o.expectedDate)}</span>
+        : <span className="sv-muted">no date</span>),
     },
     {
       key: 'value', header: 'Agreed', numeric: true,

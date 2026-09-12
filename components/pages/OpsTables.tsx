@@ -94,7 +94,7 @@ export function HousekeepingTable({ rows, assignment }: {
         </span>
       ),
     },
-    { key: 'checkout', header: 'Checkout', render: (r) => formatDateShort(r.checkoutDate) },
+    { key: 'checkout', header: 'Checkout', render: (r) => <span className="numeric">{formatDateShort(r.checkoutDate)}</span> },
     {
       key: 'status', header: 'Turnover',
       render: (r) => <StatusPill tone={HK_TONE[r.status] ?? 'neutral'}>{r.status}</StatusPill>,
@@ -193,7 +193,7 @@ export function MaintenanceTable({ rows, assignment }: {
         </span>
       ),
     },
-    { key: 'reported', header: 'Reported', render: (r) => formatDateShort(r.reportedOn) },
+    { key: 'reported', header: 'Reported', render: (r) => <span className="numeric">{formatDateShort(r.reportedOn)}</span> },
     { key: 'age', header: 'Age', numeric: true, render: (r) => `${r.ageDays}d` },
     {
       key: 'priority', header: 'Priority',
