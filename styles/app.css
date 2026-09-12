@@ -90,7 +90,9 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   color: var(--text-primary);
   border-right: 1px solid var(--line);
   display: flex; flex-direction: column;
-  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  /* The NAV scrolls, not the rail. dvh rather than vh: below 1024 this box is fixed, and
+     with 100vh its foot sits under a phone's retracted URL bar with no way to reach it. */
+  position: sticky; top: 0; height: 100dvh; overflow: hidden;
 }
 
 .sv-sidebar__brand {
@@ -141,40 +143,67 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 }
 .sv-logo--asset { display: inline-flex; align-items: center; }
 
-.sv-nav { flex: 1; padding: var(--space-4) var(--space-2); }
+.sv-nav {
+  flex: 1; min-height: 0; padding: var(--space-4) 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+}
 .sv-nav__section { margin-bottom: var(--space-5); }
+/* The last group contributed 24px of dead space that stacked with the nav's own 16px
+   bottom padding, directly above the footer hairline. */
+.sv-nav__section:last-child { margin-bottom: 0; }
 .sv-nav__section-title {
-  font-size: var(--text-label); letter-spacing: 0.16em; text-transform: uppercase;
+  /* 0.16em was double the system's own --tracking-label, on the weakest weight in the
+     rail: the group label was simultaneously the faintest and the widest text in it,
+     out-shouted by its own children. */
+  font-size: var(--text-label); font-weight: 600;
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
   color: var(--text-muted);
-  padding: 0 var(--space-3); margin-bottom: var(--space-2);
+  /* Same 16px axis as the icons below it. The heading sat 2px left of the glyph column it
+     introduces, because the transparent active border is inside the link's box and not
+     inside the heading's. */
+  padding: 0 var(--space-4); margin-bottom: var(--space-2);
 }
-.sv-nav__list { display: flex; flex-direction: column; gap: 1px; }
+/* Zero, not 1px: below the threshold at which a gap separates anything, and enough to stop
+   the rows reading as one continuous ledger column. */
+.sv-nav__list { display: flex; flex-direction: column; }
 .sv-nav__link {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
-  min-height: 36px; padding: 7px var(--space-3);
-  font-size: 0.875rem; color: var(--text-brand);
-  border-radius: var(--radius-sm);
-  /* Active is a 2px olive rule on the left edge — position carries state, weight
-     confirms it, and colour never has to do the job alone. */
-  border-left: 2px solid transparent;
-  transition: background var(--motion-fast) var(--ease-standard);
+  display: flex; align-items: center; justify-content: flex-start; gap: var(--space-2);
+  min-height: 36px; padding: 7px var(--space-4) 7px calc(var(--space-4) - 3px);
+  font-size: var(--text-sm); color: var(--text-brand);
+  /* FULL BLEED, and the marker is a rule at the rail's own edge. The row used to be an
+     inset rounded chip whose active state was a lighter plate — 1.11:1 against the rail,
+     a step at the perceptual floor, in the RAISED direction. That reads as "a white box",
+     not as "the current page", and it changed shape on activation as well (the resting
+     all-round radius flipped to square-left / round-right). */
+  border-left: 3px solid transparent;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
 }
-.sv-nav__link:hover { background: var(--surface-page); color: var(--brand-green-dark); }
+/* Hover and active declared the SAME fill and the SAME ink, so pointing at any of the
+   other 33 items produced a row separated from the current page by a 2px rule alone.
+   --surface-hover and --surface-selected were both measured on this sunken rail (1.01:1
+   and 1.11:1) and are too weak here; the mix is 1.21:1 for active, 1.08:1 for hover. */
+.sv-nav__link:hover { background-color: color-mix(in srgb, var(--text-brand) 6%, transparent); color: var(--brand-green-dark); }
 /* 36px is the pointer height (§17.1); fingers get the 44px floor. */
 @media (pointer: coarse) { .sv-nav__link { min-height: 44px; } }
 .sv-nav__link--active {
-  background: var(--surface-page);
+  background-color: color-mix(in srgb, var(--text-brand) 14%, transparent);
   color: var(--brand-green-dark);
-  border-left-color: var(--brand-green);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-left-color: var(--text-brand);
   font-weight: 600;
 }
-.sv-nav__badge {
-  font-size: var(--text-label); letter-spacing: 0.06em; text-transform: uppercase;
-  padding: 2px 6px; border-radius: var(--radius-full);
-  background: var(--surface-page); color: var(--text-muted);
-  border: 1px solid var(--line);
-}
+/* The row is square; the focus ring's global 2px radius would round it mid-keyboard. */
+.sv-nav__link:focus-visible { outline-offset: -2px; border-radius: 0; }
+
+/* Ink, not opacity. 0.85 -> 1.0 on the same olive is a 4.21:1 -> 5.83:1 step on an 18px
+   line glyph — below the perceptual threshold — and multiplying an inherited colour meant
+   the icon silently changed hue on hover with no rule saying so. --text-brand rather than
+   the raw --brand-green: the token is retuned for dark, the hex is not. */
+.sv-nav__icon { display: inline-flex; flex: none; color: var(--text-muted); }
+.sv-nav__link:hover .sv-nav__icon,
+.sv-nav__link--active .sv-nav__icon { color: var(--text-brand); }
+.sv-nav__label { flex: 1; }
 
 .sv-sidebar__foot {
   padding: var(--space-4);
@@ -205,13 +234,14 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
     width: var(--nav-width-collapsed);
     flex-basis: var(--nav-width-collapsed);
   }
-  .sv-shell--railmin .sv-nav { padding-inline: 6px; }
+  .sv-shell--railmin .sv-nav { padding-inline: 0; }
   .sv-shell--railmin .sv-nav__label,
   .sv-shell--railmin .sv-nav__section-title,
-  .sv-shell--railmin .sv-nav__badge,
   .sv-shell--railmin .sv-sidebar__foot,
   .sv-shell--railmin .sv-logo__text { display: none; }
-  .sv-shell--railmin .sv-nav__link { justify-content: center; padding-inline: 0; }
+  /* 63px of inner width behind a 3px rule: content runs 3 -> 60, centring the glyph at
+     31.5px, which is the rail's own centre line. */
+  .sv-shell--railmin .sv-nav__link { justify-content: center; padding-left: 0; padding-right: 3px; }
   .sv-shell--railmin .sv-sidebar__brand { padding-inline: var(--space-2); text-align: center; }
 }
 
@@ -234,15 +264,23 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   background: none; border: none; cursor: pointer; color: var(--text-primary);
   font-size: 1rem; padding: var(--space-2);
 }
-.sv-topbar__right { margin-left: auto; display: flex; align-items: center; gap: var(--space-4); }
+.sv-topbar__right { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+/* The one division in the strip: everything left of it describes the SYSTEM, everything
+   right of it is the person. Scoped to the topbar so the investor masthead is untouched. */
+.sv-topbar__right > .sv-user::before {
+  content: ''; flex: none; width: 1px; height: 20px;
+  background: var(--line); margin-right: var(--space-1);
+}
 .sv-topbar__icon {
   position: relative; background: none; border: none; cursor: pointer;
   font-size: 1rem; padding: var(--space-2); border-radius: var(--radius-sm);
   color: var(--text-muted);
 }
-.sv-topbar__icon:hover { background: var(--surface-sunken); }
+/* --surface-sunken is 1.11:1 on the topbar's own fill — the figure M-UI-10 recorded as
+   the reason table-row hover moved off that token. This control was the one it missed. */
+.sv-topbar__icon:hover { background: var(--surface-selected); color: var(--text-primary); }
 .sv-topbar__count {
-  position: absolute; top: 0; right: 0;
+  position: absolute; top: 2px; right: 2px;
   min-width: 18px; height: 18px; padding: 0 4px;
   /* Tokens, not #fff: in dark theme --bad-fg is a light salmon, and white on it fell to
      ~2.1:1. The badge now uses the theme's own page ink-inverse pairing. */
@@ -251,11 +289,13 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   border-radius: var(--radius-full);
 }
 
-.sv-breadcrumb ol { display: flex; align-items: center; gap: var(--space-2); font-size: 0.8125rem; }
+/* baseline, not centre: the current crumb is now a step larger than its ancestors, and
+   under centre alignment the separators drift off the text baseline. */
+.sv-breadcrumb ol { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--t-small); }
 .sv-breadcrumb li { display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); }
 .sv-breadcrumb li + li::before { content: '›'; color: var(--border-strong); }
 .sv-breadcrumb a:hover { color: var(--brand-green); text-decoration: underline; }
-.sv-breadcrumb [aria-current='page'] { color: var(--text-primary); font-weight: 500; }
+.sv-breadcrumb [aria-current='page'] { color: var(--text-primary); font-weight: 600; font-size: var(--text-sm); }
 
 .sv-user { display: flex; align-items: center; gap: var(--space-2); }
 .sv-user__avatar {
@@ -265,8 +305,8 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em;
 }
 .sv-user__text { display: flex; flex-direction: column; line-height: 1.2; }
-.sv-user__name { font-size: 0.8125rem; font-weight: 500; }
-.sv-user__role { font-size: 0.6875rem; color: var(--text-muted); text-transform: capitalize; }
+.sv-user__name { font-size: var(--text-sm); font-weight: 600; }
+.sv-user__role { font-size: var(--t-label); color: var(--text-muted); text-transform: capitalize; }
 
 /* ---- Freshness & demo badge ---- */
 
@@ -275,18 +315,28 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* Environment + data source + freshness. Three facts a person needs before acting on a
    number: which system, where it came from, how old it is. */
 .sv-envstatus { display: flex; align-items: center; gap: var(--space-3); }
-.sv-envstatus__facts { display: flex; align-items: center; gap: var(--space-4); margin: 0; }
-.sv-envstatus__fact { display: flex; flex-direction: column; line-height: 1.25; }
+.sv-envstatus__facts { display: flex; align-items: baseline; gap: var(--space-3); margin: 0; }
+/* Still a stack, but a tight one. Laying the three pairs out as inline rows read better as
+   a masthead and cost 11px more than the bar has at 1440 with a three-crumb trail, which
+   is a horizontal scrollbar on the whole application — so the calm comes from the label
+   treatment and the grouping rule instead, and the pairs stay two lines. */
+.sv-envstatus__fact { display: flex; flex-direction: column; line-height: 1.15; white-space: nowrap; }
 .sv-envstatus__fact dt {
-  font-size: var(--text-label); letter-spacing: 0.14em; text-transform: uppercase;
+  /* Sentence case at the label tier. Four identical 11px tracked-capital runs stood side
+     by side in this bar — Environment, Data source, Last synced, Scenario — so no label
+     could be told from another and the whole strip shimmered. Tracking exists to open up
+     capitals; without them it is noise. */
+  font-size: var(--t-label); font-weight: 400; letter-spacing: normal; text-transform: none;
   color: var(--text-muted);
 }
-.sv-envstatus__fact dd { margin: 0; font-size: 0.75rem; color: var(--text-primary); }
-.sv-envstatus__env { font-weight: 600; letter-spacing: 0.06em; }
+.sv-envstatus__fact dd { margin: 0; font-size: var(--text-xs); font-weight: 500; color: var(--text-primary); }
+/* The one piece of primary STATE in the strip. It was typeset as though it were a fourth
+   label: 12px with capital tracking on a value that is already the word DEMO. */
+.sv-envstatus__env { font-size: var(--t-small); font-weight: 600; letter-spacing: normal; }
 .sv-envstatus__env--demo { color: var(--warn-fg); }
 .sv-envstatus__env--production { color: var(--good-fg); }
 .sv-demo-badge {
-  font-size: var(--text-label); font-weight: 700; letter-spacing: 0.12em;
+  font-size: var(--t-label); font-weight: 600; letter-spacing: var(--tracking-label);
   padding: 3px 8px; border-radius: var(--radius-sm);
   background: var(--warn-bg); color: var(--warn-fg);
   border: 1px solid currentColor;
@@ -297,7 +347,10 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-freshness__state--stale .sv-freshness__dot { background: var(--warn-fg); }
 .sv-freshness__state--error .sv-freshness__dot { background: var(--bad-fg); }
 .sv-freshness__state--error { color: var(--bad-fg); }
-.sv-freshness__source { color: var(--text-muted); }
+/* A stale reading is the one header state this product treats as an honesty issue, and it
+   had no ink of its own: `Stale · last synced 3 hours ago` was the same muted grey as
+   `Live · 2 minutes ago`, separated by a 7px dot. */
+.sv-freshness__state--stale { color: var(--warn-fg); font-weight: 500; }
 /* Second line shown only in the failure state: what is on screen, and how old it is. */
 .sv-freshness__detail { color: var(--bad-fg); }
 /* A counter the source cannot supply. Muted and dashed, so it cannot read as a zero. */
@@ -1029,7 +1082,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
   .sv-kpi-grid { grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); }
   .sv-kpi { min-height: 100px; padding: var(--space-3); }
   .sv-kpi__value { font-size: 1.375rem; }
-  .sv-envstatus__fact--source { display: none; }
+  /* .sv-envstatus__fact--source is collapsed by the 1100 rung below — the single owner. */
   .sv-user__text { display: none; }
   .sv-bar-row { grid-template-columns: 96px 1fr; }
   .sv-bar-row__values { grid-column: 2; align-items: flex-start; }
@@ -1185,7 +1238,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 
 .sv-user__signout {
   display: inline-flex; align-items: center; gap: var(--space-2);
-  font-size: 0.6875rem; letter-spacing: 0.08em; text-transform: uppercase;
+  font-size: var(--t-label); letter-spacing: normal; text-transform: none;
   color: var(--text-muted); text-decoration: none;
 }
 .sv-user__signout:hover { color: var(--text-primary); }
@@ -1193,6 +1246,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 /* Below 480px the text hides; the avatar remains the (labelled) control, so the
    cluster can never widen the page — the 375px overflow regression. */
 @media (max-width: 480px) {
+  .sv-topbar__right > .sv-user::before { display: none; }
   .sv-user__switch { display: none; }
   .sv-topbar { padding: 0 var(--space-4); }
   .sv-topbar__right { gap: var(--space-2); }
@@ -1264,18 +1318,24 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-presentation__off { color: var(--text-muted); }
 
 /* Scenario chip — visible while demonstrating, gone entirely in production. */
+/* Not a card. This was a white 6px-radius box filling two thirds of the bar's height,
+   which made the most SECONDARY item in the strip its most physically prominent object —
+   one of four rounded things in a 56px band. An accent rule states it instead. */
 .sv-scenario-chip {
-  display: inline-flex; flex-direction: column; line-height: 1.2;
-  padding: 4px var(--space-3); border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle); background: var(--surface-card);
+  display: inline-flex; flex-direction: column;
+  line-height: 1.15; white-space: nowrap;
+  padding: 0 0 0 var(--space-2);
+  border: none; border-left: 2px solid var(--brand-green-light);
+  border-radius: 0; background: none;
   text-decoration: none; color: inherit;
 }
-.sv-scenario-chip:hover { border-color: var(--brand-green); }
+.sv-scenario-chip:hover { border-left-color: var(--brand-green); }
+.sv-scenario-chip:hover .sv-scenario-chip__value { text-decoration: underline; }
 .sv-scenario-chip__label {
-  font-size: var(--text-label); letter-spacing: 0.14em; text-transform: uppercase;
+  font-size: var(--t-label); font-weight: 400; letter-spacing: normal; text-transform: none;
   color: var(--text-muted);
 }
-.sv-scenario-chip__value { font-size: 0.75rem; font-weight: 600; }
+.sv-scenario-chip__value { font-size: var(--text-xs); font-weight: 500; }
 @media (max-width: 900px) { .sv-scenario-chip { display: none; } }
 
 /* ==================================================================== *
@@ -1508,12 +1568,7 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-activity__meta { font-size: var(--t-small); color: var(--text-muted); margin-top: 2px; }
 .sv-activity__empty { font-size: 0.8125rem; color: var(--text-muted); }
 
-/* ---- Navigation icons (B1: emoji retired) ---- */
-
-.sv-nav__link { justify-content: flex-start; }
-.sv-nav__icon { display: inline-flex; flex: none; opacity: 0.85; }
-.sv-nav__link--active .sv-nav__icon { opacity: 1; }
-.sv-nav__label { flex: 1; }
+/* (Navigation icon rules moved up beside .sv-nav__link, which they govern.) */
 
 /* ---- DEFECT FIXES ---- */
 
@@ -1528,8 +1583,16 @@ table.sv-visually-hidden { table-layout: fixed; max-width: 1px; left: 0; }
 .sv-user { min-width: 0; }
 /* The 16px rem base widened every topbar label; the facts now step back at 1100 (the
    stylesheet's existing tablet rung) so the cluster can never widen the page. */
+/* The one place the topbar facts collapse — do not re-seed this in the 1023 block. */
 @media (max-width: 1100px) {
   .sv-envstatus__facts .sv-envstatus__fact:not(.sv-envstatus__fact--env) { display: none; }
+  /* The surviving fact keeps its <dt> for the accessibility tree and drops it visually:
+     once it is the only one, "Environment" labels nothing the reader can confuse. */
+  .sv-envstatus__fact--env dt {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .sv-envstatus__env { font-size: var(--t-label); }
   .sv-topbar__right { gap: var(--space-2); }
 }
 @media (max-width: 640px) {
