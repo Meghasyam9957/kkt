@@ -51,7 +51,19 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20. `@supabase/supabase-js` builds its Realtime client inside
+          # `createClient()`, and `@supabase/realtime-js` requires a NATIVE global
+          # `WebSocket`, which Node ships unflagged from 22. On 20 every `createClient()` in
+          # tests/staging/ threw "Node.js detected but native WebSocket not found" before a
+          # single request reached Supabase, so no auth, RLS or repository assertion ran.
+          # Both packages declare `engines: { node: ">=22.0.0" }`, and
+          # tests/staging-runtime.test.ts holds this pin to that floor. No WebSocket
+          # polyfill: the native one is the runtime the client targets.
+          #
+          # Staging only. ci.yml still runs on 20: nothing it runs constructs a Supabase
+          # client, because no Supabase project is configured there. That rests on
+          # configuration, not structure.
+          node-version: 22
           cache: npm
 
       - run: npm ci

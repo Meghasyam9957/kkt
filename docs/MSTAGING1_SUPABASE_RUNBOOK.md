@@ -16,7 +16,7 @@ milestone built.
 
 | Need | Why |
 |---|---|
-| Node 20 | The repository's engine. |
+| Node 22 or newer | The suite constructs real `@supabase/supabase-js` clients, which need Node's native global `WebSocket` (unflagged from Node 22). Under Node 20 every test fails inside `createClient()` before any request reaches Supabase — which is a runtime failure, not a verdict on auth or RLS. `.github/workflows/staging.yml` pins 22. |
 | A Supabase project you can afford to lose | The suite creates users, tenants and rows, and deletes them again. Use a project created for this purpose. |
 | That project's URL, anon key and service-role key | From the project's API settings. |
 
