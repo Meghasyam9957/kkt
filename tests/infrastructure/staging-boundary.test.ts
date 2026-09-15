@@ -20,7 +20,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  classifyTarget, resolveStaging, describeStaging,
+  classifyTarget, resolveStaging, describeStaging, supabaseProjectRef, classifyStagingDatabase,
   STAGING_ENV_NAMES, PRODUCTION_ENV_NAMES,
 } from '@/lib/server/db/environment-target';
 import { safeReason, boundReason } from '@/lib/server/audit/reason';
@@ -267,5 +267,114 @@ describe('secret scanner · catches a real shape, ignores a documented example',
     const example = readFileSync(join(process.cwd(), '.env.example'), 'utf8');
     const { scan } = await load();
     expect(scan(['.env.example'], () => example)).toEqual([]);
+  });
+});
+
+describe('staging guard · a database connection belongs to the confirmed project, by ref', () => {
+  /*
+   * A connection string never shares a hostname with its project's API URL, so the hostname
+   * guard above cannot tell whether `db:migrate -- --staging` is about to change the confirmed
+   * staging project or some other one. The project ref can. None of these strings carries a
+   * password: the ref sits in the host or the username, and that is all the guard reads.
+   */
+  const REF = 'abcdefg'; // STAGING_HOST is https://abcdefg.supabase.co
+  const OTHER_REF = 'zyxwvut';
+  const direct = (ref: string) => `postgresql://postgres@db.${ref}.supabase.co:5432/postgres`;
+  const pooler = (ref: string) =>
+    `postgresql://postgres.${ref}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres`;
+  const confirmedProject = {
+    [STAGING_ENV_NAMES.url]: STAGING_HOST,
+    [STAGING_ENV_NAMES.confirmation]: 'yes',
+  };
+  const otherIsProduction = {
+    ...confirmedProject, PRODUCTION_SUPABASE_URL: `https://${OTHER_REF}.supabase.co`,
+  };
+
+  it('reads the project ref from the API URL, the direct host and the pooler username', () => {
+    expect(supabaseProjectRef(STAGING_HOST)).toBe(REF);
+    expect(supabaseProjectRef(direct(REF))).toBe(REF);
+    expect(supabaseProjectRef(pooler(REF))).toBe(REF);
+  });
+
+  it('reads no project from a shape it does not know', () => {
+    for (const url of [
+      // A pooler host is a whole region; without the username it names no project.
+      'postgresql://postgres@aws-0-ap-south-1.pooler.supabase.com:5432/postgres',
+      'postgresql://postgres@localhost:5432/postgres',
+      'https://api.makam.example',
+      'not a url',
+    ]) {
+      expect(supabaseProjectRef(url), url).toBeNull();
+    }
+  });
+
+  it('accepts the direct and the pooler string of the declared, confirmed project', () => {
+    for (const url of [direct(REF), pooler(REF)]) {
+      const target = classifyStagingDatabase(url, confirmedProject);
+      expect(target.kind, url).toBe('STAGING');
+      expect(target.writable).toBe(true);
+    }
+  });
+
+  it('refuses when nobody confirmed the project is disposable', () => {
+    const target = classifyStagingDatabase(pooler(REF), { [STAGING_ENV_NAMES.url]: STAGING_HOST });
+    expect(target.kind).toBe('UNKNOWN');
+    expect(target.writable).toBe(false);
+  });
+
+  it('refuses when no staging project is declared at all', () => {
+    const target = classifyStagingDatabase(pooler(REF),
+      { [STAGING_ENV_NAMES.confirmation]: 'yes' });
+    expect(target.kind).toBe('UNKNOWN');
+    expect(target.writable).toBe(false);
+  });
+
+  it('refuses a connection string for a different project than the one confirmed', () => {
+    for (const url of [direct(OTHER_REF), pooler(OTHER_REF)]) {
+      const target = classifyStagingDatabase(url, confirmedProject);
+      expect(target.kind, url).toBe('UNKNOWN');
+      expect(target.writable).toBe(false);
+    }
+  });
+
+  it('refuses a production connection pasted in as staging, by ref, whichever host it uses', () => {
+    // The mistake this exists for: the right API URL, confirmed, and the wrong database.
+    for (const url of [direct(OTHER_REF), pooler(OTHER_REF)]) {
+      const target = classifyStagingDatabase(url, otherIsProduction);
+      expect(target.kind, url).toBe('PRODUCTION');
+      expect(target.writable).toBe(false);
+    }
+  });
+
+  it('resolves a project both confirmed as staging and named as production to PRODUCTION', () => {
+    const contradiction = { ...confirmedProject, PRODUCTION_SUPABASE_URL: STAGING_HOST };
+    for (const url of [direct(REF), pooler(REF)]) {
+      const target = classifyStagingDatabase(url, contradiction);
+      expect(target.kind, url).toBe('PRODUCTION');
+      expect(target.writable).toBe(false);
+    }
+  });
+
+  it('refuses a connection string it cannot tie to any project', () => {
+    for (const url of [
+      'postgresql://postgres@aws-0-ap-south-1.pooler.supabase.com:5432/postgres',
+      'postgresql://postgres@staging-db.makam.example:5432/postgres',
+      'not a url',
+    ]) {
+      const target = classifyStagingDatabase(url, confirmedProject);
+      expect(target.kind, url).toBe('UNKNOWN');
+      expect(target.writable).toBe(false);
+    }
+  });
+
+  it('never repeats the pooler username, which carries the project ref', () => {
+    const envs: Array<Record<string, string>> = [confirmedProject, otherIsProduction, {}];
+    for (const url of [pooler(REF), pooler(OTHER_REF)]) {
+      for (const env of envs) {
+        const { because } = classifyStagingDatabase(url, env);
+        expect(because).not.toContain(`postgres.${REF}`);
+        expect(because).not.toContain(`postgres.${OTHER_REF}`);
+      }
+    }
   });
 });

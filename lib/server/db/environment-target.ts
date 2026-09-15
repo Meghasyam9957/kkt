@@ -211,3 +211,131 @@ export function describeStaging(result: StagingAvailability): string {
   }
   return `REFUSED — ${result.classification.kind}: ${result.classification.because}`;
 }
+
+/**
+ * THE SUPABASE PROJECT A URL BELONGS TO — or null when it cannot be told.
+ *
+ * A project's API URL and its database connection strings do not share a hostname, so the
+ * hostname comparison `classifyTarget` makes cannot tie one to the other:
+ *
+ *   API             https://<ref>.supabase.co
+ *   direct          postgresql://postgres@db.<ref>.supabase.co:5432/postgres
+ *   session pooler  postgresql://postgres.<ref>@aws-0-<region>.pooler.supabase.com:5432/postgres
+ *
+ * A pooler hostname is shared by every project in its region; only the username names the
+ * project. The project ref is the one identifier all three carry. Any other shape — a custom
+ * domain, a self-hosted instance, something unparseable — is null, and null is refused.
+ */
+export function supabaseProjectRef(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const hostname = parsed.hostname.toLowerCase();
+
+  const api = hostname.match(/^([a-z0-9]+)\.supabase\.co$/);
+  if (api) return api[1]!;
+
+  const direct = hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/);
+  if (direct) return direct[1]!;
+
+  if (/\.pooler\.supabase\.com$/.test(hostname)) {
+    let user: string;
+    try {
+      user = decodeURIComponent(parsed.username).toLowerCase();
+    } catch {
+      return null;
+    }
+    const pooled = user.match(/^[a-z0-9_]+\.([a-z0-9]+)$/);
+    return pooled ? pooled[1]! : null;
+  }
+
+  return null;
+}
+
+/**
+ * Whether a DATABASE connection string may be written to as the confirmed staging project —
+ * the question `db:migrate -- --staging` asks before it opens a connection.
+ *
+ * Built on `classifyTarget`, and stricter than it, never looser. STAGING only when all of:
+ *
+ *   1. No PRODUCTION_* setting names the same project ref or the same hostname. Decided
+ *      first, as everywhere in this module, and nothing lifts it. (A pooler hostname shared
+ *      with a production pooler string is refused too: generous about PRODUCTION.)
+ *   2. STAGING_SUPABASE_URL is itself STAGING — declared, and confirmed by
+ *      STAGING_CONFIRMED_NOT_PRODUCTION. That is the existing guard, reused, not a second one.
+ *   3. The connection string belongs to that same project, by ref. Confirming one project is
+ *      disposable says nothing about another.
+ *
+ * The explanation names the host, never the username: on the pooler the username carries the
+ * project ref, and it is half of a credential pair.
+ */
+export function classifyStagingDatabase(databaseUrl: string, env: EnvLike): TargetClassification {
+  const host = hostOf(databaseUrl);
+  const hostname = hostnameOf(databaseUrl);
+  if (hostname === '') {
+    return {
+      kind: 'UNKNOWN', host, writable: false,
+      because: 'The database URL could not be parsed, so it cannot be checked against the '
+        + 'staging or production configuration.',
+    };
+  }
+  const ref = supabaseProjectRef(databaseUrl);
+
+  for (const name of PRODUCTION_ENV_NAMES) {
+    const configured = (env[name] ?? '').trim();
+    if (configured === '') continue;
+    const sameProject = ref !== null && supabaseProjectRef(configured) === ref;
+    if (sameProject || hostnameOf(configured) === hostname) {
+      return {
+        kind: 'PRODUCTION', host, writable: false,
+        because: `This connection string reaches the ${sameProject ? 'Supabase project' : 'host'} `
+          + `configured in ${name}. Nothing overrides this.`,
+      };
+    }
+  }
+
+  const declared = (env[STAGING_ENV_NAMES.url] ?? '').trim();
+  if (declared === '') {
+    return {
+      kind: 'UNKNOWN', host, writable: false,
+      because: `${STAGING_ENV_NAMES.url} is not set, so there is no confirmed staging project `
+        + 'for this connection string to belong to.',
+    };
+  }
+
+  const project = classifyTarget(declared, env);
+  if (project.kind !== 'STAGING' || !project.writable) {
+    return {
+      kind: project.kind === 'PRODUCTION' ? 'PRODUCTION' : 'UNKNOWN', host, writable: false,
+      because: `The declared staging project cannot be written to: ${project.because}`,
+    };
+  }
+
+  const declaredRef = supabaseProjectRef(declared);
+  if (ref === null || declaredRef === null) {
+    return {
+      kind: 'UNKNOWN', host, writable: false,
+      because: 'Cannot tell which Supabase project this connection string belongs to. Use the '
+        + 'direct string (host db.<ref>.supabase.co) or the session pooler string (user '
+        + 'postgres.<ref> on *.pooler.supabase.com) of the project whose API URL is '
+        + 'https://<ref>.supabase.co.',
+    };
+  }
+  if (ref !== declaredRef) {
+    return {
+      kind: 'UNKNOWN', host, writable: false,
+      because: `This connection string belongs to a different Supabase project than `
+        + `${STAGING_ENV_NAMES.url}. Confirming one project is disposable says nothing about `
+        + 'another.',
+    };
+  }
+
+  return {
+    kind: 'STAGING', host, writable: true,
+    because: `${host} reaches the project declared in ${STAGING_ENV_NAMES.url} and confirmed `
+      + `disposable by ${STAGING_ENV_NAMES.confirmation}.`,
+  };
+}

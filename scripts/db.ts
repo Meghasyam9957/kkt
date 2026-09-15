@@ -8,10 +8,14 @@
  *                         migrations today?", answered in about ten seconds.
  *
  *   npm run db:status     Against DATABASE_URL: what has been applied, what is pending, and
- *                         where the repository and the database disagree. Reads only.
+ *                         where the repository and the database disagree. Changes nothing
+ *                         except creating the empty ledger table when it is absent.
  *
  *   npm run db:migrate    Against DATABASE_URL: apply what is pending, in order, each in its
- *                         own transaction.
+ *                         own transaction, then ask PostgREST to reload its schema cache.
+ *
+ *   -- --staging          On status or migrate: refuse, before connecting, anything that is
+ *                         not the confirmed staging project. See `guardStaging`.
  *
  * ON NAMING THE TARGET. Every command prints the target before doing anything, with the
  * credentials stripped out. A migration tool that does not say out loud which database it is
@@ -27,6 +31,7 @@ import {
 } from '@/lib/server/db/migration-runner';
 import { supabaseCompatSql } from '@/lib/server/db/supabase-compat';
 import { hostnameOf, redactConnectionString } from '@/lib/server/db/test-database';
+import { classifyStagingDatabase } from '@/lib/server/db/environment-target';
 
 const MIGRATIONS = join(process.cwd(), 'supabase', 'migrations');
 const SEED = new Set(['0002_demo_identities.sql']);
@@ -97,6 +102,29 @@ function guardProduction(url: string, argv: readonly string[]): void {
   }
 }
 
+/**
+ * `--staging`: the confirmed staging project, and nothing else. Checked BEFORE a connection
+ * is opened, so a refusal never reaches the database it refuses.
+ *
+ * `guardProduction` compares hostnames, and a hostname cannot tie a Supabase connection string
+ * to a project: the direct host is `db.<ref>.supabase.co` where the API is `<ref>.supabase.co`,
+ * and a pooler host is shared by a whole region. This binds the connection to
+ * STAGING_SUPABASE_URL by project ref, under the same STAGING_CONFIRMED_NOT_PRODUCTION
+ * declaration the staging suite requires. It adds refusals; it lifts none.
+ */
+function guardStaging(url: string, argv: readonly string[]): void {
+  if (argv.includes('--confirm-production')) {
+    console.error('REFUSED. --staging and --confirm-production contradict each other.');
+    process.exit(3);
+  }
+  const target = classifyStagingDatabase(url, process.env);
+  if (target.kind !== 'STAGING' || !target.writable) {
+    console.error(`REFUSED — ${target.kind}: ${target.because}`);
+    process.exit(3);
+  }
+  console.log(`Staging: ${target.because}`);
+}
+
 async function describeSchema(db: SqlDriver): Promise<void> {
   const tables = await db.query<{ n: number }>(
     `select count(*)::int n from information_schema.tables
@@ -138,6 +166,7 @@ async function main(): Promise<void> {
 
   const url = requireUrl();
   console.log(`Target: ${redactConnectionString(url)}`);
+  if (argv.includes('--staging')) guardStaging(url, argv);
   const { db, close } = await openPostgres(url);
 
   try {
@@ -159,6 +188,13 @@ async function main(): Promise<void> {
       const result = await applyMigrations(db, load(argv.includes('--include-seed')));
       if (result.applied.length === 0) console.log('\nNothing pending. Already up to date.');
       else for (const name of result.applied) console.log(`  applied  ${name}`);
+      // PostgREST answers from a cached copy of the schema, so on a Supabase project a new
+      // table stays invisible to the API — "Could not find the table … in the schema cache"
+      // — until that cache reloads. This asks it to. Sent even when nothing was pending, so a
+      // re-run also repairs a cache left stale. On a server with no PostgREST listening, such
+      // as CI's container, a NOTIFY nobody hears does nothing.
+      await db.exec(`notify pgrst, 'reload schema'`);
+      console.log('\n  asked PostgREST to reload its schema cache');
       await describeSchema(db);
       return;
     }

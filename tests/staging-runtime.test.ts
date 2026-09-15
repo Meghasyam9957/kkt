@@ -1,5 +1,5 @@
 /**
- * THE STAGING SUITE'S RUNTIME IS PART OF WHAT IT CAN VERIFY.
+ * THE STAGING SUITE'S RUNTIME AND SCHEMA ARE PART OF WHAT IT CAN VERIFY.
  *
  * The first real run of `.github/workflows/staging.yml` failed before a single request reached
  * Supabase. Every `createClient()` in `tests/staging/` threw:
@@ -11,9 +11,20 @@
  * from 22. The workflow pinned Node 20. The run therefore reported failures that said nothing
  * about authentication, RLS or tenant isolation: the suite never got far enough to ask.
  *
- * This test is offline, needs no secret, and runs in ordinary `npm test`. It holds the staging
- * pin to the floor the LOCKED Supabase packages declare, so an upgrade that raises that floor
- * fails here, in CI, instead of on the next approved staging run.
+ * The next run reached Supabase and stopped at the first table write:
+ *
+ *   Could not create staging tenant: Could not find the table 'public.tenants' in the
+ *   schema cache
+ *
+ * Nothing had applied the migrations to the new project — the workflow had no step that
+ * could — and each world had already created a GoTrue user before it failed, so every failure
+ * left one behind. Again not a verdict on auth or RLS: no assertion ran.
+ *
+ * These tests are offline, need no secret, and run in ordinary `npm test`. They hold the
+ * staging pin to the floor the LOCKED Supabase packages declare, hold the workflow to applying
+ * the schema before the suite, and hold the harness to checking for that schema before it
+ * creates anything — so each of those regressions fails here, in CI, instead of on the next
+ * approved staging run.
  *
  * The workflow is read as text rather than parsed: no YAML library is a direct dependency, and
  * importing a transitive one would tie this test to something package.json does not promise.
@@ -21,6 +32,8 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { requireStagingSchema } from './staging/harness';
 
 const ROOT = process.cwd();
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -119,5 +132,96 @@ describe('staging workflow · the runtime the real Supabase suite needs', () => 
           .toBeGreaterThanOrEqual(floor);
       }
     }
+  });
+});
+
+describe('staging workflow · the schema is applied before the suite runs', () => {
+  const workflow = read('.github/workflows/staging.yml');
+  // The comments name the flags this step must never pass; only lines that execute are held.
+  const code = workflow.split(/\r?\n/).filter((line) => !line.trim().startsWith('#'));
+  const lineOf = (pattern: RegExp) => code.findIndex((line) => pattern.test(line));
+
+  it('migrates the confirmed staging project before it runs the suite', () => {
+    const migrate = lineOf(/^\s*npm run db:migrate -- --staging\s*$/);
+    const suite = lineOf(/^\s*run:\s*npm run test:staging\s*$/);
+    expect(migrate, 'a `npm run db:migrate -- --staging` line').toBeGreaterThan(-1);
+    expect(suite, 'the staging suite step').toBeGreaterThan(-1);
+    expect(migrate, 'the schema is applied first').toBeLessThan(suite);
+  });
+
+  it('runs every database command in --staging mode, never with an override or the seed', () => {
+    const commands = code.filter((line) => /npm run db:(migrate|status)\b/.test(line));
+    expect(commands.length, 'the workflow runs the migration commands').toBeGreaterThan(0);
+    for (const line of commands) expect(line.trim()).toMatch(/ -- --staging$/);
+    expect(code.join('\n')).not.toMatch(/--confirm-production|--include-seed/);
+  });
+
+  it('takes the connection string from STAGING_DATABASE_URL and nowhere else', () => {
+    const urls = code.filter((line) => /^\s*DATABASE_URL:/.test(line));
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toMatch(/^\s*DATABASE_URL:\s*\$\{\{\s*secrets\.STAGING_DATABASE_URL\s*\}\}\s*$/);
+  });
+});
+
+describe('staging harness · a missing schema fails first, and creates nothing', () => {
+  type Probe = { error: { code?: string; message: string } | null };
+
+  /** A service-role client that answers the schema probe from a script, and records it. */
+  function scripted(answers: readonly Probe[]) {
+    const asked: string[] = [];
+    const client = {
+      from: (table: string) => ({
+        select: () => ({
+          limit: async () => {
+            asked.push(table);
+            return answers[Math.min(asked.length, answers.length) - 1]!;
+          },
+        }),
+      }),
+    };
+    return { client: client as unknown as Pick<SupabaseClient, 'from'>, asked };
+  }
+
+  const notInCache: Probe = {
+    error: {
+      code: 'PGRST205',
+      message: "Could not find the table 'public.tenants' in the schema cache",
+    },
+  };
+
+  it('passes as soon as PostgREST can see the tenants table', async () => {
+    const { client, asked } = scripted([{ error: null }]);
+    await expect(requireStagingSchema(client)).resolves.toBeUndefined();
+    expect(asked).toEqual(['tenants']);
+  });
+
+  it('waits out a schema cache that has not reloaded yet', async () => {
+    const { client, asked } = scripted([notInCache, notInCache, { error: null }]);
+    await requireStagingSchema(client, { waitMs: 5_000, pollMs: 1 });
+    expect(asked).toHaveLength(3);
+  });
+
+  it('names a schema that never appears as missing, and says nothing was created', async () => {
+    const { client } = scripted([notInCache]);
+    await expect(requireStagingSchema(client, { waitMs: 20, pollMs: 1 }))
+      .rejects.toThrow(/staging schema is missing[\s\S]*Nothing was created/);
+  });
+
+  it('does not wait on any other failure, or call it a missing schema', async () => {
+    const { client, asked } = scripted([
+      { error: { code: '401', message: 'Invalid API key' } }, { error: null },
+    ]);
+    await expect(requireStagingSchema(client, { waitMs: 60_000, pollMs: 1 }))
+      .rejects.toThrow(/Could not check the staging schema/);
+    expect(asked).toHaveLength(1);
+  });
+
+  it('is checked before the harness creates its first user', () => {
+    const harness = read('tests/staging/harness.ts');
+    const check = harness.indexOf('await requireStagingSchema(admin)');
+    const firstWrite = harness.indexOf('admin.auth.admin.createUser(');
+    expect(check, 'the harness checks the schema').toBeGreaterThan(-1);
+    expect(firstWrite, 'the harness creates users').toBeGreaterThan(-1);
+    expect(check, 'before it creates anything').toBeLessThan(firstWrite);
   });
 });

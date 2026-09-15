@@ -72,6 +72,46 @@ jobs:
       - name: No committed secrets
         run: npm run scan:secrets
 
+      # SCHEMA FIRST. A new Supabase project has none of MAKAM's tables. The first run that
+      # reached one failed at its first table write — "Could not find the table
+      # 'public.tenants' in the schema cache" — because nothing had ever applied the
+      # migrations, and this workflow had no step that could. No auth, RLS or repository
+      # assertion ran.
+      #
+      # This is the repository's one migration runner (`scripts/db.ts`), not a second one:
+      # filename order, one transaction per migration, a checksum ledger, a refusal to build
+      # on an edited migration, and a no-op when nothing is pending. It ends by asking
+      # PostgREST to reload its schema cache.
+      #
+      # DDL needs a PostgreSQL connection — PostgREST cannot run it — so this needs
+      # STAGING_DATABASE_URL: the project's SESSION POOLER string. GitHub-hosted runners have
+      # no IPv6, and the direct `db.<ref>.supabase.co` host is IPv6-only unless the project
+      # has the IPv4 add-on.
+      #
+      # `--staging` refuses before it connects unless that string belongs to the project in
+      # STAGING_SUPABASE_URL, the project is confirmed by STAGING_CONFIRMED_NOT_PRODUCTION,
+      # and no PRODUCTION_* setting names it. tests/staging-runtime.test.ts holds this step
+      # ahead of the suite and keeps the production override and the demo seed out of it.
+      - name: Apply the migrations to the staging project
+        env:
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_CONFIRMED_NOT_PRODUCTION: ${{ secrets.STAGING_CONFIRMED_NOT_PRODUCTION }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          if [ -z "${STAGING_SUPABASE_URL}" ]; then
+            echo "No staging project configured, so there is no schema to apply."
+            exit 0
+          fi
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "CONFIGURATION_REQUIRED — STAGING_DATABASE_URL is not set on the staging environment."
+            echo "The migrations cannot be applied without it, and the suite would fail on a missing"
+            echo "schema instead of testing anything. See docs/MSTAGING1_SUPABASE_RUNBOOK.md §2."
+            exit 1
+          fi
+          npm run db:migrate -- --staging
+          npm run db:status -- --staging
+
       - name: Staging suite
         env:
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}

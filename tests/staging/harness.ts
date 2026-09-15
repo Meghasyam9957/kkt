@@ -93,6 +93,47 @@ async function signedInClient(
   return client;
 }
 
+/** How long to wait for PostgREST to see a schema that migrations have only just created. */
+const SCHEMA_WAIT_MS = 30_000;
+const SCHEMA_POLL_MS = 2_000;
+
+/** PostgREST's code for "that relation is not in my schema cache". */
+const NOT_IN_SCHEMA_CACHE = 'PGRST205';
+
+/**
+ * THE SCHEMA, AS POSTGREST SEES IT — CHECKED BEFORE ANYTHING IS CREATED.
+ *
+ * The first run against a new project got as far as GoTrue, created a user, and then failed
+ * at its first table write: "Could not find the table 'public.tenants' in the schema cache".
+ * Nothing had applied the migrations. Every world failed the same way and left its user
+ * behind. Asking first means a missing schema fails as exactly that, and creates nothing.
+ *
+ * It waits, briefly, only on PGRST205: `db:migrate` asks PostgREST to reload its schema cache,
+ * and a request that lands before that reload has begun still sees the old one. Any other
+ * error fails at once, and so does a table still missing when the wait runs out. It asks with
+ * the service role, so RLS plays no part in the answer, and it prints nothing it reads.
+ */
+export async function requireStagingSchema(
+  admin: Pick<SupabaseClient, 'from'>,
+  { waitMs = SCHEMA_WAIT_MS, pollMs = SCHEMA_POLL_MS }: { waitMs?: number; pollMs?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const { error } = await admin.from('tenants').select('id').limit(1);
+    if (!error) return;
+    if (error.code !== NOT_IN_SCHEMA_CACHE) {
+      throw new Error(`Could not check the staging schema: ${error.message}. Nothing was created.`);
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `The staging schema is missing: ${error.message}. Nothing was created. Apply this `
+        + 'repository\'s migrations to the project first — docs/MSTAGING1_SUPABASE_RUNBOOK.md §3.',
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
 /**
  * Two tenants, two users, two memberships — created through the real APIs and torn down
  * afterwards.
@@ -107,9 +148,33 @@ export async function createStagingWorld(): Promise<StagingWorld> {
   }
   const { url, anonKey, serviceRoleKey } = staging;
   const admin = adminClient(url, serviceRoleKey);
+  // Before the first write: a missing schema fails here, and leaves nothing behind.
+  await requireStagingSchema(admin);
   const run = randomUUID().slice(0, 8);
 
   const made: { users: string[]; tenants: string[] } = { users: [], tenants: [] };
+
+  const teardown = async (): Promise<void> => {
+    /*
+     * Ordered by dependency, and every delete is qualified by an id this run created.
+     * There is deliberately no "delete everything in this table" anywhere in this file:
+     * a staging project may hold other people's work, and a teardown that assumes
+     * otherwise is the thing that destroys it.
+     */
+    const tenantIds = made.tenants;
+    for (const table of [
+      'ops_task_assignments', 'hr_attendance', 'hr_employees',
+      'finance_bills', 'finance_vendors', 'audit_log', 'operations',
+      'tenant_workbooks', 'memberships',
+    ]) {
+      await admin.from(table).delete().in('tenant_id', tenantIds);
+    }
+    for (const userId of made.users) {
+      await admin.from('app_users').delete().eq('id', userId);
+      await admin.auth.admin.deleteUser(userId);
+    }
+    await admin.from('tenants').delete().in('id', tenantIds);
+  };
 
   const build = async (label: 'a' | 'b'): Promise<StagingTenant> => {
     const slug = `${STAGING_MARKER}-${label}-${run}`.toLowerCase();
@@ -152,33 +217,17 @@ export async function createStagingWorld(): Promise<StagingWorld> {
     };
   };
 
-  const a = await build('a');
-  const b = await build('b');
-
-  return {
-    admin, a, b,
-    async teardown() {
-      /*
-       * Ordered by dependency, and every delete is qualified by an id this run created.
-       * There is deliberately no "delete everything in this table" anywhere in this file:
-       * a staging project may hold other people's work, and a teardown that assumes
-       * otherwise is the thing that destroys it.
-       */
-      const tenantIds = made.tenants;
-      for (const table of [
-        'ops_task_assignments', 'hr_attendance', 'hr_employees',
-        'finance_bills', 'finance_vendors', 'audit_log', 'operations',
-        'tenant_workbooks', 'memberships',
-      ]) {
-        await admin.from(table).delete().in('tenant_id', tenantIds);
-      }
-      for (const userId of made.users) {
-        await admin.from('app_users').delete().eq('id', userId);
-        await admin.auth.admin.deleteUser(userId);
-      }
-      await admin.from('tenants').delete().in('id', tenantIds);
-    },
-  };
+  try {
+    const a = await build('a');
+    const b = await build('b');
+    return { admin, a, b, teardown };
+  } catch (error) {
+    // A world that fails partway is never returned, so no afterAll can tear it down. Remove
+    // what this run did create — by id, exactly as teardown always does — then report the
+    // failure that stopped it rather than any failure of the cleanup.
+    await teardown().catch(() => undefined);
+    throw error;
+  }
 }
 
 /** A PostgREST outcome, in the shape the assertions want. */
