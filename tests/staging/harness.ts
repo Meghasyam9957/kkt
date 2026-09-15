@@ -65,12 +65,20 @@ export interface StagingWorld {
   readonly teardown: () => Promise<void>;
 }
 
-function adminClient(url: string, serviceRoleKey: string): SupabaseClient {
-  return createClient(url, serviceRoleKey, {
-    // A test process is not a browser and must not accumulate sessions between files.
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
+/**
+ * How the harness opens a Supabase client: `createClient`, everywhere the suite runs.
+ *
+ * A parameter only so that the setup and cleanup below can be exercised offline, in ordinary
+ * `npm test`, against a client that records what it is asked to do. It chooses no target:
+ * `createStagingWorld` still refuses unless `staging` resolved as available, and hands the
+ * connection only the URL and keys that resolution produced.
+ */
+export type ConnectSupabase = (url: string, key: string) => SupabaseClient;
+
+const connectForReal: ConnectSupabase = (url, key) => createClient(url, key, {
+  // A test process is not a browser and must not accumulate sessions between files.
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 /**
  * A fresh signed-in user, through the real sign-in flow.
@@ -80,11 +88,9 @@ function adminClient(url: string, serviceRoleKey: string): SupabaseClient {
  * sign-in, because that is the token production will carry.
  */
 async function signedInClient(
-  url: string, anonKey: string, email: string, password: string,
+  connect: ConnectSupabase, url: string, anonKey: string, email: string, password: string,
 ): Promise<SupabaseClient> {
-  const client = createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+  const client = connect(url, anonKey);
   const { error } = await client.auth.signInWithPassword({ email, password });
   if (error) {
     // The message, never the credential — this string can reach CI output.
@@ -99,6 +105,12 @@ const SCHEMA_POLL_MS = 2_000;
 
 /** PostgREST's code for "that relation is not in my schema cache". */
 const NOT_IN_SCHEMA_CACHE = 'PGRST205';
+
+/** How long to wait for the schema. Shortened only by offline tests. */
+export interface SchemaWait {
+  readonly waitMs?: number;
+  readonly pollMs?: number;
+}
 
 /**
  * THE SCHEMA, AS POSTGREST SEES IT — CHECKED BEFORE ANYTHING IS CREATED.
@@ -115,7 +127,7 @@ const NOT_IN_SCHEMA_CACHE = 'PGRST205';
  */
 export async function requireStagingSchema(
   admin: Pick<SupabaseClient, 'from'>,
-  { waitMs = SCHEMA_WAIT_MS, pollMs = SCHEMA_POLL_MS }: { waitMs?: number; pollMs?: number } = {},
+  { waitMs = SCHEMA_WAIT_MS, pollMs = SCHEMA_POLL_MS }: SchemaWait = {},
 ): Promise<void> {
   const deadline = Date.now() + waitMs;
   for (;;) {
@@ -142,14 +154,16 @@ export async function requireStagingSchema(
  * reserved by RFC 2606 and can never be a real domain, so no message these accounts might
  * generate can reach a real person.
  */
-export async function createStagingWorld(): Promise<StagingWorld> {
+export async function createStagingWorld(
+  connect: ConnectSupabase = connectForReal, schemaWait: SchemaWait = {},
+): Promise<StagingWorld> {
   if (!staging.available) {
     throw new Error(`Staging is not available: ${describeStaging(staging)}`);
   }
   const { url, anonKey, serviceRoleKey } = staging;
-  const admin = adminClient(url, serviceRoleKey);
+  const admin = connect(url, serviceRoleKey);
   // Before the first write: a missing schema fails here, and leaves nothing behind.
-  await requireStagingSchema(admin);
+  await requireStagingSchema(admin, schemaWait);
   const run = randomUUID().slice(0, 8);
 
   const made: { users: string[]; tenants: string[] } = { users: [], tenants: [] };
@@ -160,20 +174,27 @@ export async function createStagingWorld(): Promise<StagingWorld> {
      * There is deliberately no "delete everything in this table" anywhere in this file:
      * a staging project may hold other people's work, and a teardown that assumes
      * otherwise is the thing that destroys it.
+     *
+     * An empty id list is skipped, never sent: no layer between here and PostgreSQL gets the
+     * chance to read "where tenant_id in ()" as anything other than nothing.
      */
-    const tenantIds = made.tenants;
-    for (const table of [
-      'ops_task_assignments', 'hr_attendance', 'hr_employees',
-      'finance_bills', 'finance_vendors', 'audit_log', 'operations',
-      'tenant_workbooks', 'memberships',
-    ]) {
-      await admin.from(table).delete().in('tenant_id', tenantIds);
+    const tenantIds = [...made.tenants];
+    if (tenantIds.length > 0) {
+      for (const table of [
+        'ops_task_assignments', 'hr_attendance', 'hr_employees',
+        'finance_bills', 'finance_vendors', 'audit_log', 'operations',
+        'tenant_workbooks', 'memberships',
+      ]) {
+        await admin.from(table).delete().in('tenant_id', tenantIds);
+      }
     }
     for (const userId of made.users) {
       await admin.from('app_users').delete().eq('id', userId);
       await admin.auth.admin.deleteUser(userId);
     }
-    await admin.from('tenants').delete().in('id', tenantIds);
+    if (tenantIds.length > 0) {
+      await admin.from('tenants').delete().in('id', tenantIds);
+    }
   };
 
   const build = async (label: 'a' | 'b'): Promise<StagingTenant> => {
@@ -213,7 +234,7 @@ export async function createStagingWorld(): Promise<StagingWorld> {
 
     return {
       slug, tenantId, email, userId,
-      asUser: await signedInClient(url, anonKey, email, password),
+      asUser: await signedInClient(connect, url, anonKey, email, password),
     };
   };
 

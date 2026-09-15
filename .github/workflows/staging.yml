@@ -88,10 +88,13 @@ jobs:
       # no IPv6, and the direct `db.<ref>.supabase.co` host is IPv6-only unless the project
       # has the IPv4 add-on.
       #
-      # `--staging` refuses before it connects unless that string belongs to the project in
-      # STAGING_SUPABASE_URL, the project is confirmed by STAGING_CONFIRMED_NOT_PRODUCTION,
-      # and no PRODUCTION_* setting names it. tests/staging-runtime.test.ts holds this step
-      # ahead of the suite and keeps the production override and the demo seed out of it.
+      # `--staging` refuses before it connects unless the connection node-postgres would make
+      # belongs to the project in STAGING_SUPABASE_URL, that project is confirmed by
+      # STAGING_CONFIRMED_NOT_PRODUCTION=yes, and it is not the project in
+      # PRODUCTION_SUPABASE_URL. PRODUCTION_DATABASE_URL is deliberately not given to this
+      # job: a production password has no business in a staging environment.
+      # tests/staging-runtime.test.ts runs this script as written, holds the step ahead of
+      # the suite, and keeps the production override and the demo seed out of the job.
       - name: Apply the migrations to the staging project
         env:
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}

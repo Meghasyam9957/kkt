@@ -93,6 +93,11 @@ export function redactConnectionString(connectionString: string): string {
     // is half of a credential pair and identifies the project on hosted Supabase.
     url.username = url.username ? '***' : '';
     url.password = url.password ? '***' : '';
+    // node-postgres also reads `?password=` (and `sslpassword`) from the query string, so a
+    // credential can sit after the host as easily as before it.
+    for (const key of [...url.searchParams.keys()]) {
+      if (/pass/i.test(key)) url.searchParams.set(key, '***');
+    }
     return url.toString();
   } catch {
     return '(unparseable connection string)';

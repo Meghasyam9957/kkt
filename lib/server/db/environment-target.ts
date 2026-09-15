@@ -50,8 +50,8 @@ export const STAGING_ENV_NAMES = {
   /** Trusted server key. Never reaches a browser, never printed, never committed. */
   serviceRoleKey: 'STAGING_SUPABASE_SERVICE_ROLE_KEY',
   /**
-   * The explicit declaration that the project above is disposable. Required, because a
-   * hosted project that nobody has vouched for is somebody's real data.
+   * The explicit declaration that the project above is disposable: exactly `yes`. Required,
+   * because a hosted project that nobody has vouched for is somebody's real data.
    */
   confirmation: 'STAGING_CONFIRMED_NOT_PRODUCTION',
   /** Direct PostgreSQL connection, for migrations and catalog inspection. */
@@ -64,9 +64,18 @@ export const PRODUCTION_ENV_NAMES = [
   'PRODUCTION_DATABASE_URL',
 ] as const;
 
+/** Lower-cased, without the one trailing dot DNS allows: `x.supabase.co.` is `x.supabase.co`. */
+function normalHostname(hostname: string): string {
+  return hostname.toLowerCase().replace(/\.$/, '');
+}
+
+/**
+ * The hostname a URL names, normalised — so a production setting written with a trailing dot
+ * still vetoes a target written without one, and the other way round.
+ */
 export function hostnameOf(url: string): string {
   try {
-    return (new URL(url).hostname || '').toLowerCase();
+    return normalHostname(new URL(url).hostname || '');
   } catch {
     return '';
   }
@@ -82,6 +91,14 @@ export function hostOf(url: string): string {
 
 const HOSTED_SUPABASE = /(^|\.)supabase\.(co|com|in|net)$/i;
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', 'host.docker.internal']);
+
+/**
+ * Whether the confirmation variable says yes. Exactly `yes`, in any case: a check for
+ * "non-empty" would read `no`, `false` or a stray value as consent to write to a project.
+ */
+function confirmedDisposable(env: EnvLike): boolean {
+  return (env[STAGING_ENV_NAMES.confirmation] ?? '').trim().toLowerCase() === 'yes';
+}
 
 /**
  * Classify a URL against the environment it was read from.
@@ -122,9 +139,8 @@ export function classifyTarget(url: string, env: EnvLike): TargetClassification 
   if (HOSTED_SUPABASE.test(hostname)) {
     const declared = (env[STAGING_ENV_NAMES.url] ?? '').trim();
     const isDeclared = declared !== '' && hostnameOf(declared) === hostname;
-    const confirmed = (env[STAGING_ENV_NAMES.confirmation] ?? '').trim() !== '';
 
-    if (isDeclared && confirmed) {
+    if (isDeclared && confirmedDisposable(env)) {
       return {
         kind: 'STAGING', host, writable: true,
         because: `${host} is declared in ${STAGING_ENV_NAMES.url} and confirmed disposable `
@@ -134,8 +150,8 @@ export function classifyTarget(url: string, env: EnvLike): TargetClassification 
     return {
       kind: 'UNKNOWN', host, writable: false,
       because: `${host} is a hosted Supabase project that has not been declared as staging. `
-        + `Set ${STAGING_ENV_NAMES.url} to it and ${STAGING_ENV_NAMES.confirmation} to say `
-        + 'it is disposable. An unlabelled hosted project is somebody\'s real data.',
+        + `Set ${STAGING_ENV_NAMES.url} to it and ${STAGING_ENV_NAMES.confirmation} to yes to `
+        + 'say it is disposable. An unlabelled hosted project is somebody\'s real data.',
     };
   }
 
@@ -233,7 +249,7 @@ export function supabaseProjectRef(url: string): string | null {
   } catch {
     return null;
   }
-  const hostname = parsed.hostname.toLowerCase();
+  const hostname = normalHostname(parsed.hostname);
 
   const api = hostname.match(/^([a-z0-9]+)\.supabase\.co$/);
   if (api) return api[1]!;
@@ -256,23 +272,43 @@ export function supabaseProjectRef(url: string): string | null {
 }
 
 /**
- * Whether a DATABASE connection string may be written to as the confirmed staging project —
- * the question `db:migrate -- --staging` asks before it opens a connection.
+ * Where a PostgreSQL driver will ACTUALLY connect, as it resolved a connection string.
+ *
+ * Not necessarily the host and username written in the URL. node-postgres, like libpq, lets
+ * query parameters override both — `?host=` and `?user=` — so a string can name the staging
+ * project in its userinfo and authenticate somewhere else entirely. The guard below is handed
+ * what the driver resolved, not only what the string appears to say.
+ */
+export interface ResolvedConnection {
+  readonly host: string;
+  readonly user: string;
+}
+
+/**
+ * Whether a DATABASE connection may be written to as the confirmed staging project — the
+ * question `db:migrate -- --staging` asks before it opens a connection.
  *
  * Built on `classifyTarget`, and stricter than it, never looser. STAGING only when all of:
  *
- *   1. No PRODUCTION_* setting names the same project ref or the same hostname. Decided
- *      first, as everywhere in this module, and nothing lifts it. (A pooler hostname shared
- *      with a production pooler string is refused too: generous about PRODUCTION.)
- *   2. STAGING_SUPABASE_URL is itself STAGING — declared, and confirmed by
- *      STAGING_CONFIRMED_NOT_PRODUCTION. That is the existing guard, reused, not a second one.
- *   3. The connection string belongs to that same project, by ref. Confirming one project is
+ *   1. No PRODUCTION_* setting names the project ref or the hostname of either the string or
+ *      the connection the driver resolved. Decided first, as everywhere in this module, and
+ *      nothing lifts it. (A pooler hostname shared with a production pooler string is refused
+ *      too: generous about PRODUCTION.)
+ *   2. The driver resolved exactly the host and user the string names, and the string carries
+ *      no `options` — a routing hint the pooler reads and the driver does not resolve. Anything
+ *      that redirects the connection is refused, because everything below vouches for what is
+ *      written.
+ *   3. STAGING_SUPABASE_URL is itself STAGING — declared, and confirmed by
+ *      STAGING_CONFIRMED_NOT_PRODUCTION=yes. That is the existing guard, reused, not a second.
+ *   4. The connection belongs to that same project, by ref. Confirming one project is
  *      disposable says nothing about another.
  *
  * The explanation names the host, never the username: on the pooler the username carries the
  * project ref, and it is half of a credential pair.
  */
-export function classifyStagingDatabase(databaseUrl: string, env: EnvLike): TargetClassification {
+export function classifyStagingDatabase(
+  databaseUrl: string, resolved: ResolvedConnection, env: EnvLike,
+): TargetClassification {
   const host = hostOf(databaseUrl);
   const hostname = hostnameOf(databaseUrl);
   if (hostname === '') {
@@ -282,19 +318,52 @@ export function classifyStagingDatabase(databaseUrl: string, env: EnvLike): Targ
         + 'staging or production configuration.',
     };
   }
+  // Parses: `hostnameOf` has just parsed the same string.
+  const written = new URL(databaseUrl);
   const ref = supabaseProjectRef(databaseUrl);
+  const resolvedHostname = normalHostname(resolved.host);
+
+  // The driver's destination, written back as a URL so it is read exactly as the string is.
+  const resolvedUrl = `postgresql://${encodeURIComponent(resolved.user)}@${resolved.host}/`;
+  const refs = [ref, supabaseProjectRef(resolvedUrl)].filter((r): r is string => r !== null);
+  const hostnames = [hostname, resolvedHostname].filter((h) => h !== '');
 
   for (const name of PRODUCTION_ENV_NAMES) {
     const configured = (env[name] ?? '').trim();
     if (configured === '') continue;
-    const sameProject = ref !== null && supabaseProjectRef(configured) === ref;
-    if (sameProject || hostnameOf(configured) === hostname) {
+    const productionRef = supabaseProjectRef(configured);
+    const productionHostname = hostnameOf(configured);
+    const sameProject = productionRef !== null && refs.includes(productionRef);
+    if (sameProject || (productionHostname !== '' && hostnames.includes(productionHostname))) {
       return {
         kind: 'PRODUCTION', host, writable: false,
-        because: `This connection string reaches the ${sameProject ? 'Supabase project' : 'host'} `
+        because: `This connection reaches the ${sameProject ? 'Supabase project' : 'host'} `
           + `configured in ${name}. Nothing overrides this.`,
       };
     }
+  }
+
+  let writtenUser: string | null;
+  try {
+    writtenUser = decodeURIComponent(written.username);
+  } catch {
+    writtenUser = null;
+  }
+  if (resolvedHostname !== hostname || resolved.user !== writtenUser) {
+    return {
+      kind: 'UNKNOWN', host, writable: false,
+      because: 'The driver would connect with a different host or user than this connection '
+        + 'string names — a query parameter such as ?host= or ?user= overrides them. The guard '
+        + 'can only vouch for what the string names, so the string must not redirect it.',
+    };
+  }
+  if (written.searchParams.has('options')) {
+    return {
+      kind: 'UNKNOWN', host, writable: false,
+      because: 'This connection string carries an options parameter. Supabase\'s pooler can '
+        + 'read a project reference from it, which the driver does not resolve and this guard '
+        + 'cannot check. A staging migration needs no options; remove it.',
+    };
   }
 
   const declared = (env[STAGING_ENV_NAMES.url] ?? '').trim();

@@ -38,8 +38,8 @@ Environment.
 | `STAGING_SUPABASE_URL` | The project URL, e.g. `https://abcdefgh.supabase.co`. |
 | `STAGING_SUPABASE_ANON_KEY` | The publishable key. This is the key a browser would carry. |
 | `STAGING_SUPABASE_SERVICE_ROLE_KEY` | The trusted server key. **Bypasses RLS entirely.** Server only, never a browser, never a log. |
-| `STAGING_CONFIRMED_NOT_PRODUCTION` | Set to `yes`. An explicit statement that the project above is disposable. |
-| `STAGING_DATABASE_URL` | PostgreSQL connection to the **same** project, for `db:migrate` and catalog inspection. **Required by the staging workflow**, which applies the migrations before the suite (§6). Use the **Session pooler** string from the project's *Connect* panel — user `postgres.<ref>`, host `aws-…pooler.supabase.com`, port 5432 — because GitHub-hosted runners have no IPv6 and the direct `db.<ref>.supabase.co` host is IPv6-only without the IPv4 add-on. Percent-encode any `@`, `:`, `/` or `#` in the password. |
+| `STAGING_CONFIRMED_NOT_PRODUCTION` | Exactly `yes` (any case). An explicit statement that the project above is disposable. Any other value — `no`, `true`, `1` — is read as no confirmation, and both the suite and the migration step refuse. |
+| `STAGING_DATABASE_URL` | PostgreSQL connection to the **same** project, for `db:migrate` and catalog inspection. **Required by the staging workflow**, which applies the migrations before the suite (§6). Use the **Session pooler** string from the project's *Connect* panel — user `postgres.<ref>`, host `aws-…pooler.supabase.com`, port 5432 — because GitHub-hosted runners have no IPv6 and the direct `db.<ref>.supabase.co` host is IPv6-only without the IPv4 add-on. Percent-encode any `/`, `?`, `#` or `%` in the password. Decide on encryption before saving it: see *Encryption* below. |
 
 `STAGING_CONFIRMED_NOT_PRODUCTION` is not ceremony. A hosted Supabase host is, by definition,
 somebody's real project; the suite refuses one that nobody has vouched for rather than
@@ -54,7 +54,33 @@ refusal becomes structural rather than a matter of remembering.
 
 A database connection string never shares a hostname with a project's API URL, so for
 `db:migrate -- --staging` the veto also compares **project refs**: a connection string for the
-project named in `PRODUCTION_SUPABASE_URL` is refused whichever host it uses.
+project named in `PRODUCTION_SUPABASE_URL` is refused whichever host it uses. That comparison
+needs `PRODUCTION_SUPABASE_URL` written as the project's own `https://<ref>.supabase.co`
+address; a custom domain carries no ref, and then only the hostname comparison applies.
+
+The guard judges the connection node-postgres will actually make. A string whose `?host=` or
+`?user=` parameter redirects it away from the host and user it names is refused outright, and
+so is one carrying `?options=`, which Supabase's pooler can route by.
+
+The staging workflow gives the migration step `PRODUCTION_SUPABASE_URL` and deliberately not
+`PRODUCTION_DATABASE_URL`: a production password has no business in a staging environment.
+
+### Encryption
+
+The string Supabase's dashboard gives carries no `sslmode`, and node-postgres then connects
+**without TLS**: the migrations and the ledger cross the network unencrypted.
+`db:migrate -- --staging` says so in its log whenever that is the case. To encrypt, append one
+of these to `STAGING_DATABASE_URL`:
+
+| Append | What node-postgres does |
+|---|---|
+| `?sslmode=require&uselibpqcompat=true` | Encrypts, without verifying the server's certificate — libpq's meaning of `require`. Stops someone reading the traffic; does not stop someone impersonating the server. |
+| `?sslmode=verify-full&sslrootcert=<path>` | Encrypts and verifies against Supabase's CA certificate, downloadable from the project's database settings. Needs that file on the runner — a change to the workflow, not a flag. |
+
+Plain `?sslmode=require` on its own fails: without `uselibpqcompat`, node-postgres treats it as
+full verification against the system's CAs, and Supabase issues its certificate from its own.
+If the project enforces SSL, an unencrypted string is refused by the server. Which of these to
+use is a decision for whoever owns the staging project; nothing in this repository makes it.
 
 ---
 
@@ -66,7 +92,7 @@ project named in `PRODUCTION_SUPABASE_URL` is refused whichever host it uses.
 # 1. Apply the schema: every structural migration, in filename order, each in its own
 #    transaction. --staging refuses before it connects unless DATABASE_URL belongs to the
 #    project in STAGING_SUPABASE_URL, that project is confirmed by
-#    STAGING_CONFIRMED_NOT_PRODUCTION, and no PRODUCTION_* setting names it.
+#    STAGING_CONFIRMED_NOT_PRODUCTION=yes, and it is not the production project.
 DATABASE_URL=$STAGING_DATABASE_URL npm run db:migrate -- --staging
 
 # 2. Confirm what landed. "No drift" is the only good answer.
@@ -164,7 +190,8 @@ staging project (`db:migrate -- --staging`), runs the suite, and re-runs the sui
 staging URL also marked as production — passing only if the suite refuses.
 
 If the API secrets are set but `STAGING_DATABASE_URL` is not, the run fails at the migration
-step with `CONFIGURATION_REQUIRED` rather than testing a project that has no schema.
+step with `CONFIGURATION_REQUIRED` rather than testing a project that has no schema. A refused
+or failed migration fails the step, and the suite does not run.
 
 `npm run scan:secrets` runs in both, and in `npm run gate`.
 
@@ -179,6 +206,8 @@ step with `CONFIGURATION_REQUIRED` rather than testing a project that has no sch
   strings with passwords, private-key blocks, OpenAI and AWS keys. It **never prints the
   match**, only the file, line and rule: a scanner that echoes what it found puts the secret
   in the CI log, where it outlives the commit that leaked it.
+- The database command prints its target with the username, the password and any
+  password-like query parameter replaced by `***`.
 - If a real key is ever committed: **rotate first**, then remove it. The value is already in
   the reflog and in every clone; rewriting history does not un-leak it.
 
@@ -202,14 +231,15 @@ step with `CONFIGURATION_REQUIRED` rather than testing a project that has no sch
 |---|---|---|
 | `CONFIGURATION_REQUIRED` listing four names | Nothing is configured. | Set them in `.env.local`. |
 | `REFUSED — PRODUCTION` | The target matches a `PRODUCTION_*` setting. | The guard is working. Point it elsewhere. |
-| `REFUSED — UNKNOWN` on a `supabase.co` host | Declared but not confirmed, or confirmed but not declared. | Set both `STAGING_SUPABASE_URL` and `STAGING_CONFIRMED_NOT_PRODUCTION`. |
+| `REFUSED — UNKNOWN` on a `supabase.co` host | Declared but not confirmed, confirmed with something other than `yes`, or confirmed but not declared. | Set `STAGING_SUPABASE_URL`, and `STAGING_CONFIRMED_NOT_PRODUCTION` to exactly `yes`. |
 | Sign-in fails for the synthetic users | Email confirmation is enforced on the project. | The suite passes `email_confirm: true`; check the project's auth settings allow admin-created users. |
 | `relation "…" does not exist` | Migrations have not been applied. | `DATABASE_URL=$STAGING_DATABASE_URL npm run db:migrate -- --staging`. |
 | `Could not find the table 'public.tenants' in the schema cache` (PGRST205) | The migrations have not been applied to this project — or were, and PostgREST has not reloaded. | Apply them (§3); `db:migrate` asks PostgREST to reload. The harness checks this before it creates anything, and waits up to 30 s for a reload. |
 | `CONFIGURATION_REQUIRED — STAGING_DATABASE_URL is not set` in the workflow | The environment has the API secrets but no database connection. | Add the Session pooler string (§2) as `STAGING_DATABASE_URL` on the `staging` environment. |
-| `REFUSED — …` from `db:migrate -- --staging` | The connection string is not the confirmed staging project's, or no project is confirmed. | Read the reason; it says which. Nothing lifts a production match. |
+| `REFUSED — …` from `db:migrate -- --staging` | The connection is not the confirmed staging project's, no project is confirmed, or the string redirects the driver. | Read the reason; it says which. Nothing lifts a production match. |
+| `[MISSING_FILE]` from `db:status`, failing the workflow | The project's ledger records a migration this commit does not have — another branch's, or `0002` applied with `--include-seed`. | The schema is not the one this commit describes, so its tests would prove nothing. Rebuild the project (§5), or run the branch that has that migration. |
 | `ENETUNREACH`, or a timeout, reaching `db.<ref>.supabase.co` | The direct host is IPv6; GitHub-hosted runners are IPv4-only. | Use the Session pooler string. |
-| `self-signed certificate in certificate chain` | `sslmode=require` in the string: node-postgres then verifies the server certificate against the system's CAs, and Supabase issues it from its own CA. | Use the string as the dashboard gives it, or supply Supabase's CA certificate — a deliberate change to the workflow, not a flag. |
+| `self-signed certificate in certificate chain` | `sslmode=require` without `uselibpqcompat=true`: node-postgres verifies against the system's CAs, and Supabase issues its certificate from its own. | See *Encryption* (§2). |
 | Tests leave rows behind | A run was interrupted before teardown. | Delete rows whose tenant slug begins `makam-staging-`. Never an unqualified delete. |
 
 ---
@@ -219,5 +249,6 @@ step with `CONFIGURATION_REQUIRED` rather than testing a project that has no sch
 §1–§3 were written from the code before any hosted project existed. The first real runs found
 two things this document got wrong — Node 20, and no step anywhere that applied the schema —
 and both are corrected above. **Nothing in §4 has yet been observed to reach an assertion
-against a hosted project.** Expect the first run that does to find something else, and correct
-it here.
+against a hosted project**, and the encryption options in §2 are read from node-postgres's
+parser, not yet observed against Supabase. Expect the first run that does to find something
+else, and correct it here.

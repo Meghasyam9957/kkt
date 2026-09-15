@@ -111,18 +111,39 @@ function guardProduction(url: string, argv: readonly string[]): void {
  * and a pooler host is shared by a whole region. This binds the connection to
  * STAGING_SUPABASE_URL by project ref, under the same STAGING_CONFIRMED_NOT_PRODUCTION
  * declaration the staging suite requires. It adds refusals; it lifts none.
+ *
+ * It judges the connection node-postgres will MAKE, not the one the string appears to
+ * describe: `?host=` and `?user=` override the URL's own host and user. Constructing a
+ * `Client` resolves them and opens nothing.
  */
-function guardStaging(url: string, argv: readonly string[]): void {
+async function guardStaging(url: string, argv: readonly string[]): Promise<void> {
   if (argv.includes('--confirm-production')) {
     console.error('REFUSED. --staging and --confirm-production contradict each other.');
     process.exit(3);
   }
-  const target = classifyStagingDatabase(url, process.env);
+  const { Client } = await import('pg');
+  let resolved: { host: string; user: string };
+  try {
+    const unopened = new Client({ connectionString: url });
+    resolved = { host: unopened.host ?? '', user: unopened.user ?? '' };
+  } catch {
+    console.error('REFUSED — UNKNOWN: node-postgres cannot parse DATABASE_URL, so it cannot be checked.');
+    process.exit(3);
+  }
+  const target = classifyStagingDatabase(url, resolved, process.env);
   if (target.kind !== 'STAGING' || !target.writable) {
     console.error(`REFUSED — ${target.kind}: ${target.because}`);
     process.exit(3);
   }
   console.log(`Staging: ${target.because}`);
+
+  // Not a refusal — a project may accept plain connections, and schema DDL is not a secret —
+  // but said out loud, in the log a person reads, rather than left to pass unnoticed.
+  const sslmode = new URL(url).searchParams.get('sslmode');
+  if (sslmode === null || sslmode === 'disable') {
+    console.warn('Staging: this connection is NOT encrypted — DATABASE_URL sets no sslmode. '
+      + 'See docs/MSTAGING1_SUPABASE_RUNBOOK.md §2.');
+  }
 }
 
 async function describeSchema(db: SqlDriver): Promise<void> {
@@ -166,7 +187,7 @@ async function main(): Promise<void> {
 
   const url = requireUrl();
   console.log(`Target: ${redactConnectionString(url)}`);
-  if (argv.includes('--staging')) guardStaging(url, argv);
+  if (argv.includes('--staging')) await guardStaging(url, argv);
   const { db, close } = await openPostgres(url);
 
   try {
@@ -191,8 +212,8 @@ async function main(): Promise<void> {
       // PostgREST answers from a cached copy of the schema, so on a Supabase project a new
       // table stays invisible to the API — "Could not find the table … in the schema cache"
       // — until that cache reloads. This asks it to. Sent even when nothing was pending, so a
-      // re-run also repairs a cache left stale. On a server with no PostgREST listening, such
-      // as CI's container, a NOTIFY nobody hears does nothing.
+      // re-run also repairs a cache left stale. On a server with no PostgREST listening, a
+      // NOTIFY nobody hears does nothing.
       await db.exec(`notify pgrst, 'reload schema'`);
       console.log('\n  asked PostgREST to reload its schema cache');
       await describeSchema(db);
